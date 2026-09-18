@@ -1,0 +1,43 @@
+[package]
+name = "calorie-quest"
+version = "0.1.0"
+description = "English learning game that rewards you with snack calories"
+authors = ["s-kuz"]
+edition = "2021"
+
+[lib]
+name = "calorie_quest_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+rusqlite = { version = "0.40", features = ["bundled"] }
+chrono = { version = "0.4", features = ["serde"] }
+
+[target.'cfg(windows)'.dependencies]
+# Native speech: SAPI 5 text-to-speech and the WinRT SpeechRecognizer (OS built-in, no bundled models).
+windows-collections = "0.3"
+windows = { version = "0.62", features = [
+  "Win32_Foundation",
+  "Win32_System_Com",
+  "Win32_System_Com_StructuredStorage",
+  "Win32_System_WinRT",
+  "Win32_Media_Audio",
+  "Win32_Media_Speech",
+  "Foundation",
+  "Foundation_Collections",
+  "Globalization",
+  "Media_SpeechRecognition",
+] }
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+panic = "abort"
+strip = true

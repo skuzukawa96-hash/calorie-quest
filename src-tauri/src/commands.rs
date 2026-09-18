@@ -1,0 +1,905 @@
+use crate::db::{self, Q_COLS};
+use crate::models::*;
+use crate::srs;
+use crate::util::{date_plus, now_ts, shuffle, today};
+use crate::AppState;
+use rusqlite::{params, Connection, OptionalExtension};
+use std::collections::HashMap;
+use tauri::State;
+
+type CmdResult<T> = Result<T, String>;
+const USER_ID: i64 = 1;
+
+fn err<E: std::fmt::Display>(e: E) -> String {
+    e.to_string()
+}
+
+/* ---------- shared queries ---------- */
+
+fn load_user(conn: &Connection) -> rusqlite::Result<UserInfo> {
+    conn.query_row(
+        "SELECT id, name, total_study_days, current_streak, longest_streak, last_study_date, goal_snack_id
+         FROM users WHERE id = ?1",
+        params![USER_ID],
+        |r| {
+            Ok(UserInfo {
+                id: r.get(0)?,
+                name: r.get(1)?,
+                total_study_days: r.get(2)?,
+                current_streak: r.get(3)?,
+                longest_streak: r.get(4)?,
+                last_study_date: r.get(5)?,
+                goal_snack_id: r.get(6)?,
+            })
+        },
+    )
+}
+
+fn load_daily(conn: &Connection, date: &str) -> rusqlite::Result<DailyStats> {
+    let found = conn
+        .query_row(
+            "SELECT kcal_earned, kcal_consumed, answered, correct FROM daily_stats WHERE user_id = ?1 AND date = ?2",
+            params![USER_ID, date],
+            |r| {
+                Ok(DailyStats {
+                    date: date.to_string(),
+                    kcal_earned: r.get(0)?,
+                    kcal_consumed: r.get(1)?,
+                    answered: r.get(2)?,
+                    correct: r.get(3)?,
+                })
+            },
+        )
+        .optional()?;
+    Ok(found.unwrap_or(DailyStats { date: date.to_string(), ..Default::default() }))
+}
+
+fn load_snack(conn: &Connection, id: i64) -> rusqlite::Result<Option<Snack>> {
+    conn.query_row(
+        "SELECT id, name, calories, icon, is_builtin FROM snacks WHERE id = ?1",
+        params![id],
+        db::row_to_snack,
+    )
+    .optional()
+}
+
+fn list_snacks_inner(conn: &Connection) -> rusqlite::Result<Vec<Snack>> {
+    let mut stmt =
+        conn.prepare("SELECT id, name, calories, icon, is_builtin FROM snacks ORDER BY calories ASC, id ASC")?;
+    let rows = stmt.query_map([], db::row_to_snack)?;
+    rows.collect()
+}
+
+fn due_review_count(conn: &Connection) -> rusqlite::Result<i64> {
+    conn.query_row(
+        "SELECT COUNT(*) FROM learning_history WHERE user_id = ?1 AND needs_review = 1 AND next_due_at IS NOT NULL AND next_due_at <= ?2",
+        params![USER_ID, today()],
+        |r| r.get(0),
+    )
+}
+
+fn tickets_available(conn: &Connection) -> rusqlite::Result<i64> {
+    conn.query_row(
+        "SELECT COUNT(*) FROM cheat_tickets WHERE user_id = ?1 AND used_at IS NULL",
+        params![USER_ID],
+        |r| r.get(0),
+    )
+}
+
+/// Question counts per genre, in the order genres first appear in the seed data.
+fn category_infos(conn: &Connection) -> rusqlite::Result<Vec<CategoryInfo>> {
+    let mut stmt = conn.prepare(
+        "SELECT category, difficulty, COUNT(*), MIN(id) FROM questions WHERE category != '' GROUP BY category, difficulty",
+    )?;
+    let rows = stmt.query_map([], |r| {
+        Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, i64>(2)?, r.get::<_, i64>(3)?))
+    })?;
+    let mut out: Vec<(i64, CategoryInfo)> = Vec::new();
+    for row in rows {
+        let (name, difficulty, n, min_id) = row?;
+        let idx = match out.iter().position(|(_, c)| c.name == name) {
+            Some(i) => i,
+            None => {
+                out.push((min_id, CategoryInfo { name, total: 0, low: 0, mid: 0, high: 0 }));
+                out.len() - 1
+            }
+        };
+        let entry = &mut out[idx];
+        entry.0 = entry.0.min(min_id);
+        entry.1.total += n;
+        match difficulty.as_str() {
+            "low" => entry.1.low += n,
+            "mid" => entry.1.mid += n,
+            "high" => entry.1.high += n,
+            _ => {}
+        }
+    }
+    out.sort_by_key(|(first_id, _)| *first_id);
+    Ok(out.into_iter().map(|(_, c)| c).collect())
+}
+
+fn kcal_rates() -> KcalRates {
+    KcalRates {
+        low: srs::KCAL_LOW,
+        mid: srs::KCAL_MID,
+        high: srs::KCAL_HIGH,
+        review_multiplier: srs::REVIEW_MULTIPLIER,
+        cheat_day_bonus: srs::CHEAT_DAY_BONUS,
+    }
+}
+
+/* ---------- core logic (testable without Tauri) ---------- */
+
+fn build_session_question(
+    conn: &Connection,
+    q: Question,
+    mode: &str,
+    is_review: bool,
+) -> rusqlite::Result<SessionQuestion> {
+    let (display, sub_display, options, answer) = match mode {
+        "choice" => {
+            if let Some(ch) = q.choices.clone() {
+                // Grammar-style question: the prompt has a blank, choices are given.
+                let mut opts = ch;
+                shuffle(&mut opts);
+                (
+                    q.prompt.clone().unwrap_or_else(|| q.en.clone()),
+                    Some(q.ja.clone()),
+                    opts,
+                    q.en.clone(),
+                )
+            } else {
+                // Meaning question: 3 distractor translations, preferring the same genre and kind
+                // so the wrong options are plausible (e.g. other foods for a food word).
+                let mut opts: Vec<String> = Vec::new();
+                {
+                    let mut stmt = conn.prepare(
+                        "SELECT ja FROM questions WHERE id != ?1 AND kind = ?2 AND category = ?3 AND ja != ?4 ORDER BY RANDOM() LIMIT 3",
+                    )?;
+                    let same_genre: Vec<String> = stmt
+                        .query_map(params![q.id, q.kind, q.category, q.ja], |r| r.get(0))?
+                        .collect::<Result<_, _>>()?;
+                    extend_unique(&mut opts, same_genre, &q.ja);
+                }
+                if opts.len() < 3 {
+                    let mut stmt = conn.prepare(
+                        "SELECT ja FROM questions WHERE id != ?1 AND kind = ?2 AND ja != ?3 ORDER BY RANDOM() LIMIT 6",
+                    )?;
+                    let same_kind: Vec<String> = stmt
+                        .query_map(params![q.id, q.kind, q.ja], |r| r.get(0))?
+                        .collect::<Result<_, _>>()?;
+                    extend_unique(&mut opts, same_kind, &q.ja);
+                }
+                if opts.len() < 3 {
+                    let mut stmt =
+                        conn.prepare("SELECT ja FROM questions WHERE id != ?1 AND ja != ?2 ORDER BY RANDOM() LIMIT 6")?;
+                    let any: Vec<String> = stmt
+                        .query_map(params![q.id, q.ja], |r| r.get(0))?
+                        .collect::<Result<_, _>>()?;
+                    extend_unique(&mut opts, any, &q.ja);
+                }
+                opts.push(q.ja.clone());
+                shuffle(&mut opts);
+                (q.en.clone(), None, opts, q.ja.clone())
+            }
+        }
+        "typing" => (q.ja.clone(), q.prompt.clone(), Vec::new(), q.en.clone()),
+        _ => (q.en.clone(), Some(q.ja.clone()), Vec::new(), q.en.clone()),
+    };
+    Ok(SessionQuestion {
+        question: q,
+        mode: mode.to_string(),
+        is_review,
+        display,
+        sub_display,
+        options,
+        answer,
+    })
+}
+
+fn extend_unique(opts: &mut Vec<String>, more: Vec<String>, answer: &str) {
+    for m in more {
+        if opts.len() >= 3 {
+            break;
+        }
+        if m != answer && !opts.contains(&m) {
+            opts.push(m);
+        }
+    }
+}
+
+/// Due reviews first (at most 60% of the session), then unseen/fresh questions; shuffled.
+/// `category` is a genre name or "all".
+pub fn session_questions(
+    conn: &Connection,
+    mode: &str,
+    difficulty: &str,
+    category: &str,
+    count: u32,
+) -> rusqlite::Result<Vec<SessionQuestion>> {
+    let count = count.clamp(1, 50) as i64;
+    let mode_like = format!("%\"{}\"%", mode);
+    let today = today();
+    let max_reviews = ((count as f64) * 0.6).ceil() as i64;
+
+    let review_sql = format!(
+        "SELECT {Q_COLS} FROM questions q
+         JOIN learning_history h ON h.question_id = q.id
+         WHERE h.user_id = ?1 AND h.needs_review = 1 AND h.next_due_at IS NOT NULL AND h.next_due_at <= ?2
+           AND q.modes LIKE ?3 AND (?4 = 'mixed' OR q.difficulty = ?4) AND (?5 = 'all' OR q.category = ?5)
+         ORDER BY h.next_due_at ASC, RANDOM() LIMIT ?6"
+    );
+    let reviews: Vec<Question> = {
+        let mut stmt = conn.prepare(&review_sql)?;
+        let rows = stmt.query_map(
+            params![USER_ID, today, mode_like, difficulty, category, max_reviews],
+            db::row_to_question,
+        )?;
+        rows.collect::<Result<_, _>>()?
+    };
+
+    let remaining = count - reviews.len() as i64;
+    let exclude: Vec<String> = reviews.iter().map(|q| q.id.to_string()).collect();
+    let exclude_clause = if exclude.is_empty() {
+        String::new()
+    } else {
+        format!("AND q.id NOT IN ({})", exclude.join(","))
+    };
+    let fresh_sql = format!(
+        "SELECT {Q_COLS} FROM questions q
+         LEFT JOIN learning_history h ON h.question_id = q.id AND h.user_id = ?1
+         WHERE q.modes LIKE ?2 AND (?3 = 'mixed' OR q.difficulty = ?3) AND (?4 = 'all' OR q.category = ?4)
+           AND (h.needs_review IS NULL OR h.needs_review = 0) {exclude_clause}
+         ORDER BY (h.last_studied_at IS NOT NULL), RANDOM() LIMIT ?5"
+    );
+    let fresh: Vec<Question> = {
+        let mut stmt = conn.prepare(&fresh_sql)?;
+        let rows = stmt.query_map(
+            params![USER_ID, mode_like, difficulty, category, remaining],
+            db::row_to_question,
+        )?;
+        rows.collect::<Result<_, _>>()?
+    };
+
+    let mut out = Vec::with_capacity(count as usize);
+    for q in reviews {
+        out.push(build_session_question(conn, q, mode, true)?);
+    }
+    for q in fresh {
+        out.push(build_session_question(conn, q, mode, false)?);
+    }
+    shuffle(&mut out);
+    Ok(out)
+}
+
+/// Records one answer: kcal reward, SRS schedule, daily stats, streak and cheat-day tickets.
+pub fn record_answer(conn: &mut Connection, payload: &AnswerPayload) -> Result<AnswerResult, String> {
+    let tx = conn.transaction().map_err(err)?;
+    let today = today();
+    let now = now_ts();
+
+    let difficulty: String = tx
+        .query_row(
+            "SELECT difficulty FROM questions WHERE id = ?1",
+            params![payload.question_id],
+            |r| r.get(0),
+        )
+        .map_err(|_| format!("question {} not found", payload.question_id))?;
+
+    let hist: Option<(i64, i64, Option<String>)> = tx
+        .query_row(
+            "SELECT srs_level, needs_review, next_due_at FROM learning_history WHERE user_id = ?1 AND question_id = ?2",
+            params![USER_ID, payload.question_id],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .optional()
+        .map_err(err)?;
+    let (level, needs_review, next_due) = hist.unwrap_or((0, 0, None));
+    let in_review = needs_review == 1;
+    let is_due_review = in_review
+        && next_due
+            .as_deref()
+            .map(|d| d <= today.as_str())
+            .unwrap_or(false);
+
+    let low_score = payload.mode == "speaking"
+        && payload
+            .score
+            .map(|s| s < srs::SPEAKING_REVIEW_THRESHOLD)
+            .unwrap_or(false);
+    let mut kcal = srs::kcal_for(&difficulty, &payload.mode, payload.correct, payload.score);
+    if is_due_review && payload.correct {
+        kcal = srs::apply_review_bonus(kcal);
+    }
+    let (new_level, new_needs_review, new_next_due) =
+        srs::next_state(level, in_review, payload.correct, low_score);
+
+    tx.execute(
+        "INSERT INTO learning_history
+           (user_id, question_id, correct_count, wrong_count, last_correct, last_score, srs_level, needs_review, last_studied_at, next_due_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+         ON CONFLICT(user_id, question_id) DO UPDATE SET
+           correct_count = correct_count + excluded.correct_count,
+           wrong_count = wrong_count + excluded.wrong_count,
+           last_correct = excluded.last_correct,
+           last_score = excluded.last_score,
+           srs_level = excluded.srs_level,
+           needs_review = excluded.needs_review,
+           last_studied_at = excluded.last_studied_at,
+           next_due_at = excluded.next_due_at",
+        params![
+            USER_ID,
+            payload.question_id,
+            payload.correct as i64,
+            (!payload.correct) as i64,
+            payload.correct as i64,
+            payload.score,
+            new_level,
+            new_needs_review as i64,
+            now,
+            new_next_due
+        ],
+    )
+    .map_err(err)?;
+
+    tx.execute(
+        "INSERT INTO answer_log (user_id, question_id, mode, correct, score, kcal, is_review, answered_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+        params![
+            USER_ID,
+            payload.question_id,
+            payload.mode,
+            payload.correct as i64,
+            payload.score,
+            kcal,
+            is_due_review as i64,
+            now
+        ],
+    )
+    .map_err(err)?;
+
+    tx.execute(
+        "INSERT INTO daily_stats (user_id, date, kcal_earned, answered, correct) VALUES (?1, ?2, ?3, 1, ?4)
+         ON CONFLICT(user_id, date) DO UPDATE SET
+           kcal_earned = kcal_earned + excluded.kcal_earned,
+           answered = answered + 1,
+           correct = correct + excluded.correct",
+        params![USER_ID, today, kcal, payload.correct as i64],
+    )
+    .map_err(err)?;
+
+    // Streak bookkeeping happens once per calendar day.
+    let user = load_user(&tx).map_err(err)?;
+    let mut streak = user.current_streak;
+    let mut first_study_today = false;
+    let mut new_ticket = false;
+    if user.last_study_date.as_deref() != Some(today.as_str()) {
+        first_study_today = true;
+        streak = if user.last_study_date.as_deref() == Some(date_plus(-1).as_str()) {
+            user.current_streak + 1
+        } else {
+            1
+        };
+        let longest = user.longest_streak.max(streak);
+        tx.execute(
+            "UPDATE users SET current_streak = ?1, longest_streak = ?2, total_study_days = total_study_days + 1, last_study_date = ?3 WHERE id = ?4",
+            params![streak, longest, today, USER_ID],
+        )
+        .map_err(err)?;
+        if streak % 7 == 0 {
+            tx.execute(
+                "INSERT INTO cheat_tickets (user_id, issued_at, issued_for_streak) VALUES (?1, ?2, ?3)",
+                params![USER_ID, now, streak],
+            )
+            .map_err(err)?;
+            new_ticket = true;
+        }
+    }
+
+    let today_stats = load_daily(&tx, &today).map_err(err)?;
+    tx.commit().map_err(err)?;
+    Ok(AnswerResult {
+        kcal_earned: kcal,
+        today_kcal: today_stats.kcal_earned,
+        streak,
+        new_ticket,
+        first_study_today,
+        is_review: is_due_review,
+        needs_review: new_needs_review,
+        next_due: new_next_due,
+    })
+}
+
+pub fn redeem_ticket(conn: &Connection) -> Result<RedeemResult, String> {
+    let ticket_id: Option<i64> = conn
+        .query_row(
+            "SELECT id FROM cheat_tickets WHERE user_id = ?1 AND used_at IS NULL ORDER BY issued_at ASC LIMIT 1",
+            params![USER_ID],
+            |r| r.get(0),
+        )
+        .optional()
+        .map_err(err)?;
+    let Some(ticket_id) = ticket_id else {
+        return Err("使えるチートデイチケットがありません".into());
+    };
+    let today = today();
+    conn.execute(
+        "UPDATE cheat_tickets SET used_at = ?1 WHERE id = ?2",
+        params![now_ts(), ticket_id],
+    )
+    .map_err(err)?;
+    conn.execute(
+        "INSERT INTO daily_stats (user_id, date, kcal_earned) VALUES (?1, ?2, ?3)
+         ON CONFLICT(user_id, date) DO UPDATE SET kcal_earned = kcal_earned + excluded.kcal_earned",
+        params![USER_ID, today, srs::CHEAT_DAY_BONUS],
+    )
+    .map_err(err)?;
+    let stats = load_daily(conn, &today).map_err(err)?;
+    Ok(RedeemResult {
+        kcal_added: srs::CHEAT_DAY_BONUS,
+        today_kcal: stats.kcal_earned,
+        tickets_left: tickets_available(conn).map_err(err)?,
+    })
+}
+
+/* ---------- Tauri commands ---------- */
+
+#[tauri::command]
+pub fn get_dashboard(state: State<'_, AppState>) -> CmdResult<Dashboard> {
+    let conn = state.db.lock().map_err(err)?;
+    let user = load_user(&conn).map_err(err)?;
+    let today_stats = load_daily(&conn, &today()).map_err(err)?;
+    let goal_snack = match user.goal_snack_id {
+        Some(id) => load_snack(&conn, id).map_err(err)?,
+        None => None,
+    };
+    Ok(Dashboard {
+        today: today_stats,
+        goal_snack,
+        snacks: list_snacks_inner(&conn).map_err(err)?,
+        categories: category_infos(&conn).map_err(err)?,
+        due_review_count: due_review_count(&conn).map_err(err)?,
+        tickets_available: tickets_available(&conn).map_err(err)?,
+        kcal_rates: kcal_rates(),
+        user,
+    })
+}
+
+#[tauri::command]
+pub fn get_session_questions(
+    state: State<'_, AppState>,
+    mode: String,
+    difficulty: String,
+    category: Option<String>,
+    count: u32,
+) -> CmdResult<Vec<SessionQuestion>> {
+    let conn = state.db.lock().map_err(err)?;
+    let category = category.filter(|c| !c.trim().is_empty()).unwrap_or_else(|| "all".to_string());
+    session_questions(&conn, &mode, &difficulty, &category, count).map_err(err)
+}
+
+#[tauri::command]
+pub fn submit_answer(state: State<'_, AppState>, payload: AnswerPayload) -> CmdResult<AnswerResult> {
+    let mut conn = state.db.lock().map_err(err)?;
+    record_answer(&mut conn, &payload)
+}
+
+#[tauri::command]
+pub fn list_snacks(state: State<'_, AppState>) -> CmdResult<Vec<Snack>> {
+    let conn = state.db.lock().map_err(err)?;
+    list_snacks_inner(&conn).map_err(err)
+}
+
+#[tauri::command]
+pub fn add_snack(state: State<'_, AppState>, name: String, calories: i64, icon: String) -> CmdResult<Snack> {
+    let name = name.trim().to_string();
+    if name.is_empty() {
+        return Err("お菓子の名前を入力してください".into());
+    }
+    if !(1..=5000).contains(&calories) {
+        return Err("カロリーは1〜5000の範囲で入力してください".into());
+    }
+    let icon = if icon.trim().is_empty() { "🍬".to_string() } else { icon };
+    let conn = state.db.lock().map_err(err)?;
+    conn.execute(
+        "INSERT INTO snacks (name, calories, icon, is_builtin, created_at) VALUES (?1, ?2, ?3, 0, ?4)",
+        params![name, calories, icon, now_ts()],
+    )
+    .map_err(err)?;
+    let id = conn.last_insert_rowid();
+    load_snack(&conn, id)
+        .map_err(err)?
+        .ok_or_else(|| "failed to load snack".to_string())
+}
+
+#[tauri::command]
+pub fn delete_snack(state: State<'_, AppState>, id: i64) -> CmdResult<()> {
+    let conn = state.db.lock().map_err(err)?;
+    conn.execute(
+        "UPDATE users SET goal_snack_id = NULL WHERE id = ?1 AND goal_snack_id = ?2",
+        params![USER_ID, id],
+    )
+    .map_err(err)?;
+    conn.execute("DELETE FROM snacks WHERE id = ?1", params![id]).map_err(err)?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn set_goal_snack(state: State<'_, AppState>, id: Option<i64>) -> CmdResult<Option<Snack>> {
+    let conn = state.db.lock().map_err(err)?;
+    conn.execute("UPDATE users SET goal_snack_id = ?1 WHERE id = ?2", params![id, USER_ID])
+        .map_err(err)?;
+    match id {
+        Some(id) => load_snack(&conn, id).map_err(err),
+        None => Ok(None),
+    }
+}
+
+#[tauri::command]
+pub fn log_snack_eaten(state: State<'_, AppState>, snack_id: i64) -> CmdResult<DailyStats> {
+    let conn = state.db.lock().map_err(err)?;
+    let snack = load_snack(&conn, snack_id)
+        .map_err(err)?
+        .ok_or_else(|| "snack not found".to_string())?;
+    let today = today();
+    conn.execute(
+        "INSERT INTO consumption_log (user_id, snack_id, snack_name, snack_icon, calories, date, eaten_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+        params![USER_ID, snack.id, snack.name, snack.icon, snack.calories, today, now_ts()],
+    )
+    .map_err(err)?;
+    conn.execute(
+        "INSERT INTO daily_stats (user_id, date, kcal_consumed) VALUES (?1, ?2, ?3)
+         ON CONFLICT(user_id, date) DO UPDATE SET kcal_consumed = kcal_consumed + excluded.kcal_consumed",
+        params![USER_ID, today, snack.calories],
+    )
+    .map_err(err)?;
+    load_daily(&conn, &today).map_err(err)
+}
+
+#[tauri::command]
+pub fn get_today_consumption(state: State<'_, AppState>) -> CmdResult<Vec<ConsumptionEntry>> {
+    let conn = state.db.lock().map_err(err)?;
+    let mut stmt = conn
+        .prepare("SELECT id, snack_name, snack_icon, calories, eaten_at FROM consumption_log WHERE user_id = ?1 AND date = ?2 ORDER BY eaten_at DESC")
+        .map_err(err)?;
+    let rows = stmt
+        .query_map(params![USER_ID, today()], |r| {
+            Ok(ConsumptionEntry {
+                id: r.get(0)?,
+                snack_name: r.get(1)?,
+                snack_icon: r.get(2)?,
+                calories: r.get(3)?,
+                eaten_at: r.get(4)?,
+            })
+        })
+        .map_err(err)?;
+    rows.collect::<Result<_, _>>().map_err(err)
+}
+
+#[tauri::command]
+pub fn delete_consumption(state: State<'_, AppState>, id: i64) -> CmdResult<DailyStats> {
+    let conn = state.db.lock().map_err(err)?;
+    let entry: Option<(i64, String)> = conn
+        .query_row(
+            "SELECT calories, date FROM consumption_log WHERE id = ?1 AND user_id = ?2",
+            params![id, USER_ID],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .optional()
+        .map_err(err)?;
+    if let Some((calories, date)) = entry {
+        conn.execute("DELETE FROM consumption_log WHERE id = ?1", params![id]).map_err(err)?;
+        conn.execute(
+            "UPDATE daily_stats SET kcal_consumed = MAX(0, kcal_consumed - ?1) WHERE user_id = ?2 AND date = ?3",
+            params![calories, USER_ID, date],
+        )
+        .map_err(err)?;
+    }
+    load_daily(&conn, &today()).map_err(err)
+}
+
+#[tauri::command]
+pub fn redeem_cheat_ticket(state: State<'_, AppState>) -> CmdResult<RedeemResult> {
+    let conn = state.db.lock().map_err(err)?;
+    redeem_ticket(&conn)
+}
+
+#[tauri::command]
+pub fn get_stats(state: State<'_, AppState>) -> CmdResult<Stats> {
+    let conn = state.db.lock().map_err(err)?;
+    let user = load_user(&conn).map_err(err)?;
+    let (total_kcal, total_answered, total_correct): (i64, i64, i64) = conn
+        .query_row(
+            "SELECT COALESCE(SUM(kcal_earned), 0), COALESCE(SUM(answered), 0), COALESCE(SUM(correct), 0) FROM daily_stats WHERE user_id = ?1",
+            params![USER_ID],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .map_err(err)?;
+    let accuracy = if total_answered > 0 {
+        total_correct as f64 / total_answered as f64
+    } else {
+        0.0
+    };
+
+    let start = date_plus(-13);
+    let mut by_date: HashMap<String, (i64, i64, i64)> = HashMap::new();
+    {
+        let mut stmt = conn
+            .prepare("SELECT date, kcal_earned, answered, correct FROM daily_stats WHERE user_id = ?1 AND date >= ?2")
+            .map_err(err)?;
+        let rows = stmt
+            .query_map(params![USER_ID, start], |r| {
+                Ok((
+                    r.get::<_, String>(0)?,
+                    (r.get::<_, i64>(1)?, r.get::<_, i64>(2)?, r.get::<_, i64>(3)?),
+                ))
+            })
+            .map_err(err)?;
+        for row in rows {
+            let (d, v) = row.map_err(err)?;
+            by_date.insert(d, v);
+        }
+    }
+    let last_14_days = (0..14)
+        .map(|i| {
+            let date = date_plus(i - 13);
+            let (k, a, c) = by_date.get(&date).copied().unwrap_or((0, 0, 0));
+            DayPoint { date, kcal_earned: k, answered: a, correct: c }
+        })
+        .collect();
+
+    let weak_questions = {
+        let sql = format!(
+            "SELECT {Q_COLS}, h.wrong_count, h.last_score, h.next_due_at, h.srs_level
+             FROM learning_history h JOIN questions q ON q.id = h.question_id
+             WHERE h.user_id = ?1 AND (h.needs_review = 1 OR h.wrong_count > 0)
+             ORDER BY h.needs_review DESC, h.wrong_count DESC, COALESCE(h.last_score, 0) ASC LIMIT 12"
+        );
+        let mut stmt = conn.prepare(&sql).map_err(err)?;
+        let rows = stmt
+            .query_map(params![USER_ID], |r| {
+                Ok(WeakQuestion {
+                    question: db::row_to_question(r)?,
+                    wrong_count: r.get(12)?,
+                    last_score: r.get(13)?,
+                    next_due: r.get(14)?,
+                    srs_level: r.get(15)?,
+                })
+            })
+            .map_err(err)?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(err)?
+    };
+
+    let tickets = {
+        let mut stmt = conn
+            .prepare("SELECT id, issued_at, issued_for_streak, used_at FROM cheat_tickets WHERE user_id = ?1 ORDER BY issued_at DESC LIMIT 20")
+            .map_err(err)?;
+        let rows = stmt
+            .query_map(params![USER_ID], |r| {
+                Ok(Ticket {
+                    id: r.get(0)?,
+                    issued_at: r.get(1)?,
+                    issued_for_streak: r.get(2)?,
+                    used_at: r.get(3)?,
+                })
+            })
+            .map_err(err)?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(err)?
+    };
+
+    let review_pending: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM learning_history WHERE user_id = ?1 AND needs_review = 1",
+            params![USER_ID],
+            |r| r.get(0),
+        )
+        .map_err(err)?;
+
+    Ok(Stats {
+        total_study_days: user.total_study_days,
+        current_streak: user.current_streak,
+        longest_streak: user.longest_streak,
+        total_kcal,
+        total_answered,
+        total_correct,
+        accuracy,
+        last_14_days,
+        weak_questions,
+        tickets,
+        review_due: due_review_count(&conn).map_err(err)?,
+        review_pending,
+    })
+}
+
+#[tauri::command]
+pub fn reset_progress(state: State<'_, AppState>) -> CmdResult<()> {
+    let conn = state.db.lock().map_err(err)?;
+    conn.execute_batch(
+        "DELETE FROM learning_history; DELETE FROM answer_log; DELETE FROM daily_stats;
+         DELETE FROM consumption_log; DELETE FROM cheat_tickets;
+         UPDATE users SET total_study_days = 0, current_streak = 0, longest_streak = 0, last_study_date = NULL;",
+    )
+    .map_err(err)
+}
+
+#[tauri::command]
+pub fn log_debug(message: String) {
+    println!("[frontend] {message}");
+}
+
+/* ---------- tests ---------- */
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn conn() -> Connection {
+        db::init_in_memory().expect("in-memory db")
+    }
+
+    fn question_id(conn: &Connection, key: &str) -> i64 {
+        conn.query_row("SELECT id FROM questions WHERE key = ?1", params![key], |r| r.get(0))
+            .expect("seed question")
+    }
+
+    fn history(conn: &Connection, qid: i64) -> (i64, i64, Option<String>) {
+        conn.query_row(
+            "SELECT srs_level, needs_review, next_due_at FROM learning_history WHERE user_id = 1 AND question_id = ?1",
+            params![qid],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .expect("history row")
+    }
+
+    fn answer(conn: &mut Connection, qid: i64, mode: &str, correct: bool, score: Option<f64>) -> AnswerResult {
+        record_answer(conn, &AnswerPayload { question_id: qid, mode: mode.into(), correct, score }).expect("record")
+    }
+
+    #[test]
+    fn seeds_questions_and_snacks() {
+        let c = conn();
+        let n: i64 = c.query_row("SELECT COUNT(*) FROM questions", [], |r| r.get(0)).unwrap();
+        assert!(n >= 100, "expected seed questions, got {n}");
+        let s: i64 = c.query_row("SELECT COUNT(*) FROM snacks WHERE is_builtin = 1", [], |r| r.get(0)).unwrap();
+        assert_eq!(s, 10);
+    }
+
+    #[test]
+    fn correct_low_answer_earns_five_kcal() {
+        let mut c = conn();
+        let qid = question_id(&c, "w001");
+        let r = answer(&mut c, qid, "choice", true, None);
+        assert_eq!(r.kcal_earned, 5);
+        assert_eq!(r.today_kcal, 5);
+        assert!(r.first_study_today);
+        assert_eq!(r.streak, 1);
+        assert!(!r.needs_review);
+        let d = load_daily(&c, &today()).unwrap();
+        assert_eq!((d.answered, d.correct), (1, 1));
+    }
+
+    #[test]
+    fn wrong_answer_schedules_review_tomorrow() {
+        let mut c = conn();
+        let qid = question_id(&c, "w002");
+        let r = answer(&mut c, qid, "typing", false, None);
+        assert_eq!(r.kcal_earned, 0);
+        assert!(r.needs_review);
+        assert_eq!(r.next_due.as_deref(), Some(date_plus(1).as_str()));
+        let (level, needs, due) = history(&c, qid);
+        assert_eq!((level, needs), (0, 1));
+        assert_eq!(due.as_deref(), Some(date_plus(1).as_str()));
+        // Not due yet: it must not be served again today, neither as review nor as fresh.
+        for _ in 0..5 {
+            let s = session_questions(&c, "typing", "low", "all", 50).unwrap();
+            assert!(s.iter().all(|q| q.question.id != qid));
+        }
+    }
+
+    #[test]
+    fn due_review_pays_bonus_and_advances_level() {
+        let mut c = conn();
+        let qid = question_id(&c, "w003");
+        answer(&mut c, qid, "choice", false, None);
+        c.execute("UPDATE learning_history SET next_due_at = ?1 WHERE question_id = ?2", params![today(), qid]).unwrap();
+        assert_eq!(due_review_count(&c).unwrap(), 1);
+
+        let session = session_questions(&c, "choice", "low", "all", 10).unwrap();
+        let served = session.iter().find(|q| q.question.id == qid).expect("due question served");
+        assert!(served.is_review);
+        assert_eq!(served.options.len(), 4);
+        assert!(served.options.contains(&served.answer));
+
+        let r = answer(&mut c, qid, "choice", true, None);
+        assert!(r.is_review);
+        assert_eq!(r.kcal_earned, 8, "5 kcal x 1.5 rounded");
+        let (level, needs, due) = history(&c, qid);
+        assert_eq!((level, needs), (1, 1));
+        assert_eq!(due.as_deref(), Some(date_plus(3).as_str()));
+    }
+
+    #[test]
+    fn speaking_score_scales_kcal_and_low_scores_go_to_review() {
+        let mut c = conn();
+        let qid = question_id(&c, "i001"); // high difficulty: 25 kcal
+        let r = answer(&mut c, qid, "speaking", true, Some(80.0));
+        assert_eq!(r.kcal_earned, 20);
+        assert!(!r.needs_review);
+        let r = answer(&mut c, qid, "speaking", true, Some(65.0));
+        assert_eq!(r.kcal_earned, 16);
+        assert!(r.needs_review, "scores under 70 are scheduled for review");
+    }
+
+    #[test]
+    fn streak_continues_from_yesterday_and_issues_ticket_on_day_seven() {
+        let mut c = conn();
+        c.execute(
+            "UPDATE users SET current_streak = 6, longest_streak = 6, total_study_days = 6, last_study_date = ?1 WHERE id = 1",
+            params![date_plus(-1)],
+        )
+        .unwrap();
+        let qid = question_id(&c, "p001");
+        let r = answer(&mut c, qid, "choice", true, None);
+        assert_eq!(r.streak, 7);
+        assert!(r.new_ticket);
+        assert_eq!(tickets_available(&c).unwrap(), 1);
+        // A second answer on the same day changes nothing about the streak.
+        let r2 = answer(&mut c, qid, "choice", true, None);
+        assert_eq!(r2.streak, 7);
+        assert!(!r2.new_ticket && !r2.first_study_today);
+
+        let redeemed = redeem_ticket(&c).unwrap();
+        assert_eq!(redeemed.kcal_added, srs::CHEAT_DAY_BONUS);
+        assert_eq!(redeemed.today_kcal, 10 + 10 + srs::CHEAT_DAY_BONUS);
+        assert_eq!(redeemed.tickets_left, 0);
+        assert!(redeem_ticket(&c).is_err());
+    }
+
+    #[test]
+    fn broken_streak_restarts_at_one() {
+        let mut c = conn();
+        c.execute(
+            "UPDATE users SET current_streak = 4, longest_streak = 4, last_study_date = ?1 WHERE id = 1",
+            params![date_plus(-3)],
+        )
+        .unwrap();
+        let qid = question_id(&c, "g001");
+        let r = answer(&mut c, qid, "choice", true, None);
+        assert_eq!(r.streak, 1);
+        let u = load_user(&c).unwrap();
+        assert_eq!(u.longest_streak, 4);
+    }
+
+    #[test]
+    fn session_respects_mode_and_difficulty() {
+        let c = conn();
+        let s = session_questions(&c, "typing", "high", "all", 10).unwrap();
+        assert!(!s.is_empty());
+        assert!(s.iter().all(|q| q.question.difficulty == "high" && q.question.modes.iter().any(|m| m == "typing")));
+        let g = session_questions(&c, "choice", "mid", "all", 50).unwrap();
+        assert!(g.iter().any(|q| q.question.kind == "grammar"), "grammar questions appear in choice mode");
+        assert!(g.iter().filter(|q| q.question.kind == "grammar").all(|q| q.options.len() == 4 && q.options.contains(&q.answer)));
+    }
+
+    #[test]
+    fn session_filters_by_category_and_uses_genre_distractors() {
+        let c = conn();
+        let food = session_questions(&c, "choice", "low", "食べ物", 20).unwrap();
+        assert!(!food.is_empty());
+        assert!(food.iter().all(|q| q.question.category == "食べ物"));
+        for q in &food {
+            assert_eq!(q.options.len(), 4);
+            assert!(q.options.contains(&q.answer));
+            let unique: std::collections::HashSet<&String> = q.options.iter().collect();
+            assert_eq!(unique.len(), 4, "options must be distinct: {:?}", q.options);
+        }
+        // Every seeded question has a genre, and the dashboard summary covers all of them.
+        let missing: i64 = c.query_row("SELECT COUNT(*) FROM questions WHERE category = ''", [], |r| r.get(0)).unwrap();
+        assert_eq!(missing, 0);
+        let cats = category_infos(&c).unwrap();
+        let total: i64 = cats.iter().map(|x| x.total).sum();
+        let all: i64 = c.query_row("SELECT COUNT(*) FROM questions", [], |r| r.get(0)).unwrap();
+        assert_eq!(total, all);
+        assert!(cats.iter().any(|x| x.name == "文法" && x.mid > 0));
+    }
+}
