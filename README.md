@@ -65,15 +65,19 @@ cd src-tauri && cargo test
 
 ## 問題データ
 
-`src-tauri/data/questions.json` に約340問。難易度（低・中・高）とジャンルで絞り込めます。
+`src-tauri/data/` に約1,060問。難易度（低・中・高）とジャンルで絞り込めます。
 
-| ジャンル | 内容 |
-| --- | --- |
-| 食べ物 / 日常生活 / 旅行・交通 / 買い物 / 学校・仕事 / 自然・天気 / からだ・健康 / 気持ち・性格 / 時間・数 | 英単語（低）、フレーズ（中）、長文（高） |
-| 文法 | 穴埋め4択（中） |
-| 慣用句 | イディオム（高） |
+| 種類 | 難易度 | 問題数 | ファイル |
+| --- | --- | --- | --- |
+| 英単語 | 低 | 508 | `questions.json`, `words-2a.json`, `words-2b.json` |
+| フレーズ | 中 | 206 | `questions.json`, `phrases-2.json` |
+| 文法（穴埋め4択） | 中 | 112 | `questions.json`, `grammar-2.json` |
+| 慣用句 | 高 | 119 | `questions.json`, `idioms-2.json` |
+| 長文 | 高 | 114 | `questions.json`, `sentences-2.json` |
 
-追記するときは末尾に新しい `key` で追加し、先頭の `version` を 1 つ上げると次回起動時に取り込まれます。
+ジャンル: 食べ物 / 日常生活 / 旅行・交通 / 買い物 / 学校・仕事 / 自然・天気 / からだ・健康 / 気持ち・性格 / 時間・数 / 動物 / 趣味・スポーツ / 色・かたち / 人・職業 / 街・建物 / テクノロジー / 文法 / 慣用句
+
+追記するときは末尾に新しい `key` で追加し（新しいファイルなら `src-tauri/src/db.rs` の `EXTRA_QUESTION_PACKS` と `src/lib/mockBackend.ts` にも登録）、`questions.json` 先頭の `version` を 1 つ上げると次回起動時に取り込まれます。`cargo test` がキーの重複・文法問題の選択肢・同ジャンル内の訳の重複を検査します。
 
 ## 構成
 

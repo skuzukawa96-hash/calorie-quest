@@ -29,7 +29,7 @@ npm run tauri build        # 配布ビルド
 | `src-tauri/src/commands.rs` | Tauri コマンド。コアロジックは `session_questions` / `record_answer` / `redeem_ticket` に分離され、`Connection` だけでテストできる |
 | `src-tauri/src/db.rs` | スキーマ、`ensure_column` によるマイグレーション、`questions.json` / お菓子の初期投入 |
 | `src-tauri/src/speech.rs` | SAPI5 で英語 TTS → WAV（フロントで再生）、WinRT `SpeechRecognizer` のリスト文法で発音判定 |
-| `src-tauri/data/questions.json` | 問題データ。`version` を上げると起動時に key 単位で upsert される |
+| `src-tauri/data/*.json` | 問題データ（約1,060問）。`questions.json` が `version` を持ち、追加パック（`words-2a.json` など）は `db.rs` の `EXTRA_QUESTION_PACKS` と `mockBackend.ts` の import で結合。`version` を上げると起動時に key 単位で upsert される |
 | `src/lib/speech.ts` | TTS/STT の切り替え（Tauri=native、ブラウザ=web）、`INSTALL_STT_GUIDE` |
 | `src/lib/scoring.ts` | 一致度・流暢さ・発音のコツ検出（`detectTrickySounds`） |
 | `src/screens/` | Home（ジャンル・難易度選択）、Study（3モード＋回答後の自動読み上げ）、Snacks、Stats |
@@ -39,7 +39,8 @@ npm run tauri build        # 配布ビルド
 - 問題の `key` は不変（`w###` 単語 / `p###` フレーズ / `g###` 文法 / `i###` 慣用句 / `s###` 長文）。学習履歴は id 経由で key に紐づくので、既存 key の意味を変えない。新規は末尾に追加
 - 必須フィールド: `kind` / `difficulty`（low|mid|high）/ `category`（ジャンル名。アイコンは `src/types.ts` の `CATEGORY_ICON`）/ `en` / `ja` / `modes`
 - 文法問題は `prompt`（`___` が空欄）と `choices`（正解 `en` を含む4つ）を持ち、`modes` は `["choice"]`
-- 4択の誤答は同ジャンル・同 kind の `ja` から自動生成されるので、同ジャンル内で `ja` が重複しないようにする
+- 4択の誤答は同ジャンル・同 kind の `ja` から自動生成されるので、同ジャンル内で `ja` が重複しないようにする（`cargo test` の `seed_data_is_well_formed_and_has_at_least_1000_questions` が検査する）
+- 新しいデータファイルを足すときは `db.rs` の `EXTRA_QUESTION_PACKS` と `mockBackend.ts` の import の両方に登録する
 - スキーマ変更は `SCHEMA` に列を足すだけでなく `ensure_column` で既存 DB にも追加する
 
 ## 検証の流儀

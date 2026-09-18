@@ -1,6 +1,12 @@
 // In-memory stand-in for the Rust backend so the UI can be developed in a normal browser.
 // It mirrors the rules in src-tauri/src/srs.rs and commands.rs; the Tauri build never loads it.
 import seedJson from "../../src-tauri/data/questions.json";
+import words2a from "../../src-tauri/data/words-2a.json";
+import words2b from "../../src-tauri/data/words-2b.json";
+import phrases2 from "../../src-tauri/data/phrases-2.json";
+import grammar2 from "../../src-tauri/data/grammar-2.json";
+import idioms2 from "../../src-tauri/data/idioms-2.json";
+import sentences2 from "../../src-tauri/data/sentences-2.json";
 import type {
   AnswerPayload,
   AnswerResult,
@@ -60,7 +66,17 @@ const RATES = { low: 5, mid: 10, high: 25, reviewMultiplier: 1.5, cheatDayBonus:
 const INTERVALS = [1, 3, 7, 14, 30];
 const STORAGE_KEY = "calorie-quest-mock-v1";
 
-const questions: Question[] = (seedJson as unknown as { questions: SeedQuestion[] }).questions.map(
+const seedQuestions: SeedQuestion[] = [
+  ...(seedJson as unknown as { questions: SeedQuestion[] }).questions,
+  ...(words2a as unknown as SeedQuestion[]),
+  ...(words2b as unknown as SeedQuestion[]),
+  ...(phrases2 as unknown as SeedQuestion[]),
+  ...(grammar2 as unknown as SeedQuestion[]),
+  ...(idioms2 as unknown as SeedQuestion[]),
+  ...(sentences2 as unknown as SeedQuestion[]),
+];
+
+const questions: Question[] = seedQuestions.map(
   (q, i) => ({
     id: i + 1,
     key: q.key,

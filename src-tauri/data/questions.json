@@ -1,5 +1,5 @@
 {
-  "version": 2,
+  "version": 3,
   "questions": [
     {"key":"w001","kind":"word","difficulty":"low","category":"食べ物","en":"apple","ja":"りんご","modes":["choice","typing","speaking"]},
     {"key":"w002","kind":"word","difficulty":"low","category":"食べ物","en":"water","ja":"水","modes":["choice","typing","speaking"]},
