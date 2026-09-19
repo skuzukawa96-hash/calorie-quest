@@ -29,7 +29,7 @@ npm run tauri build        # 配布ビルド
 | `src-tauri/src/commands.rs` | Tauri コマンド。コアロジックは `session_questions` / `record_answer` / `redeem_ticket` に分離され、`Connection` だけでテストできる |
 | `src-tauri/src/db.rs` | スキーマ、`ensure_column` によるマイグレーション、`questions.json` / お菓子の初期投入 |
 | `src-tauri/src/speech.rs` | SAPI5 で英語 TTS → WAV（フロントで再生）、WinRT `SpeechRecognizer` のリスト文法で発音判定 |
-| `src-tauri/data/*.json` | 問題データ（4,502問・20ジャンル・150意味グループ）と `glossary.json`（補助語彙1,371語）。`questions.json` が `version` を持ち、追加パック（`words-2a.json` など27ファイル）は `db.rs` の `EXTRA_QUESTION_PACKS` と `mockBackend.ts` の import で結合。`version` を上げると起動時に key 単位で upsert される |
+| `src-tauri/data/*.json` | 問題データ（7,562問・20ジャンル・247意味グループ）と `glossary.json`（補助語彙1,939語）。`questions.json` が `version` を持ち、追加パック（`words-2a.json` など38ファイル）は `db.rs` の `EXTRA_QUESTION_PACKS` と `mockBackend.ts` の import で結合。`version` を上げると起動時に key 単位で upsert される |
 | `src/lib/speech.ts` | TTS/STT の切り替え（Tauri=native、ブラウザ=web）、`INSTALL_STT_GUIDE` |
 | `src/lib/scoring.ts` | 一致度・流暢さ・発音のコツ検出（`detectTrickySounds`） |
 | `src/lib/dictionary.ts` | 単語ポップアップの辞書引き。`tokenize` / `lemmas` は `util.rs` の同名関数と挙動を合わせる |
