@@ -346,6 +346,22 @@ export default function Study({ mode, difficulty, category, rates, onExit, onPro
                   </button>
                 )}
               </div>
+              {current.question.example && (
+                <div className="example-line">
+                  <span className="label">例文</span>
+                  <div className="example-en">
+                    <GlossedText text={current.question.example} dict={dict} enabled={showGloss} />
+                    <button
+                      className="btn-link"
+                      onClick={() => speak(current.question.example!).catch(() => undefined)}
+                      disabled={!isTtsSupported()}
+                    >
+                      🔊
+                    </button>
+                  </div>
+                  {current.question.exampleJa && <div className="muted">{current.question.exampleJa}</div>}
+                </div>
+              )}
               {feedback.score && (
                 <div className="score-breakdown">
                   <span>

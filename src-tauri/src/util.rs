@@ -30,11 +30,40 @@ pub fn tokens(text: &str) -> Vec<String> {
         .collect()
 }
 
+/// Irregular verb forms, which no suffix rule can undo.
+const IRREGULAR: &[(&str, &str)] = &[
+    ("was", "be"), ("were", "be"), ("been", "be"), ("is", "be"), ("are", "be"), ("am", "be"),
+    ("had", "have"), ("has", "have"), ("did", "do"), ("does", "do"), ("done", "do"),
+    ("went", "go"), ("gone", "go"), ("came", "come"), ("saw", "see"), ("seen", "see"),
+    ("took", "take"), ("taken", "take"), ("made", "make"), ("said", "say"), ("got", "get"),
+    ("gotten", "get"), ("knew", "know"), ("known", "know"), ("thought", "think"),
+    ("found", "find"), ("told", "tell"), ("became", "become"), ("left", "leave"),
+    ("felt", "feel"), ("brought", "bring"), ("began", "begin"), ("begun", "begin"),
+    ("kept", "keep"), ("held", "hold"), ("wrote", "write"), ("written", "write"),
+    ("stood", "stand"), ("heard", "hear"), ("meant", "mean"), ("met", "meet"), ("ran", "run"),
+    ("paid", "pay"), ("sat", "sit"), ("spoke", "speak"), ("spoken", "speak"), ("led", "lead"),
+    ("grew", "grow"), ("grown", "grow"), ("lost", "lose"), ("fell", "fall"), ("fallen", "fall"),
+    ("sent", "send"), ("built", "build"), ("understood", "understand"), ("drew", "draw"),
+    ("drawn", "draw"), ("broke", "break"), ("broken", "break"), ("spent", "spend"),
+    ("rose", "rise"), ("risen", "rise"), ("drove", "drive"), ("driven", "drive"),
+    ("bought", "buy"), ("wore", "wear"), ("worn", "wear"), ("chose", "choose"),
+    ("chosen", "choose"), ("ate", "eat"), ("eaten", "eat"), ("gave", "give"), ("given", "give"),
+    ("slept", "sleep"), ("won", "win"), ("taught", "teach"), ("caught", "catch"),
+    ("bitten", "bite"), ("threw", "throw"), ("thrown", "throw"), ("stole", "steal"),
+    ("stolen", "steal"), ("bent", "bend"), ("forgot", "forget"), ("forgotten", "forget"),
+    ("swam", "swim"), ("drank", "drink"), ("drunk", "drink"), ("sang", "sing"), ("sung", "sing"),
+    ("woke", "wake"), ("woken", "wake"), ("hung", "hang"), ("blew", "blow"), ("blown", "blow"),
+    ("flew", "fly"), ("flown", "fly"), ("slid", "slide"), ("swum", "swim"), ("lent", "lend"),
+];
+
 /// Candidate dictionary forms for an inflected English word ("studies" → study, "running" → run).
 /// Deliberately over-generates: a wrong candidate simply misses in the dictionary.
 pub fn lemmas(word: &str) -> Vec<String> {
     let w = word.to_lowercase();
     let mut out = vec![w.clone()];
+    if let Some((_, base)) = IRREGULAR.iter().find(|(form, _)| *form == w) {
+        out.push((*base).to_string());
+    }
     let chars: Vec<char> = w.chars().collect();
     let n = chars.len();
     let doubled_tail = |cut: usize| -> bool { n > cut + 1 && chars[n - cut - 1] == chars[n - cut - 2] };
@@ -118,6 +147,9 @@ mod tests {
         assert!(lemmas("quickly").contains(&"quick".to_string()));
         assert!(lemmas("apple").contains(&"apple".to_string()));
         assert!(lemmas("bigger").contains(&"big".to_string()));
+        assert!(lemmas("lost").contains(&"lose".to_string()));
+        assert!(lemmas("fell").contains(&"fall".to_string()));
+        assert!(lemmas("brought").contains(&"bring".to_string()));
     }
 
     #[test]

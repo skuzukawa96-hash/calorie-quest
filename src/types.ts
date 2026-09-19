@@ -18,6 +18,9 @@ export interface Question {
   prompt?: string | null;
   hint?: string | null;
   audioPath?: string | null;
+  /** idioms carry a sentence showing the expression in use, plus its translation */
+  example?: string | null;
+  exampleJa?: string | null;
 }
 
 export interface SessionQuestion {

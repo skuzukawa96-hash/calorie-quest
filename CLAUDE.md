@@ -29,7 +29,7 @@ npm run tauri build        # 配布ビルド
 | `src-tauri/src/commands.rs` | Tauri コマンド。コアロジックは `session_questions` / `record_answer` / `redeem_ticket` に分離され、`Connection` だけでテストできる |
 | `src-tauri/src/db.rs` | スキーマ、`ensure_column` によるマイグレーション、`questions.json` / お菓子の初期投入 |
 | `src-tauri/src/speech.rs` | SAPI5 で英語 TTS → WAV（フロントで再生）、WinRT `SpeechRecognizer` のリスト文法で発音判定 |
-| `src-tauri/data/*.json` | 問題データ（1,109問）と `glossary.json`（補助語彙712語）。`questions.json` が `version` を持ち、追加パック（`words-2a.json` など）は `db.rs` の `EXTRA_QUESTION_PACKS` と `mockBackend.ts` の import で結合。`version` を上げると起動時に key 単位で upsert される |
+| `src-tauri/data/*.json` | 問題データ（1,500問）と `glossary.json`（補助語彙815語）。`questions.json` が `version` を持ち、追加パック（`words-2a.json` など）は `db.rs` の `EXTRA_QUESTION_PACKS` と `mockBackend.ts` の import で結合。`version` を上げると起動時に key 単位で upsert される |
 | `src/lib/speech.ts` | TTS/STT の切り替え（Tauri=native、ブラウザ=web）、`INSTALL_STT_GUIDE` |
 | `src/lib/scoring.ts` | 一致度・流暢さ・発音のコツ検出（`detectTrickySounds`） |
 | `src/lib/dictionary.ts` | 単語ポップアップの辞書引き。`tokenize` / `lemmas` は `util.rs` の同名関数と挙動を合わせる |
@@ -44,7 +44,8 @@ npm run tauri build        # 配布ビルド
 - 会話問題（`kind: "dialogue"`）は `prompt`（聞こえる英語）・`en`（正しい応答）・`choices`（応答4つ）・`ja`（promptの訳）を持ち、`modes` は `["listening"]`
 - **4択の誤答は同じ `group` の `ja` から自動生成される**。だからグループ内で `ja` が重複してはいけないし、1グループに4問以上必要（`cargo test` が両方検査する）。ジャンルより細かい単位（果物・乗り物・感情…）にすること
 - ヒアリングは `modes` に `listening` か `speaking` を含む問題が対象。単語・フレーズ・慣用句・長文は「聞いて意味を選ぶ」、会話は「聞いて英語で応答を選ぶ」
-- 英文に出てくる単語はすべて辞書に載っている必要がある（単語問題 or `glossary.json`）。`dictionary_covers_words_used_in_sentences` が未収録語を列挙する
+- 慣用句（`kind: "idiom"`）は `example`（その慣用句を使った英文）と `exampleJa`（訳）が必須。テストが例文中に慣用句の主要語が出ているかまで検査する
+- 英文に出てくる単語はすべて辞書に載っている必要がある（単語問題 or `glossary.json`）。`dictionary_covers_words_used_in_sentences` が未収録語を列挙する。不規則動詞は `util.rs` の `IRREGULAR` と `dictionary.ts` の同名テーブルで解決する（両方を更新すること）
 - 新しいデータファイルを足すときは `db.rs` の `EXTRA_QUESTION_PACKS` と `mockBackend.ts` の import の両方に登録する
 - スキーマ変更は `SCHEMA` に列を足すだけでなく `ensure_column` で既存 DB にも追加する（`group` は SQL 予約語なので列名は `word_group`）
 

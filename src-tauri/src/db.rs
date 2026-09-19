@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use std::path::Path;
 
 pub const Q_COLS: &str =
-    "q.id, q.key, q.kind, q.difficulty, q.en, q.ja, q.modes, q.choices, q.prompt, q.hint, q.audio_path, q.category, q.word_group";
+    "q.id, q.key, q.kind, q.difficulty, q.en, q.ja, q.modes, q.choices, q.prompt, q.hint, q.audio_path, q.category, q.word_group, q.example, q.example_ja";
 
 /// Main seed file: carries the seed `version` plus the original question set.
 const QUESTIONS_JSON: &str = include_str!("../data/questions.json");
@@ -13,11 +13,17 @@ const QUESTIONS_JSON: &str = include_str!("../data/questions.json");
 const EXTRA_QUESTION_PACKS: &[(&str, &str)] = &[
     ("words-2a.json", include_str!("../data/words-2a.json")),
     ("words-2b.json", include_str!("../data/words-2b.json")),
+    ("words-3.json", include_str!("../data/words-3.json")),
     ("phrases-2.json", include_str!("../data/phrases-2.json")),
+    ("phrases-3.json", include_str!("../data/phrases-3.json")),
     ("grammar-2.json", include_str!("../data/grammar-2.json")),
+    ("grammar-3.json", include_str!("../data/grammar-3.json")),
     ("idioms-2.json", include_str!("../data/idioms-2.json")),
+    ("idioms-3.json", include_str!("../data/idioms-3.json")),
     ("sentences-2.json", include_str!("../data/sentences-2.json")),
+    ("sentences-3.json", include_str!("../data/sentences-3.json")),
     ("listening-dialogues.json", include_str!("../data/listening-dialogues.json")),
+    ("listening-dialogues-2.json", include_str!("../data/listening-dialogues-2.json")),
 ];
 /// Japanese glosses for words that appear inside sentences but are not questions themselves.
 const GLOSSARY_JSON: &str = include_str!("../data/glossary.json");
@@ -47,7 +53,9 @@ CREATE TABLE IF NOT EXISTS questions (
   hint TEXT,
   audio_path TEXT,
   category TEXT NOT NULL DEFAULT '',
-  word_group TEXT NOT NULL DEFAULT ''
+  word_group TEXT NOT NULL DEFAULT '',
+  example TEXT,
+  example_ja TEXT
 );
 CREATE TABLE IF NOT EXISTS learning_history (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -153,6 +161,11 @@ struct SeedQuestion {
     /// Fine-grained semantic field used for distractors; empty falls back to the genre.
     #[serde(default)]
     group: String,
+    /// Sentence showing an idiom in use, plus its Japanese translation.
+    #[serde(default)]
+    example: Option<String>,
+    #[serde(default, rename = "exampleJa")]
+    example_ja: Option<String>,
 }
 
 pub fn init(path: &Path) -> rusqlite::Result<Connection> {
@@ -172,6 +185,8 @@ fn setup(conn: Connection) -> rusqlite::Result<Connection> {
     conn.execute_batch(SCHEMA)?;
     ensure_column(&conn, "questions", "category", "TEXT NOT NULL DEFAULT ''")?;
     ensure_column(&conn, "questions", "word_group", "TEXT NOT NULL DEFAULT ''")?;
+    ensure_column(&conn, "questions", "example", "TEXT")?;
+    ensure_column(&conn, "questions", "example_ja", "TEXT")?;
     conn.execute(
         "INSERT OR IGNORE INTO users (id, name, created_at) VALUES (1, 'Player', ?1)",
         params![now_ts()],
@@ -232,12 +247,13 @@ fn seed_questions(conn: &Connection) -> rusqlite::Result<()> {
     let tx = conn.unchecked_transaction()?;
     {
         let mut stmt = tx.prepare(
-            "INSERT INTO questions (key, kind, difficulty, en, ja, modes, choices, prompt, hint, audio_path, category, word_group)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
+            "INSERT INTO questions (key, kind, difficulty, en, ja, modes, choices, prompt, hint, audio_path, category, word_group, example, example_ja)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)
              ON CONFLICT(key) DO UPDATE SET kind = excluded.kind, difficulty = excluded.difficulty,
                en = excluded.en, ja = excluded.ja, modes = excluded.modes, choices = excluded.choices,
                prompt = excluded.prompt, hint = excluded.hint, audio_path = excluded.audio_path,
-               category = excluded.category, word_group = excluded.word_group",
+               category = excluded.category, word_group = excluded.word_group,
+               example = excluded.example, example_ja = excluded.example_ja",
         )?;
         for q in &seed.questions {
             let modes = serde_json::to_string(&q.modes).unwrap_or_else(|_| "[]".into());
@@ -247,7 +263,8 @@ fn seed_questions(conn: &Connection) -> rusqlite::Result<()> {
                 .map(|c| serde_json::to_string(c).unwrap_or_default());
             let group = if q.group.is_empty() { &q.category } else { &q.group };
             stmt.execute(params![
-                q.key, q.kind, q.difficulty, q.en, q.ja, modes, choices, q.prompt, q.hint, q.audio_path, q.category, group
+                q.key, q.kind, q.difficulty, q.en, q.ja, modes, choices, q.prompt, q.hint, q.audio_path, q.category,
+                group, q.example, q.example_ja
             ])?;
         }
     }
@@ -287,6 +304,8 @@ pub fn row_to_question(row: &Row) -> rusqlite::Result<Question> {
         audio_path: row.get(10)?,
         category: row.get(11)?,
         group: row.get(12)?,
+        example: row.get(13)?,
+        example_ja: row.get(14)?,
     })
 }
 
@@ -313,9 +332,16 @@ pub fn dictionary(conn: &Connection) -> rusqlite::Result<HashMap<String, String>
     }
 
     let texts: Vec<String> = {
-        let mut stmt = conn.prepare("SELECT en, COALESCE(prompt, ''), COALESCE(choices, '') FROM questions")?;
+        let mut stmt = conn
+            .prepare("SELECT en, COALESCE(prompt, ''), COALESCE(choices, ''), COALESCE(example, '') FROM questions")?;
         let rows = stmt.query_map([], |r| {
-            Ok(format!("{} {} {}", r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?))
+            Ok(format!(
+                "{} {} {} {}",
+                r.get::<_, String>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, String>(2)?,
+                r.get::<_, String>(3)?
+            ))
         })?;
         rows.collect::<Result<_, _>>()?
     };
@@ -350,9 +376,9 @@ mod tests {
     use std::collections::{HashMap, HashSet};
 
     #[test]
-    fn seed_data_is_well_formed_and_has_at_least_1000_questions() {
+    fn seed_data_is_well_formed_and_has_at_least_1500_questions() {
         let seed = load_seed();
-        assert!(seed.questions.len() >= 1000, "expected >= 1000 questions, got {}", seed.questions.len());
+        assert!(seed.questions.len() >= 1500, "expected >= 1500 questions, got {}", seed.questions.len());
 
         let mut keys = HashSet::new();
         let mut ja_by_group: HashMap<(String, String), HashSet<String>> = HashMap::new();
@@ -385,6 +411,22 @@ mod tests {
                 } else {
                     assert!(!prompt.trim().is_empty(), "{} prompt is empty", q.key);
                 }
+            }
+            // Every idiom shows a sentence using the expression, so the learner sees it in context.
+            if q.kind == "idiom" {
+                let example = q.example.as_deref().unwrap_or_else(|| panic!("{} needs an example", q.key));
+                let example_ja = q.example_ja.as_deref().unwrap_or_else(|| panic!("{} needs exampleJa", q.key));
+                assert!(!example.trim().is_empty() && !example_ja.trim().is_empty(), "{} has an empty example", q.key);
+                // The example must actually contain the idiom's key words, not just any sentence.
+                let head: Vec<String> = crate::util::tokens(&q.en)
+                    .into_iter()
+                    .filter(|w| !["a", "an", "the", "your", "you", "someone", "something", "it", "of", "in", "on"].contains(&w.as_str()))
+                    .collect();
+                let example_words = crate::util::tokens(example);
+                let hit = head.iter().filter(|w| {
+                    example_words.iter().any(|e| e == *w || crate::util::lemmas(e).contains(w))
+                });
+                assert!(hit.count() >= head.len().min(2), "{}: example does not use the idiom: {example}", q.key);
             }
             // Distractors are drawn from `ja` within the same semantic group, so they must be distinct there.
             if q.kind == "word" {
@@ -424,6 +466,7 @@ mod tests {
                 texts.push(p.clone());
             }
             texts.extend(q.choices.clone().unwrap_or_default());
+            texts.extend(q.example.clone());
             for text in texts {
                 for word in crate::util::tokens(&text) {
                     if !dict.contains_key(&word) {

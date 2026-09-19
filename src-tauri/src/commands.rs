@@ -726,10 +726,10 @@ pub fn get_stats(state: State<'_, AppState>) -> CmdResult<Stats> {
             .query_map(params![USER_ID], |r| {
                 Ok(WeakQuestion {
                     question: db::row_to_question(r)?,
-                    wrong_count: r.get(13)?,
-                    last_score: r.get(14)?,
-                    next_due: r.get(15)?,
-                    srs_level: r.get(16)?,
+                    wrong_count: r.get(15)?,
+                    last_score: r.get(16)?,
+                    next_due: r.get(17)?,
+                    srs_level: r.get(18)?,
                 })
             })
             .map_err(err)?;

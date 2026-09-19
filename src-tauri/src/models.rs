@@ -21,6 +21,9 @@ pub struct Question {
     pub prompt: Option<String>,
     pub hint: Option<String>,
     pub audio_path: Option<String>,
+    /// Idioms carry a sentence that shows the expression in use, with its translation.
+    pub example: Option<String>,
+    pub example_ja: Option<String>,
 }
 
 #[derive(Debug, Serialize)]

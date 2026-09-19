@@ -3,11 +3,17 @@
 import seedJson from "../../src-tauri/data/questions.json";
 import words2a from "../../src-tauri/data/words-2a.json";
 import words2b from "../../src-tauri/data/words-2b.json";
+import words3 from "../../src-tauri/data/words-3.json";
 import phrases2 from "../../src-tauri/data/phrases-2.json";
+import phrases3 from "../../src-tauri/data/phrases-3.json";
 import grammar2 from "../../src-tauri/data/grammar-2.json";
+import grammar3 from "../../src-tauri/data/grammar-3.json";
 import idioms2 from "../../src-tauri/data/idioms-2.json";
+import idioms3 from "../../src-tauri/data/idioms-3.json";
 import sentences2 from "../../src-tauri/data/sentences-2.json";
+import sentences3 from "../../src-tauri/data/sentences-3.json";
 import dialogues from "../../src-tauri/data/listening-dialogues.json";
+import dialogues2 from "../../src-tauri/data/listening-dialogues-2.json";
 import glossary from "../../src-tauri/data/glossary.json";
 import { expandDictionary, type Dictionary } from "./dictionary";
 import type {
@@ -40,6 +46,8 @@ interface SeedQuestion {
   modes: string[];
   choices?: string[];
   prompt?: string;
+  example?: string;
+  exampleJa?: string;
 }
 
 interface Hist {
@@ -74,11 +82,17 @@ const seedQuestions: SeedQuestion[] = [
   ...(seedJson as unknown as { questions: SeedQuestion[] }).questions,
   ...(words2a as unknown as SeedQuestion[]),
   ...(words2b as unknown as SeedQuestion[]),
+  ...(words3 as unknown as SeedQuestion[]),
   ...(phrases2 as unknown as SeedQuestion[]),
+  ...(phrases3 as unknown as SeedQuestion[]),
   ...(grammar2 as unknown as SeedQuestion[]),
+  ...(grammar3 as unknown as SeedQuestion[]),
   ...(idioms2 as unknown as SeedQuestion[]),
+  ...(idioms3 as unknown as SeedQuestion[]),
   ...(sentences2 as unknown as SeedQuestion[]),
+  ...(sentences3 as unknown as SeedQuestion[]),
   ...(dialogues as unknown as SeedQuestion[]),
+  ...(dialogues2 as unknown as SeedQuestion[]),
 ];
 
 const questions: Question[] = seedQuestions.map(
@@ -96,6 +110,8 @@ const questions: Question[] = seedQuestions.map(
     prompt: q.prompt ?? null,
     hint: null,
     audioPath: null,
+    example: q.example ?? null,
+    exampleJa: q.exampleJa ?? null,
   }),
 );
 
@@ -388,7 +404,7 @@ function mockDictionary(): Dictionary {
   for (const q of questions) {
     if (q.kind === "word") base[q.en.toLowerCase()] = q.ja;
   }
-  const texts = questions.flatMap((q) => [q.en, q.prompt ?? "", ...(q.choices ?? [])]);
+  const texts = questions.flatMap((q) => [q.en, q.prompt ?? "", q.example ?? "", ...(q.choices ?? [])]);
   dictionaryCache = expandDictionary(base, texts);
   return dictionaryCache;
 }
