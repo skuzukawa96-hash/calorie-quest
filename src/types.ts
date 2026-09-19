@@ -1,4 +1,4 @@
-export type Mode = "choice" | "typing" | "speaking";
+export type Mode = "choice" | "typing" | "speaking" | "listening";
 export type Difficulty = "low" | "mid" | "high" | "mixed";
 export type Level = "low" | "mid" | "high";
 
@@ -9,6 +9,8 @@ export interface Question {
   difficulty: Level;
   /** genre such as 食べ物 / 旅行・交通 / 文法 */
   category: string;
+  /** fine-grained semantic field (果物, 乗り物, …) that distractors are drawn from */
+  group: string;
   en: string;
   ja: string;
   modes: Mode[];
@@ -26,6 +28,10 @@ export interface SessionQuestion {
   subDisplay?: string | null;
   options: string[];
   answer: string;
+  /** English to speak: the completed sentence for grammar, the spoken line for dialogues */
+  audioText: string;
+  /** listening mode keeps the English hidden until the answer is in */
+  hideText: boolean;
 }
 
 export interface UserInfo {
@@ -197,6 +203,7 @@ export const MODE_LABEL: Record<Mode, string> = {
   choice: "選択問題",
   typing: "記入問題",
   speaking: "発音問題",
+  listening: "ヒアリング問題",
 };
 
 export const DIFFICULTY_LABEL: Record<Difficulty, string> = {

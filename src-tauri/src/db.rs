@@ -1,10 +1,11 @@
 use crate::models::{Question, Snack};
 use crate::util::now_ts;
 use rusqlite::{params, Connection, OptionalExtension, Row};
+use std::collections::HashMap;
 use std::path::Path;
 
 pub const Q_COLS: &str =
-    "q.id, q.key, q.kind, q.difficulty, q.en, q.ja, q.modes, q.choices, q.prompt, q.hint, q.audio_path, q.category";
+    "q.id, q.key, q.kind, q.difficulty, q.en, q.ja, q.modes, q.choices, q.prompt, q.hint, q.audio_path, q.category, q.word_group";
 
 /// Main seed file: carries the seed `version` plus the original question set.
 const QUESTIONS_JSON: &str = include_str!("../data/questions.json");
@@ -16,7 +17,10 @@ const EXTRA_QUESTION_PACKS: &[(&str, &str)] = &[
     ("grammar-2.json", include_str!("../data/grammar-2.json")),
     ("idioms-2.json", include_str!("../data/idioms-2.json")),
     ("sentences-2.json", include_str!("../data/sentences-2.json")),
+    ("listening-dialogues.json", include_str!("../data/listening-dialogues.json")),
 ];
+/// Japanese glosses for words that appear inside sentences but are not questions themselves.
+const GLOSSARY_JSON: &str = include_str!("../data/glossary.json");
 
 const SCHEMA: &str = "
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -42,7 +46,8 @@ CREATE TABLE IF NOT EXISTS questions (
   prompt TEXT,
   hint TEXT,
   audio_path TEXT,
-  category TEXT NOT NULL DEFAULT ''
+  category TEXT NOT NULL DEFAULT '',
+  word_group TEXT NOT NULL DEFAULT ''
 );
 CREATE TABLE IF NOT EXISTS learning_history (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -145,6 +150,9 @@ struct SeedQuestion {
     /// Genre such as 食べ物 / 旅行・交通 / 文法; empty when unknown.
     #[serde(default)]
     category: String,
+    /// Fine-grained semantic field used for distractors; empty falls back to the genre.
+    #[serde(default)]
+    group: String,
 }
 
 pub fn init(path: &Path) -> rusqlite::Result<Connection> {
@@ -163,6 +171,7 @@ pub fn init_in_memory() -> rusqlite::Result<Connection> {
 fn setup(conn: Connection) -> rusqlite::Result<Connection> {
     conn.execute_batch(SCHEMA)?;
     ensure_column(&conn, "questions", "category", "TEXT NOT NULL DEFAULT ''")?;
+    ensure_column(&conn, "questions", "word_group", "TEXT NOT NULL DEFAULT ''")?;
     conn.execute(
         "INSERT OR IGNORE INTO users (id, name, created_at) VALUES (1, 'Player', ?1)",
         params![now_ts()],
@@ -223,12 +232,12 @@ fn seed_questions(conn: &Connection) -> rusqlite::Result<()> {
     let tx = conn.unchecked_transaction()?;
     {
         let mut stmt = tx.prepare(
-            "INSERT INTO questions (key, kind, difficulty, en, ja, modes, choices, prompt, hint, audio_path, category)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+            "INSERT INTO questions (key, kind, difficulty, en, ja, modes, choices, prompt, hint, audio_path, category, word_group)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
              ON CONFLICT(key) DO UPDATE SET kind = excluded.kind, difficulty = excluded.difficulty,
                en = excluded.en, ja = excluded.ja, modes = excluded.modes, choices = excluded.choices,
                prompt = excluded.prompt, hint = excluded.hint, audio_path = excluded.audio_path,
-               category = excluded.category",
+               category = excluded.category, word_group = excluded.word_group",
         )?;
         for q in &seed.questions {
             let modes = serde_json::to_string(&q.modes).unwrap_or_else(|_| "[]".into());
@@ -236,8 +245,9 @@ fn seed_questions(conn: &Connection) -> rusqlite::Result<()> {
                 .choices
                 .as_ref()
                 .map(|c| serde_json::to_string(c).unwrap_or_default());
+            let group = if q.group.is_empty() { &q.category } else { &q.group };
             stmt.execute(params![
-                q.key, q.kind, q.difficulty, q.en, q.ja, modes, choices, q.prompt, q.hint, q.audio_path, q.category
+                q.key, q.kind, q.difficulty, q.en, q.ja, modes, choices, q.prompt, q.hint, q.audio_path, q.category, group
             ])?;
         }
     }
@@ -276,7 +286,52 @@ pub fn row_to_question(row: &Row) -> rusqlite::Result<Question> {
         hint: row.get(9)?,
         audio_path: row.get(10)?,
         category: row.get(11)?,
+        group: row.get(12)?,
     })
+}
+
+/// English word (lowercase) → Japanese gloss, for the hover dictionary.
+///
+/// Built from the word questions plus the glossary of supporting vocabulary, then expanded so that
+/// every inflected form appearing in a question ("studies", "running") is a key in its own right.
+/// That keeps the frontend to a plain lookup.
+pub fn dictionary(conn: &Connection) -> rusqlite::Result<HashMap<String, String>> {
+    let mut map: HashMap<String, String> =
+        serde_json::from_str(GLOSSARY_JSON).expect("data/glossary.json must be a valid JSON object");
+
+    {
+        let mut stmt = conn.prepare("SELECT en, ja FROM questions WHERE kind = 'word'")?;
+        let rows = stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?;
+        for row in rows {
+            let (en, ja) = row?;
+            // Question data wins over the glossary: it is the vocabulary being studied.
+            for word in crate::util::tokens(&en) {
+                map.entry(word).or_insert_with(|| ja.clone());
+            }
+            map.insert(en.to_lowercase(), ja);
+        }
+    }
+
+    let texts: Vec<String> = {
+        let mut stmt = conn.prepare("SELECT en, COALESCE(prompt, ''), COALESCE(choices, '') FROM questions")?;
+        let rows = stmt.query_map([], |r| {
+            Ok(format!("{} {} {}", r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?))
+        })?;
+        rows.collect::<Result<_, _>>()?
+    };
+    let mut derived: HashMap<String, String> = HashMap::new();
+    for text in &texts {
+        for word in crate::util::tokens(text) {
+            if map.contains_key(&word) || derived.contains_key(&word) {
+                continue;
+            }
+            if let Some(gloss) = crate::util::lemmas(&word).iter().find_map(|l| map.get(l)) {
+                derived.insert(word, gloss.clone());
+            }
+        }
+    }
+    map.extend(derived);
+    Ok(map)
 }
 
 pub fn row_to_snack(row: &Row) -> rusqlite::Result<Snack> {
@@ -301,25 +356,50 @@ mod tests {
 
         let mut keys = HashSet::new();
         let mut ja_by_group: HashMap<(String, String), HashSet<String>> = HashMap::new();
+        let mut group_sizes: HashMap<(String, String), usize> = HashMap::new();
         for q in &seed.questions {
             assert!(keys.insert(q.key.as_str()), "duplicate key {}", q.key);
             assert!(!q.category.is_empty(), "{} has no category", q.key);
+            assert!(!q.group.is_empty(), "{} has no group", q.key);
             assert!(["low", "mid", "high"].contains(&q.difficulty.as_str()), "{} bad difficulty", q.key);
-            assert!(["word", "phrase", "grammar", "idiom", "sentence"].contains(&q.kind.as_str()), "{} bad kind", q.key);
-            assert!(!q.modes.is_empty() && q.modes.iter().all(|m| ["choice", "typing", "speaking"].contains(&m.as_str())), "{} bad modes", q.key);
+            assert!(
+                ["word", "phrase", "grammar", "idiom", "sentence", "dialogue"].contains(&q.kind.as_str()),
+                "{} bad kind",
+                q.key
+            );
+            assert!(
+                !q.modes.is_empty()
+                    && q.modes.iter().all(|m| ["choice", "typing", "speaking", "listening"].contains(&m.as_str())),
+                "{} bad modes",
+                q.key
+            );
             assert!(!q.en.trim().is_empty() && !q.ja.trim().is_empty(), "{} empty text", q.key);
-            if q.kind == "grammar" {
-                let choices = q.choices.as_ref().unwrap_or_else(|| panic!("{} grammar needs choices", q.key));
+            if q.kind == "grammar" || q.kind == "dialogue" {
+                let choices = q.choices.as_ref().unwrap_or_else(|| panic!("{} needs choices", q.key));
                 assert_eq!(choices.len(), 4, "{} needs 4 choices", q.key);
                 assert!(choices.contains(&q.en), "{} answer must be among the choices", q.key);
                 assert_eq!(choices.iter().collect::<HashSet<_>>().len(), 4, "{} choices must be distinct", q.key);
-                assert!(q.prompt.as_deref().map(|p| p.contains("___")).unwrap_or(false), "{} prompt needs ___", q.key);
+                let prompt = q.prompt.as_deref().unwrap_or_else(|| panic!("{} needs a prompt", q.key));
+                if q.kind == "grammar" {
+                    assert!(prompt.contains("___"), "{} prompt needs ___", q.key);
+                } else {
+                    assert!(!prompt.trim().is_empty(), "{} prompt is empty", q.key);
+                }
             }
-            // Same-genre distractors are drawn from `ja`, so translations must not collide within a genre.
+            // Distractors are drawn from `ja` within the same semantic group, so they must be distinct there.
             if q.kind == "word" {
-                let set = ja_by_group.entry((q.category.clone(), q.kind.clone())).or_default();
-                assert!(set.insert(q.ja.clone()), "{}: duplicate translation '{}' in genre {}", q.key, q.ja, q.category);
+                let set = ja_by_group.entry((q.group.clone(), q.kind.clone())).or_default();
+                assert!(set.insert(q.ja.clone()), "{}: duplicate translation '{}' in group {}", q.key, q.ja, q.group);
             }
+            *group_sizes.entry((q.group.clone(), q.kind.clone())).or_default() += 1;
+        }
+        // Every group needs 4 members so a question can be surrounded by same-field distractors.
+        // Dialogues are exempt: their replies are written out in the data, not drawn from siblings.
+        for ((group, kind), n) in &group_sizes {
+            if kind == "dialogue" {
+                continue;
+            }
+            assert!(*n >= 4, "group {group} ({kind}) has only {n} questions; needs at least 4");
         }
     }
 
@@ -328,5 +408,32 @@ mod tests {
         let conn = init_in_memory().unwrap();
         let rows: i64 = conn.query_row("SELECT COUNT(*) FROM questions", [], |r| r.get(0)).unwrap();
         assert_eq!(rows as usize, load_seed().questions.len());
+    }
+
+    /// The hover dictionary must cover the vocabulary used inside multi-word questions.
+    #[test]
+    fn dictionary_covers_words_used_in_sentences() {
+        let conn = init_in_memory().unwrap();
+        let dict = dictionary(&conn).unwrap();
+        assert!(dict.len() > 1000, "dictionary too small: {}", dict.len());
+
+        let mut uncovered: Vec<String> = Vec::new();
+        for q in load_seed().questions.iter().filter(|q| q.kind != "word") {
+            let mut texts = vec![q.en.clone()];
+            if let Some(p) = &q.prompt {
+                texts.push(p.clone());
+            }
+            texts.extend(q.choices.clone().unwrap_or_default());
+            for text in texts {
+                for word in crate::util::tokens(&text) {
+                    if !dict.contains_key(&word) {
+                        uncovered.push(format!("{} ({})", word, q.key));
+                    }
+                }
+            }
+        }
+        uncovered.sort();
+        uncovered.dedup();
+        assert!(uncovered.is_empty(), "words without a gloss: {}", uncovered.join(", "));
     }
 }

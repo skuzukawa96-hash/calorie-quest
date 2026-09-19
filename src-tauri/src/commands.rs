@@ -9,6 +9,8 @@ use tauri::State;
 
 type CmdResult<T> = Result<T, String>;
 const USER_ID: i64 = 1;
+/// Study modes the frontend may ask for; anything else is rejected before it reaches SQL.
+pub const MODES: [&str; 4] = ["choice", "typing", "speaking", "listening"];
 
 fn err<E: std::fmt::Display>(e: E) -> String {
     e.to_string()
@@ -130,12 +132,70 @@ fn kcal_rates() -> KcalRates {
 
 /* ---------- core logic (testable without Tauri) ---------- */
 
+/// Three plausible wrong translations, taken from the tightest semantic circle that has enough
+/// members: same fine-grained group → same genre → same kind → anything. Picking from the same
+/// group is what makes the quiz worth doing: for "salt" the alternatives are other seasonings,
+/// not a random animal.
+fn japanese_distractors(conn: &Connection, q: &Question) -> rusqlite::Result<Vec<String>> {
+    let mut opts: Vec<String> = Vec::new();
+
+    let mut fill = |sql: &str, field: &str| -> rusqlite::Result<()> {
+        if opts.len() >= 3 {
+            return Ok(());
+        }
+        let mut stmt = conn.prepare(sql)?;
+        let found: Vec<String> = stmt
+            .query_map(params![q.id, q.kind, field, q.ja], |r| r.get(0))?
+            .collect::<Result<_, _>>()?;
+        extend_unique(&mut opts, found, &q.ja);
+        Ok(())
+    };
+
+    fill(
+        "SELECT ja FROM questions WHERE id != ?1 AND kind = ?2 AND word_group = ?3 AND ja != ?4 ORDER BY RANDOM() LIMIT 8",
+        &q.group,
+    )?;
+    fill(
+        "SELECT ja FROM questions WHERE id != ?1 AND kind = ?2 AND category = ?3 AND ja != ?4 ORDER BY RANDOM() LIMIT 8",
+        &q.category,
+    )?;
+    fill(
+        "SELECT ja FROM questions WHERE id != ?1 AND kind = ?2 AND ?3 IS NOT NULL AND ja != ?4 ORDER BY RANDOM() LIMIT 8",
+        &q.category,
+    )?;
+
+    if opts.len() < 3 {
+        let mut stmt = conn.prepare("SELECT ja FROM questions WHERE id != ?1 AND ja != ?2 ORDER BY RANDOM() LIMIT 8")?;
+        let any: Vec<String> = stmt
+            .query_map(params![q.id, q.ja], |r| r.get(0))?
+            .collect::<Result<_, _>>()?;
+        extend_unique(&mut opts, any, &q.ja);
+    }
+    Ok(opts)
+}
+
+/// The English the app speaks: grammar blanks are filled in so the learner hears a real sentence,
+/// dialogues play the other speaker's line.
+fn audio_text_for(q: &Question) -> String {
+    match q.kind.as_str() {
+        "grammar" => q
+            .prompt
+            .as_ref()
+            .map(|p| p.replace("___", &q.en))
+            .unwrap_or_else(|| q.en.clone()),
+        "dialogue" => q.prompt.clone().unwrap_or_else(|| q.en.clone()),
+        _ => q.en.clone(),
+    }
+}
+
 fn build_session_question(
     conn: &Connection,
     q: Question,
     mode: &str,
     is_review: bool,
 ) -> rusqlite::Result<SessionQuestion> {
+    let audio_text = audio_text_for(&q);
+    let mut hide_text = false;
     let (display, sub_display, options, answer) = match mode {
         "choice" => {
             if let Some(ch) = q.choices.clone() {
@@ -149,41 +209,28 @@ fn build_session_question(
                     q.en.clone(),
                 )
             } else {
-                // Meaning question: 3 distractor translations, preferring the same genre and kind
-                // so the wrong options are plausible (e.g. other foods for a food word).
-                let mut opts: Vec<String> = Vec::new();
-                {
-                    let mut stmt = conn.prepare(
-                        "SELECT ja FROM questions WHERE id != ?1 AND kind = ?2 AND category = ?3 AND ja != ?4 ORDER BY RANDOM() LIMIT 3",
-                    )?;
-                    let same_genre: Vec<String> = stmt
-                        .query_map(params![q.id, q.kind, q.category, q.ja], |r| r.get(0))?
-                        .collect::<Result<_, _>>()?;
-                    extend_unique(&mut opts, same_genre, &q.ja);
-                }
-                if opts.len() < 3 {
-                    let mut stmt = conn.prepare(
-                        "SELECT ja FROM questions WHERE id != ?1 AND kind = ?2 AND ja != ?3 ORDER BY RANDOM() LIMIT 6",
-                    )?;
-                    let same_kind: Vec<String> = stmt
-                        .query_map(params![q.id, q.kind, q.ja], |r| r.get(0))?
-                        .collect::<Result<_, _>>()?;
-                    extend_unique(&mut opts, same_kind, &q.ja);
-                }
-                if opts.len() < 3 {
-                    let mut stmt =
-                        conn.prepare("SELECT ja FROM questions WHERE id != ?1 AND ja != ?2 ORDER BY RANDOM() LIMIT 6")?;
-                    let any: Vec<String> = stmt
-                        .query_map(params![q.id, q.ja], |r| r.get(0))?
-                        .collect::<Result<_, _>>()?;
-                    extend_unique(&mut opts, any, &q.ja);
-                }
+                let mut opts = japanese_distractors(conn, &q)?;
                 opts.push(q.ja.clone());
                 shuffle(&mut opts);
                 (q.en.clone(), None, opts, q.ja.clone())
             }
         }
         "typing" => (q.ja.clone(), q.prompt.clone(), Vec::new(), q.en.clone()),
+        "listening" => {
+            hide_text = true;
+            if q.kind == "dialogue" {
+                // Heard: one side of a conversation. Answer: the natural reply, in English.
+                let mut opts = q.choices.clone().unwrap_or_default();
+                shuffle(&mut opts);
+                (String::new(), Some(q.ja.clone()), opts, q.en.clone())
+            } else {
+                // Heard: the English. Answer: what it means, in Japanese.
+                let mut opts = japanese_distractors(conn, &q)?;
+                opts.push(q.ja.clone());
+                shuffle(&mut opts);
+                (String::new(), None, opts, q.ja.clone())
+            }
+        }
         _ => (q.en.clone(), Some(q.ja.clone()), Vec::new(), q.en.clone()),
     };
     Ok(SessionQuestion {
@@ -194,6 +241,8 @@ fn build_session_question(
         sub_display,
         options,
         answer,
+        audio_text,
+        hide_text,
     })
 }
 
@@ -221,12 +270,18 @@ pub fn session_questions(
     let mode_like = format!("%\"{}\"%", mode);
     let today = today();
     let max_reviews = ((count as f64) * 0.6).ceil() as i64;
+    // Listening reuses anything that has English audio, plus the dialogue-only questions.
+    let mode_clause = if mode == "listening" {
+        "(q.modes LIKE ?3 OR q.modes LIKE '%\"speaking\"%')"
+    } else {
+        "q.modes LIKE ?3"
+    };
 
     let review_sql = format!(
         "SELECT {Q_COLS} FROM questions q
          JOIN learning_history h ON h.question_id = q.id
          WHERE h.user_id = ?1 AND h.needs_review = 1 AND h.next_due_at IS NOT NULL AND h.next_due_at <= ?2
-           AND q.modes LIKE ?3 AND (?4 = 'mixed' OR q.difficulty = ?4) AND (?5 = 'all' OR q.category = ?5)
+           AND {mode_clause} AND (?4 = 'mixed' OR q.difficulty = ?4) AND (?5 = 'all' OR q.category = ?5)
          ORDER BY h.next_due_at ASC, RANDOM() LIMIT ?6"
     );
     let reviews: Vec<Question> = {
@@ -245,10 +300,11 @@ pub fn session_questions(
     } else {
         format!("AND q.id NOT IN ({})", exclude.join(","))
     };
+    let fresh_mode_clause = mode_clause.replace("?3", "?2");
     let fresh_sql = format!(
         "SELECT {Q_COLS} FROM questions q
          LEFT JOIN learning_history h ON h.question_id = q.id AND h.user_id = ?1
-         WHERE q.modes LIKE ?2 AND (?3 = 'mixed' OR q.difficulty = ?3) AND (?4 = 'all' OR q.category = ?4)
+         WHERE {fresh_mode_clause} AND (?3 = 'mixed' OR q.difficulty = ?3) AND (?4 = 'all' OR q.category = ?4)
            AND (h.needs_review IS NULL OR h.needs_review = 0) {exclude_clause}
          ORDER BY (h.last_studied_at IS NOT NULL), RANDOM() LIMIT ?5"
     );
@@ -473,9 +529,19 @@ pub fn get_session_questions(
     category: Option<String>,
     count: u32,
 ) -> CmdResult<Vec<SessionQuestion>> {
+    if !MODES.contains(&mode.as_str()) {
+        return Err(format!("unknown mode {mode}"));
+    }
     let conn = state.db.lock().map_err(err)?;
     let category = category.filter(|c| !c.trim().is_empty()).unwrap_or_else(|| "all".to_string());
     session_questions(&conn, &mode, &difficulty, &category, count).map_err(err)
+}
+
+/// English word (lowercase) → Japanese gloss, for the hover dictionary in the study screen.
+#[tauri::command]
+pub fn get_dictionary(state: State<'_, AppState>) -> CmdResult<HashMap<String, String>> {
+    let conn = state.db.lock().map_err(err)?;
+    db::dictionary(&conn).map_err(err)
 }
 
 #[tauri::command]
@@ -660,10 +726,10 @@ pub fn get_stats(state: State<'_, AppState>) -> CmdResult<Stats> {
             .query_map(params![USER_ID], |r| {
                 Ok(WeakQuestion {
                     question: db::row_to_question(r)?,
-                    wrong_count: r.get(12)?,
-                    last_score: r.get(13)?,
-                    next_due: r.get(14)?,
-                    srs_level: r.get(15)?,
+                    wrong_count: r.get(13)?,
+                    last_score: r.get(14)?,
+                    next_due: r.get(15)?,
+                    srs_level: r.get(16)?,
                 })
             })
             .map_err(err)?;
@@ -879,6 +945,73 @@ mod tests {
         let g = session_questions(&c, "choice", "mid", "all", 50).unwrap();
         assert!(g.iter().any(|q| q.question.kind == "grammar"), "grammar questions appear in choice mode");
         assert!(g.iter().filter(|q| q.question.kind == "grammar").all(|q| q.options.len() == 4 && q.options.contains(&q.answer)));
+    }
+
+    #[test]
+    fn distractors_come_from_the_same_semantic_group() {
+        let c = conn();
+        let qid = question_id(&c, "w072"); // salt / 塩, group 調味料
+        let q = c
+            .query_row(&format!("SELECT {Q_COLS} FROM questions q WHERE q.id = ?1"), params![qid], db::row_to_question)
+            .unwrap();
+        assert_eq!(q.group, "調味料");
+        let group_meanings: Vec<String> = {
+            let mut stmt = c.prepare("SELECT ja FROM questions WHERE word_group = ?1").unwrap();
+            stmt.query_map(params![q.group], |r| r.get(0)).unwrap().collect::<Result<_, _>>().unwrap()
+        };
+        // Repeat: the picks are random, every draw must stay inside the group.
+        for _ in 0..20 {
+            let opts = japanese_distractors(&c, &q).unwrap();
+            assert_eq!(opts.len(), 3);
+            for o in &opts {
+                assert!(group_meanings.contains(o), "'{o}' is not a 調味料 meaning");
+                assert_ne!(o, &q.ja);
+            }
+        }
+    }
+
+    #[test]
+    fn listening_hides_the_text_and_plays_audio() {
+        let c = conn();
+        let s = session_questions(&c, "listening", "mixed", "all", 20).unwrap();
+        assert!(!s.is_empty());
+        for q in &s {
+            assert!(q.hide_text, "{} should hide its text", q.question.key);
+            assert!(!q.audio_text.trim().is_empty(), "{} has nothing to play", q.question.key);
+            assert!(!q.audio_text.contains("___"), "{} still has a blank", q.question.key);
+            assert_eq!(q.options.len(), 4, "{} needs 4 options", q.question.key);
+            assert!(q.options.contains(&q.answer));
+            assert_eq!(q.options.iter().collect::<std::collections::HashSet<_>>().len(), 4);
+            assert!(q.display.is_empty(), "{} must not reveal the text", q.question.key);
+        }
+    }
+
+    #[test]
+    fn listening_includes_dialogue_questions_with_english_replies() {
+        let c = conn();
+        // Dialogues are mid/high; draw enough to be sure at least one shows up.
+        let mut seen = false;
+        for _ in 0..10 {
+            let s = session_questions(&c, "listening", "mid", "日常生活", 20).unwrap();
+            if let Some(d) = s.iter().find(|q| q.question.kind == "dialogue") {
+                seen = true;
+                assert_eq!(d.audio_text, d.question.prompt.clone().unwrap());
+                assert_eq!(d.answer, d.question.en);
+                assert!(d.options.iter().all(|o| o.is_ascii()), "replies should be English");
+                break;
+            }
+        }
+        assert!(seen, "no dialogue question was ever served in listening mode");
+    }
+
+    #[test]
+    fn grammar_audio_fills_in_the_blank() {
+        let c = conn();
+        let qid = question_id(&c, "g001");
+        let q = c
+            .query_row(&format!("SELECT {Q_COLS} FROM questions q WHERE q.id = ?1"), params![qid], db::row_to_question)
+            .unwrap();
+        assert_eq!(audio_text_for(&q), "She plays tennis every Sunday.");
     }
 
     #[test]

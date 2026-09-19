@@ -309,6 +309,97 @@ main {
   gap: 6px;
   margin: 2px 0 16px;
 }
+/* ---------- hover dictionary ---------- */
+.glossed {
+  border-bottom: 1px dotted var(--caramel);
+  cursor: help;
+  border-radius: 3px;
+}
+.glossed:hover,
+.glossed.active {
+  background: #fde7b8;
+}
+.gloss-tip {
+  position: fixed;
+  transform: translate(-50%, calc(-100% - 10px));
+  background: var(--choco);
+  color: #fff;
+  padding: 7px 12px;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1.4;
+  white-space: nowrap;
+  max-width: 90vw;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  box-shadow: var(--shadow);
+  z-index: 60;
+  pointer-events: none;
+}
+.gloss-tip b {
+  color: var(--caramel-light);
+  margin-right: 8px;
+}
+
+/* ---------- listening ---------- */
+.listen-stage {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  padding: 22px 0 8px;
+}
+.listen-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  border: 2px solid var(--caramel);
+  background: #fff8ec;
+  color: var(--choco);
+  font-size: 18px;
+  font-weight: 700;
+  padding: 16px 28px;
+  border-radius: 999px;
+  box-shadow: var(--shadow);
+}
+.listen-button:hover:not(:disabled) {
+  background: var(--caramel-light);
+}
+.listen-button.playing {
+  animation: pulse 1.1s ease-in-out infinite;
+}
+@keyframes pulse {
+  50% {
+    transform: scale(1.04);
+  }
+}
+.listen-icon {
+  font-size: 26px;
+  line-height: 1;
+}
+.listen-hidden {
+  letter-spacing: 0.5em;
+  color: var(--line);
+  font-size: 22px;
+}
+.listen-revealed {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--choco);
+  text-align: center;
+  line-height: 1.4;
+}
+.options.options-long {
+  grid-template-columns: 1fr;
+}
+.options.options-long .option {
+  font-size: 16px;
+}
+.heard-line {
+  padding-bottom: 4px;
+}
+
 .q-category {
   display: inline-block;
   font-size: 12.5px;
@@ -469,8 +560,8 @@ main {
 }
 .mode-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 14px;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
 }
 .mode-card {
   text-align: left;

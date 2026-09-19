@@ -43,6 +43,7 @@ export const api = {
   deleteConsumption: (id: number) => call<DailyStats>("delete_consumption", { id }),
   redeemCheatTicket: () => call<RedeemResult>("redeem_cheat_ticket"),
   getStats: () => call<Stats>("get_stats"),
+  getDictionary: () => call<Record<string, string>>("get_dictionary"),
   resetProgress: () => call<void>("reset_progress"),
   logDebug: (message: string) => call<void>("log_debug", { message }).catch(() => undefined),
 

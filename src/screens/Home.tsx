@@ -23,6 +23,7 @@ const MODES: Array<{ mode: Mode; icon: string; title: string; desc: string }> = 
   { mode: "choice", icon: "🍪", title: "選択問題", desc: "4択でテンポよく。単語の意味や文法の穴埋め。" },
   { mode: "typing", icon: "🍫", title: "記入問題", desc: "日本語に合う英語をタイピング。スペルを定着。" },
   { mode: "speaking", icon: "🎤", title: "発音問題", desc: "お手本を聞いてリピート。音声認識でスコア判定。" },
+  { mode: "listening", icon: "👂", title: "ヒアリング問題", desc: "英語を聞いて意味を当てる。会話には英語で応答。" },
 ];
 
 export default function Home({ dash, onStart, onChanged, goToSnacks, toast }: Props) {

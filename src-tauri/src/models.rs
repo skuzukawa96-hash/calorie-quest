@@ -11,6 +11,8 @@ pub struct Question {
     pub difficulty: String,
     /// Genre (食べ物, 旅行・交通, 文法, ...); empty when unknown.
     pub category: String,
+    /// Fine-grained semantic field (果物, 乗り物, 感情, ...) used to pick believable distractors.
+    pub group: String,
     pub en: String,
     pub ja: String,
     /// Which study modes this question supports: choice | typing | speaking
@@ -31,6 +33,10 @@ pub struct SessionQuestion {
     pub sub_display: Option<String>,
     pub options: Vec<String>,
     pub answer: String,
+    /// English to speak: the full sentence for grammar blanks, the spoken line for dialogues.
+    pub audio_text: String,
+    /// Listening mode hides the English until the answer is in.
+    pub hide_text: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]

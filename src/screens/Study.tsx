@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import GlossedText from "../components/GlossedText";
 import PronunciationTips, { HighlightedText } from "../components/PronunciationTips";
-import { api } from "../lib/api";
+import { api, runningInTauri } from "../lib/api";
+import { loadDictionary, type Dictionary } from "../lib/dictionary";
 import { checkTyping, makeHint, PASS_SCORE, scorePronunciation, type PronunciationScore, type TipKey } from "../lib/scoring";
 import { playCrunch, playFanfare, playPop, playWrong } from "../lib/sfx";
-import { runningInTauri } from "../lib/api";
 import {
   describeRecognitionError,
   INSTALL_STT_GUIDE,
@@ -30,6 +31,7 @@ import {
 
 const SESSION_SIZE = 10;
 const AUTO_SPEAK_KEY = "cq-auto-speak";
+const GLOSS_KEY = "cq-show-gloss";
 
 interface Props {
   mode: Mode;
@@ -40,20 +42,6 @@ interface Props {
   onExit: () => void;
   onProgress: () => void;
   toast: (msg: string) => void;
-}
-
-/** What to read aloud after answering: the completed sentence for grammar blanks, otherwise the English text. */
-function spokenText(q: SessionQuestion): string {
-  if (q.question.choices && q.question.prompt) return q.question.prompt.replace(/_{2,}/g, q.question.en);
-  return q.question.en;
-}
-
-function loadAutoSpeak(): boolean {
-  try {
-    return localStorage.getItem(AUTO_SPEAK_KEY) !== "off";
-  } catch {
-    return true;
-  }
 }
 
 interface Feedback {
@@ -69,6 +57,28 @@ interface Tally {
   reviews: number;
 }
 
+function loadFlag(key: string, fallback: boolean): boolean {
+  try {
+    const v = localStorage.getItem(key);
+    return v === null ? fallback : v === "on";
+  } catch {
+    return fallback;
+  }
+}
+
+function saveFlag(key: string, on: boolean) {
+  try {
+    localStorage.setItem(key, on ? "on" : "off");
+  } catch {
+    /* ignore */
+  }
+}
+
+/** Single vocabulary items need no hover dictionary; full lines do. */
+function isMultiWord(q: SessionQuestion): boolean {
+  return q.audioText.trim().includes(" ");
+}
+
 export default function Study({ mode, difficulty, category, rates, onExit, onProgress, toast }: Props) {
   const [questions, setQuestions] = useState<SessionQuestion[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -77,19 +87,29 @@ export default function Study({ mode, difficulty, category, rates, onExit, onPro
   const [tally, setTally] = useState<Tally>({ correct: 0, kcal: 0, reviews: 0 });
   const [submitting, setSubmitting] = useState(false);
   const [runId, setRunId] = useState(0);
-  const [autoSpeak, setAutoSpeak] = useState<boolean>(loadAutoSpeak);
+  const [autoSpeak, setAutoSpeak] = useState<boolean>(() => loadFlag(AUTO_SPEAK_KEY, true));
+  const [showGloss, setShowGloss] = useState<boolean>(() => loadFlag(GLOSS_KEY, true));
+  const [dict, setDict] = useState<Dictionary | null>(null);
 
-  const toggleAutoSpeak = () => {
+  useEffect(() => {
+    let alive = true;
+    loadDictionary().then((d) => alive && setDict(d));
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const toggleAutoSpeak = () =>
     setAutoSpeak((v) => {
-      const next = !v;
-      try {
-        localStorage.setItem(AUTO_SPEAK_KEY, next ? "on" : "off");
-      } catch {
-        /* ignore */
-      }
-      return next;
+      saveFlag(AUTO_SPEAK_KEY, !v);
+      return !v;
     });
-  };
+
+  const toggleGloss = () =>
+    setShowGloss((v) => {
+      saveFlag(GLOSS_KEY, !v);
+      return !v;
+    });
 
   useEffect(() => {
     let alive = true;
@@ -130,8 +150,10 @@ export default function Study({ mode, difficulty, category, rates, onExit, onPro
         setFeedback({ correct, result, given, score: ps });
         onProgress();
         // Read the English aloud after the answer sound so the learner hears the pronunciation.
-        if (mode !== "speaking" && autoSpeak && isTtsSupported()) {
-          const text = spokenText(current);
+        // Listening mode has just played it, so it only repeats when the answer was wrong.
+        const repeat = mode !== "speaking" && autoSpeak && isTtsSupported() && (mode !== "listening" || !correct);
+        if (repeat) {
+          const text = current.audioText;
           window.setTimeout(() => {
             speak(text).catch(() => undefined);
           }, 380);
@@ -198,16 +220,11 @@ export default function Study({ mode, difficulty, category, rates, onExit, onPro
     );
   }
   if (finished) {
-    return (
-      <Summary
-        total={questions.length}
-        tally={tally}
-        onExit={onExit}
-        onAgain={() => setRunId((r) => r + 1)}
-      />
-    );
+    return <Summary total={questions.length} tally={tally} onExit={onExit} onAgain={() => setRunId((r) => r + 1)} />;
   }
   if (!current) return null;
+
+  const glossOn = showGloss && isMultiWord(current);
 
   return (
     <div className="screen study">
@@ -235,6 +252,14 @@ export default function Study({ mode, difficulty, category, rates, onExit, onPro
               🔊 自動読み上げ {autoSpeak ? "ON" : "OFF"}
             </button>
           )}
+          <button
+            type="button"
+            className={"pill toggle " + (showGloss ? "on" : "")}
+            onClick={toggleGloss}
+            title="英文の単語にカーソルを合わせると意味が出ます"
+          >
+            🔤 単語の意味 {showGloss ? "ON" : "OFF"}
+          </button>
         </div>
         <div className="study-progress">
           {idx + 1} / {questions.length}
@@ -251,10 +276,28 @@ export default function Study({ mode, difficulty, category, rates, onExit, onPro
           </div>
         )}
         {mode === "choice" && (
-          <ChoiceCard q={current} disabled={!!feedback || submitting} onAnswer={(sel) => submit(sel === current.answer, null, sel)} chosen={feedback?.given ?? null} />
+          <ChoiceCard
+            q={current}
+            dict={dict}
+            glossOn={glossOn}
+            disabled={!!feedback || submitting}
+            onAnswer={(sel) => submit(sel === current.answer, null, sel)}
+            chosen={feedback?.given ?? null}
+          />
         )}
         {mode === "typing" && (
           <TypingCard q={current} disabled={!!feedback || submitting} onAnswer={(input) => submit(checkTyping(current.answer, input), null, input)} />
+        )}
+        {mode === "listening" && (
+          <ListeningCard
+            q={current}
+            disabled={!!feedback || submitting}
+            answered={!!feedback}
+            dict={dict}
+            glossOn={glossOn}
+            onAnswer={(sel) => submit(sel === current.answer, null, sel)}
+            chosen={feedback?.given ?? null}
+          />
         )}
         {mode === "speaking" && (
           <SpeakingCard
@@ -278,18 +321,36 @@ export default function Study({ mode, difficulty, category, rates, onExit, onPro
               </div>
             </div>
             <div className="feedback-detail">
+              {mode === "listening" && (
+                <div className="heard-line">
+                  <span className="label">聞こえた英語</span>{" "}
+                  <strong>
+                    <GlossedText text={current.audioText} dict={dict} enabled={glossOn} />
+                  </strong>
+                  {current.subDisplay && <span className="muted">　{current.subDisplay}</span>}
+                </div>
+              )}
               <div>
-                <span className="label">正解</span> <strong>{current.answer}</strong>
+                <span className="label">正解</span>{" "}
+                <strong>
+                  {/^[\x20-\x7e]+$/.test(current.answer) ? (
+                    <GlossedText text={current.answer} dict={dict} enabled={showGloss} />
+                  ) : (
+                    current.answer
+                  )}
+                </strong>
                 {mode === "choice" && current.subDisplay && <span className="muted">　{current.subDisplay}</span>}
                 {mode !== "speaking" && (
-                  <button className="btn-link" onClick={() => speak(spokenText(current)).catch(() => undefined)} disabled={!isTtsSupported()}>
+                  <button className="btn-link" onClick={() => speak(current.audioText).catch(() => undefined)} disabled={!isTtsSupported()}>
                     🔊 もう一度聞く
                   </button>
                 )}
               </div>
               {feedback.score && (
                 <div className="score-breakdown">
-                  <span>スコア <b>{feedback.score.score}</b></span>
+                  <span>
+                    スコア <b>{feedback.score.score}</b>
+                  </span>
                   <span>一致度 {Math.round(feedback.score.similarity * 100)}%</span>
                   <span>流暢さ {Math.round(feedback.score.fluency * 100)}%</span>
                   {feedback.score.best && <span className="muted">認識: “{feedback.score.best}”</span>}
@@ -314,7 +375,21 @@ export default function Study({ mode, difficulty, category, rates, onExit, onPro
 
 /* ---------- Multiple choice ---------- */
 
-function ChoiceCard({ q, disabled, onAnswer, chosen }: { q: SessionQuestion; disabled: boolean; onAnswer: (s: string) => void; chosen: string | null }) {
+function ChoiceCard({
+  q,
+  dict,
+  glossOn,
+  disabled,
+  onAnswer,
+  chosen,
+}: {
+  q: SessionQuestion;
+  dict: Dictionary | null;
+  glossOn: boolean;
+  disabled: boolean;
+  onAnswer: (s: string) => void;
+  chosen: string | null;
+}) {
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (disabled) return;
@@ -329,7 +404,9 @@ function ChoiceCard({ q, disabled, onAnswer, chosen }: { q: SessionQuestion; dis
   return (
     <>
       <div className="prompt-label">{isGrammar ? "空欄に入る語を選ぼう" : "この英語の意味は？"}</div>
-      <div className={"prompt " + (isGrammar ? "prompt-sentence" : "")}>{q.display}</div>
+      <div className={"prompt " + (isGrammar ? "prompt-sentence" : "")}>
+        <GlossedText text={q.display} dict={dict} enabled={glossOn} />
+      </div>
       <div className="options">
         {q.options.map((opt, i) => {
           let cls = "option";
@@ -392,6 +469,95 @@ function TypingCard({ q, disabled, onAnswer }: { q: SessionQuestion; disabled: b
         {showHint && <code className="hint">{makeHint(q.answer)}</code>}
       </div>
     </form>
+  );
+}
+
+/* ---------- Listening ---------- */
+
+function ListeningCard({
+  q,
+  disabled,
+  answered,
+  dict,
+  glossOn,
+  onAnswer,
+  chosen,
+}: {
+  q: SessionQuestion;
+  disabled: boolean;
+  answered: boolean;
+  dict: Dictionary | null;
+  glossOn: boolean;
+  onAnswer: (s: string) => void;
+  chosen: string | null;
+}) {
+  const [playing, setPlaying] = useState(false);
+  const [plays, setPlays] = useState(0);
+  const isDialogue = q.question.kind === "dialogue";
+
+  const play = useCallback(() => {
+    setPlaying(true);
+    setPlays((n) => n + 1);
+    speak(q.audioText)
+      .catch(() => undefined)
+      .finally(() => setPlaying(false));
+  }, [q.audioText]);
+
+  // Play once when the question appears; the learner can repeat as often as they like.
+  useEffect(() => {
+    const t = window.setTimeout(play, 300);
+    return () => {
+      window.clearTimeout(t);
+      stopSpeaking();
+    };
+  }, [play]);
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (disabled) return;
+      const n = Number(e.key);
+      if (n >= 1 && n <= q.options.length) onAnswer(q.options[n - 1]);
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [q, disabled, onAnswer]);
+
+  return (
+    <>
+      <div className="prompt-label">{isDialogue ? "会話を聞いて、自然な応答を選ぼう" : "英語を聞いて、意味を選ぼう"}</div>
+      <div className="listen-stage">
+        <button type="button" className={"listen-button " + (playing ? "playing" : "")} onClick={play} disabled={!isTtsSupported()}>
+          <span className="listen-icon">{playing ? "🔊" : "▶"}</span>
+          <span>{plays <= 1 ? "もう一度聞く" : `もう一度聞く（${plays}回再生）`}</span>
+        </button>
+        {answered ? (
+          <div className="listen-revealed">
+            <GlossedText text={q.audioText} dict={dict} enabled={glossOn} />
+          </div>
+        ) : (
+          <div className="listen-hidden" aria-hidden="true">
+            ● ● ● ● ●
+          </div>
+        )}
+      </div>
+      {!isTtsSupported() && <div className="notice warn">この環境では音声の読み上げが利用できません。</div>}
+      <div className={"options " + (isDialogue ? "options-long" : "")}>
+        {q.options.map((opt, i) => {
+          let cls = "option";
+          if (chosen) {
+            if (opt === q.answer) cls += " correct";
+            else if (opt === chosen) cls += " wrong";
+          }
+          return (
+            <button key={opt + i} className={cls} disabled={disabled} onClick={() => onAnswer(opt)}>
+              <span className="option-num">{i + 1}</span>
+              <span>{opt}</span>
+            </button>
+          );
+        })}
+      </div>
+      <div className="muted small">キーボードの 1〜4 でも回答できます</div>
+    </>
   );
 }
 
@@ -485,7 +651,12 @@ function SpeakingCard({
               🎙 聞き取り中…（話し終わると自動で止まります）
             </button>
           ) : (
-            <button type="button" className="btn btn-primary" onClick={listen} disabled={disabled || state !== "idle" || attempts.length >= MAX_ATTEMPTS}>
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={listen}
+              disabled={disabled || state !== "idle" || attempts.length >= MAX_ATTEMPTS}
+            >
               🎤 マイクで話す{attempts.length ? `（${attempts.length}/${MAX_ATTEMPTS}）` : ""}
             </button>
           )
@@ -502,14 +673,20 @@ function SpeakingCard({
             <div key={i} className={"attempt " + (a.score >= PASS_SCORE ? "pass" : "fail")}>
               <span className="attempt-score">{a.score}</span>
               <span className="attempt-text">“{a.best || "（認識できず）"}”</span>
-              <span className="muted small">一致 {Math.round(a.similarity * 100)}% / 流暢 {Math.round(a.fluency * 100)}%</span>
+              <span className="muted small">
+                一致 {Math.round(a.similarity * 100)}% / 流暢 {Math.round(a.fluency * 100)}%
+              </span>
             </div>
           ))}
           <div className="row">
             <button type="button" className="btn btn-primary" disabled={disabled || !best} onClick={() => best && onSubmit(best)}>
               この結果で確定（ベスト {best?.score ?? 0} 点）
             </button>
-            {attempts.length < MAX_ATTEMPTS && <span className="muted small">合格ラインは {PASS_SCORE} 点。あと {MAX_ATTEMPTS - attempts.length} 回やり直せます。</span>}
+            {attempts.length < MAX_ATTEMPTS && (
+              <span className="muted small">
+                合格ラインは {PASS_SCORE} 点。あと {MAX_ATTEMPTS - attempts.length} 回やり直せます。
+              </span>
+            )}
           </div>
         </div>
       )}

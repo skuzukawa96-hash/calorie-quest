@@ -7,6 +7,9 @@ import phrases2 from "../../src-tauri/data/phrases-2.json";
 import grammar2 from "../../src-tauri/data/grammar-2.json";
 import idioms2 from "../../src-tauri/data/idioms-2.json";
 import sentences2 from "../../src-tauri/data/sentences-2.json";
+import dialogues from "../../src-tauri/data/listening-dialogues.json";
+import glossary from "../../src-tauri/data/glossary.json";
+import { expandDictionary, type Dictionary } from "./dictionary";
 import type {
   AnswerPayload,
   AnswerResult,
@@ -31,6 +34,7 @@ interface SeedQuestion {
   kind: string;
   difficulty: string;
   category?: string;
+  group?: string;
   en: string;
   ja: string;
   modes: string[];
@@ -74,6 +78,7 @@ const seedQuestions: SeedQuestion[] = [
   ...(grammar2 as unknown as SeedQuestion[]),
   ...(idioms2 as unknown as SeedQuestion[]),
   ...(sentences2 as unknown as SeedQuestion[]),
+  ...(dialogues as unknown as SeedQuestion[]),
 ];
 
 const questions: Question[] = seedQuestions.map(
@@ -83,6 +88,7 @@ const questions: Question[] = seedQuestions.map(
     kind: q.kind,
     difficulty: q.difficulty as Level,
     category: q.category ?? "",
+    group: q.group ?? q.category ?? "",
     en: q.en,
     ja: q.ja,
     modes: q.modes as Mode[],
@@ -186,36 +192,70 @@ function ticketsAvailable(): number {
   return state.tickets.filter((t) => !t.usedAt).length;
 }
 
+/** Three wrong translations from the tightest semantic circle available; mirrors the Rust side. */
+function japaneseDistractors(q: Question): string[] {
+  const out: string[] = [];
+  const pools = [
+    questions.filter((o) => o.id !== q.id && o.kind === q.kind && o.group === q.group && o.ja !== q.ja),
+    questions.filter((o) => o.id !== q.id && o.kind === q.kind && o.category === q.category && o.ja !== q.ja),
+    questions.filter((o) => o.id !== q.id && o.kind === q.kind && o.ja !== q.ja),
+    questions.filter((o) => o.id !== q.id && o.ja !== q.ja),
+  ];
+  for (const pool of pools) {
+    for (const o of shuffle(pool)) {
+      if (out.length >= 3) break;
+      if (!out.includes(o.ja)) out.push(o.ja);
+    }
+    if (out.length >= 3) break;
+  }
+  return out;
+}
+
+function audioTextFor(q: Question): string {
+  if (q.kind === "grammar") return (q.prompt ?? q.en).replace(/_{2,}/g, q.en);
+  if (q.kind === "dialogue") return q.prompt ?? q.en;
+  return q.en;
+}
+
 function buildSessionQuestion(q: Question, mode: Mode, isReview: boolean): SessionQuestion {
+  const base = { question: q, mode, isReview, audioText: audioTextFor(q), hideText: false };
   if (mode === "choice") {
     if (q.choices && q.choices.length) {
-      return { question: q, mode, isReview, display: q.prompt ?? q.en, subDisplay: q.ja, options: shuffle(q.choices), answer: q.en };
+      return { ...base, display: q.prompt ?? q.en, subDisplay: q.ja, options: shuffle(q.choices), answer: q.en };
     }
-    const distractors: string[] = [];
-    const pools = [
-      questions.filter((o) => o.id !== q.id && o.kind === q.kind && o.category === q.category && o.ja !== q.ja),
-      questions.filter((o) => o.id !== q.id && o.kind === q.kind && o.ja !== q.ja),
-      questions.filter((o) => o.id !== q.id && o.ja !== q.ja),
-    ];
-    for (const pool of pools) {
-      for (const o of shuffle(pool)) {
-        if (distractors.length >= 3) break;
-        if (!distractors.includes(o.ja)) distractors.push(o.ja);
-      }
-      if (distractors.length >= 3) break;
-    }
-    return { question: q, mode, isReview, display: q.en, subDisplay: null, options: shuffle([...distractors, q.ja]), answer: q.ja };
+    return {
+      ...base,
+      display: q.en,
+      subDisplay: null,
+      options: shuffle([...japaneseDistractors(q), q.ja]),
+      answer: q.ja,
+    };
   }
   if (mode === "typing") {
-    return { question: q, mode, isReview, display: q.ja, subDisplay: q.prompt ?? null, options: [], answer: q.en };
+    return { ...base, display: q.ja, subDisplay: q.prompt ?? null, options: [], answer: q.en };
   }
-  return { question: q, mode, isReview, display: q.en, subDisplay: q.ja, options: [], answer: q.en };
+  if (mode === "listening") {
+    if (q.kind === "dialogue") {
+      return { ...base, hideText: true, display: "", subDisplay: q.ja, options: shuffle(q.choices ?? []), answer: q.en };
+    }
+    return {
+      ...base,
+      hideText: true,
+      display: "",
+      subDisplay: null,
+      options: shuffle([...japaneseDistractors(q), q.ja]),
+      answer: q.ja,
+    };
+  }
+  return { ...base, display: q.en, subDisplay: q.ja, options: [], answer: q.en };
 }
 
 function getSessionQuestions(mode: Mode, difficulty: string, category: string, count: number): SessionQuestion[] {
   const t = today();
+  const hasMode = (q: Question) =>
+    mode === "listening" ? q.modes.includes("listening") || q.modes.includes("speaking") : q.modes.includes(mode);
   const fits = (q: Question) =>
-    q.modes.includes(mode) &&
+    hasMode(q) &&
     (difficulty === "mixed" || q.difficulty === difficulty) &&
     (category === "all" || q.category === category);
   const maxReviews = Math.ceil(count * 0.6);
@@ -340,6 +380,19 @@ function getStats(): Stats {
   };
 }
 
+let dictionaryCache: Dictionary | null = null;
+
+function mockDictionary(): Dictionary {
+  if (dictionaryCache) return dictionaryCache;
+  const base: Dictionary = { ...(glossary as unknown as Dictionary) };
+  for (const q of questions) {
+    if (q.kind === "word") base[q.en.toLowerCase()] = q.ja;
+  }
+  const texts = questions.flatMap((q) => [q.en, q.prompt ?? "", ...(q.choices ?? [])]);
+  dictionaryCache = expandDictionary(base, texts);
+  return dictionaryCache;
+}
+
 export async function mockInvoke<T>(cmd: string, args: Record<string, unknown>): Promise<T> {
   await new Promise((r) => setTimeout(r, 30));
   const t = today();
@@ -441,6 +494,8 @@ export async function mockInvoke<T>(cmd: string, args: Record<string, unknown>):
       return undefined as T;
     case "speech_capabilities":
       return { nativeTts: false, ttsVoices: [], nativeStt: false, sttLanguages: [], sttError: "browser preview" } as T;
+    case "get_dictionary":
+      return mockDictionary() as T;
     default:
       throw new Error(`mock backend: unknown command ${cmd}`);
   }

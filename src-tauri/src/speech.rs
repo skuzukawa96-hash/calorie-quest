@@ -218,6 +218,21 @@ mod platform {
         .to_string()
     }
 
+    /// The recognizer returns the grammar phrase without the punctuation we store
+    /// ("Nice to meet you." comes back as "Nice to meet you"), so compare on letters only.
+    fn same_phrase(a: &str, b: &str) -> bool {
+        let norm = |s: &str| -> String {
+            s.to_lowercase()
+                .chars()
+                .filter(|c| c.is_alphanumeric() || c.is_whitespace())
+                .collect::<String>()
+                .split_whitespace()
+                .collect::<Vec<_>>()
+                .join(" ")
+        };
+        !a.trim().is_empty() && norm(a) == norm(b)
+    }
+
     fn confidence_name(c: SpeechRecognitionConfidence) -> String {
         match c {
             SpeechRecognitionConfidence::High => "high",
@@ -299,7 +314,7 @@ mod platform {
 
             Ok(NativeRecognition {
                 status: status_name(status),
-                matched: !text.is_empty() && text.eq_ignore_ascii_case(&target),
+                matched: same_phrase(&text, &target),
                 text,
                 confidence: confidence_name(confidence),
                 raw_confidence,
@@ -337,6 +352,24 @@ mod platform {
 #[tauri::command(async)]
 pub fn speech_capabilities() -> SpeechCapabilities {
     platform::capabilities()
+}
+
+#[cfg(all(test, windows))]
+mod tests {
+    use super::*;
+
+    /// Needs the Windows English speech pack and a microphone; run with `cargo test -- --ignored`.
+    #[test]
+    #[ignore]
+    fn native_english_recognizer_initializes() {
+        let caps = platform::capabilities();
+        println!("capabilities: {caps:?}");
+        assert!(caps.native_stt, "English recognizer not installed: {:?}", caps.stt_languages);
+        let result = platform::recognize("en-US", "hello", vec!["good morning".into(), "thank you".into()], 2);
+        println!("recognition: {result:?}");
+        let r = result.expect("recognizer should run even when nobody speaks");
+        assert!(["success", "timeout", "audio-quality-failure"].contains(&r.status.as_str()), "unexpected status {}", r.status);
+    }
 }
 
 /// Returns a 16 kHz mono WAV file for the frontend to play.
