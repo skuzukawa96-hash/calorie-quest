@@ -22,32 +22,40 @@ const EXTRA_QUESTION_PACKS: &[(&str, &str)] = &[
     ("words-9.json", include_str!("../data/words-9.json")),
     ("words-10.json", include_str!("../data/words-10.json")),
     ("words-11.json", include_str!("../data/words-11.json")),
+    ("words-12.json", include_str!("../data/words-12.json")),
+    ("words-13.json", include_str!("../data/words-13.json")),
     ("phrases-2.json", include_str!("../data/phrases-2.json")),
     ("phrases-3.json", include_str!("../data/phrases-3.json")),
     ("phrases-4.json", include_str!("../data/phrases-4.json")),
     ("phrases-5.json", include_str!("../data/phrases-5.json")),
     ("phrases-6.json", include_str!("../data/phrases-6.json")),
     ("phrases-7.json", include_str!("../data/phrases-7.json")),
+    ("phrases-8.json", include_str!("../data/phrases-8.json")),
     ("grammar-2.json", include_str!("../data/grammar-2.json")),
     ("grammar-3.json", include_str!("../data/grammar-3.json")),
     ("grammar-4.json", include_str!("../data/grammar-4.json")),
     ("grammar-5.json", include_str!("../data/grammar-5.json")),
     ("grammar-6.json", include_str!("../data/grammar-6.json")),
+    ("grammar-7.json", include_str!("../data/grammar-7.json")),
     ("idioms-2.json", include_str!("../data/idioms-2.json")),
     ("idioms-3.json", include_str!("../data/idioms-3.json")),
     ("idioms-4.json", include_str!("../data/idioms-4.json")),
     ("idioms-5.json", include_str!("../data/idioms-5.json")),
     ("idioms-6.json", include_str!("../data/idioms-6.json")),
+    ("idioms-7.json", include_str!("../data/idioms-7.json")),
     ("sentences-2.json", include_str!("../data/sentences-2.json")),
     ("sentences-3.json", include_str!("../data/sentences-3.json")),
     ("sentences-4.json", include_str!("../data/sentences-4.json")),
     ("sentences-5.json", include_str!("../data/sentences-5.json")),
     ("sentences-6.json", include_str!("../data/sentences-6.json")),
+    ("sentences-7.json", include_str!("../data/sentences-7.json")),
     ("listening-dialogues.json", include_str!("../data/listening-dialogues.json")),
     ("listening-dialogues-2.json", include_str!("../data/listening-dialogues-2.json")),
     ("listening-dialogues-3.json", include_str!("../data/listening-dialogues-3.json")),
     ("listening-dialogues-4.json", include_str!("../data/listening-dialogues-4.json")),
     ("listening-dialogues-5.json", include_str!("../data/listening-dialogues-5.json")),
+    ("listening-dialogues-6.json", include_str!("../data/listening-dialogues-6.json")),
+    ("listening-dialogues-7.json", include_str!("../data/listening-dialogues-7.json")),
 ];
 /// Japanese glosses for words that appear inside sentences but are not questions themselves.
 const GLOSSARY_JSON: &str = include_str!("../data/glossary.json");
@@ -400,9 +408,9 @@ mod tests {
     use std::collections::{HashMap, HashSet};
 
     #[test]
-    fn seed_data_is_well_formed_and_has_at_least_7500_questions() {
+    fn seed_data_is_well_formed_and_has_at_least_10000_questions() {
         let seed = load_seed();
-        assert!(seed.questions.len() >= 7500, "expected >= 7500 questions, got {}", seed.questions.len());
+        assert!(seed.questions.len() >= 10000, "expected >= 10000 questions, got {}", seed.questions.len());
 
         let mut keys = HashSet::new();
         let mut ja_by_group: HashMap<(String, String), HashSet<String>> = HashMap::new();

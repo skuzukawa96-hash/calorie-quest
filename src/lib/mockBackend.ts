@@ -12,32 +12,40 @@ import words8 from "../../src-tauri/data/words-8.json";
 import words9 from "../../src-tauri/data/words-9.json";
 import words10 from "../../src-tauri/data/words-10.json";
 import words11 from "../../src-tauri/data/words-11.json";
+import words12 from "../../src-tauri/data/words-12.json";
+import words13 from "../../src-tauri/data/words-13.json";
 import phrases2 from "../../src-tauri/data/phrases-2.json";
 import phrases3 from "../../src-tauri/data/phrases-3.json";
 import phrases4 from "../../src-tauri/data/phrases-4.json";
 import phrases5 from "../../src-tauri/data/phrases-5.json";
 import phrases6 from "../../src-tauri/data/phrases-6.json";
 import phrases7 from "../../src-tauri/data/phrases-7.json";
+import phrases8 from "../../src-tauri/data/phrases-8.json";
 import grammar2 from "../../src-tauri/data/grammar-2.json";
 import grammar3 from "../../src-tauri/data/grammar-3.json";
 import grammar4 from "../../src-tauri/data/grammar-4.json";
 import grammar5 from "../../src-tauri/data/grammar-5.json";
 import grammar6 from "../../src-tauri/data/grammar-6.json";
+import grammar7 from "../../src-tauri/data/grammar-7.json";
 import idioms2 from "../../src-tauri/data/idioms-2.json";
 import idioms3 from "../../src-tauri/data/idioms-3.json";
 import idioms4 from "../../src-tauri/data/idioms-4.json";
 import idioms5 from "../../src-tauri/data/idioms-5.json";
 import idioms6 from "../../src-tauri/data/idioms-6.json";
+import idioms7 from "../../src-tauri/data/idioms-7.json";
 import sentences2 from "../../src-tauri/data/sentences-2.json";
 import sentences3 from "../../src-tauri/data/sentences-3.json";
 import sentences4 from "../../src-tauri/data/sentences-4.json";
 import sentences5 from "../../src-tauri/data/sentences-5.json";
 import sentences6 from "../../src-tauri/data/sentences-6.json";
+import sentences7 from "../../src-tauri/data/sentences-7.json";
 import dialogues from "../../src-tauri/data/listening-dialogues.json";
 import dialogues2 from "../../src-tauri/data/listening-dialogues-2.json";
 import dialogues3 from "../../src-tauri/data/listening-dialogues-3.json";
 import dialogues4 from "../../src-tauri/data/listening-dialogues-4.json";
 import dialogues5 from "../../src-tauri/data/listening-dialogues-5.json";
+import dialogues6 from "../../src-tauri/data/listening-dialogues-6.json";
+import dialogues7 from "../../src-tauri/data/listening-dialogues-7.json";
 import glossary from "../../src-tauri/data/glossary.json";
 import { expandDictionary, type Dictionary } from "./dictionary";
 import type {
@@ -115,32 +123,40 @@ const seedQuestions: SeedQuestion[] = [
   ...(words9 as unknown as SeedQuestion[]),
   ...(words10 as unknown as SeedQuestion[]),
   ...(words11 as unknown as SeedQuestion[]),
+  ...(words12 as unknown as SeedQuestion[]),
+  ...(words13 as unknown as SeedQuestion[]),
   ...(phrases2 as unknown as SeedQuestion[]),
   ...(phrases3 as unknown as SeedQuestion[]),
   ...(phrases4 as unknown as SeedQuestion[]),
   ...(phrases5 as unknown as SeedQuestion[]),
   ...(phrases6 as unknown as SeedQuestion[]),
   ...(phrases7 as unknown as SeedQuestion[]),
+  ...(phrases8 as unknown as SeedQuestion[]),
   ...(grammar2 as unknown as SeedQuestion[]),
   ...(grammar3 as unknown as SeedQuestion[]),
   ...(grammar4 as unknown as SeedQuestion[]),
   ...(grammar5 as unknown as SeedQuestion[]),
   ...(grammar6 as unknown as SeedQuestion[]),
+  ...(grammar7 as unknown as SeedQuestion[]),
   ...(idioms2 as unknown as SeedQuestion[]),
   ...(idioms3 as unknown as SeedQuestion[]),
   ...(idioms4 as unknown as SeedQuestion[]),
   ...(idioms5 as unknown as SeedQuestion[]),
   ...(idioms6 as unknown as SeedQuestion[]),
+  ...(idioms7 as unknown as SeedQuestion[]),
   ...(sentences2 as unknown as SeedQuestion[]),
   ...(sentences3 as unknown as SeedQuestion[]),
   ...(sentences4 as unknown as SeedQuestion[]),
   ...(sentences5 as unknown as SeedQuestion[]),
   ...(sentences6 as unknown as SeedQuestion[]),
+  ...(sentences7 as unknown as SeedQuestion[]),
   ...(dialogues as unknown as SeedQuestion[]),
   ...(dialogues2 as unknown as SeedQuestion[]),
   ...(dialogues3 as unknown as SeedQuestion[]),
   ...(dialogues4 as unknown as SeedQuestion[]),
   ...(dialogues5 as unknown as SeedQuestion[]),
+  ...(dialogues6 as unknown as SeedQuestion[]),
+  ...(dialogues7 as unknown as SeedQuestion[]),
 ];
 
 const questions: Question[] = seedQuestions.map(
