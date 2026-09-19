@@ -16,22 +16,29 @@ const EXTRA_QUESTION_PACKS: &[(&str, &str)] = &[
     ("words-3.json", include_str!("../data/words-3.json")),
     ("words-4.json", include_str!("../data/words-4.json")),
     ("words-5.json", include_str!("../data/words-5.json")),
+    ("words-6.json", include_str!("../data/words-6.json")),
+    ("words-7.json", include_str!("../data/words-7.json")),
     ("phrases-2.json", include_str!("../data/phrases-2.json")),
     ("phrases-3.json", include_str!("../data/phrases-3.json")),
     ("phrases-4.json", include_str!("../data/phrases-4.json")),
     ("phrases-5.json", include_str!("../data/phrases-5.json")),
+    ("phrases-6.json", include_str!("../data/phrases-6.json")),
     ("grammar-2.json", include_str!("../data/grammar-2.json")),
     ("grammar-3.json", include_str!("../data/grammar-3.json")),
     ("grammar-4.json", include_str!("../data/grammar-4.json")),
+    ("grammar-5.json", include_str!("../data/grammar-5.json")),
     ("idioms-2.json", include_str!("../data/idioms-2.json")),
     ("idioms-3.json", include_str!("../data/idioms-3.json")),
     ("idioms-4.json", include_str!("../data/idioms-4.json")),
+    ("idioms-5.json", include_str!("../data/idioms-5.json")),
     ("sentences-2.json", include_str!("../data/sentences-2.json")),
     ("sentences-3.json", include_str!("../data/sentences-3.json")),
     ("sentences-4.json", include_str!("../data/sentences-4.json")),
+    ("sentences-5.json", include_str!("../data/sentences-5.json")),
     ("listening-dialogues.json", include_str!("../data/listening-dialogues.json")),
     ("listening-dialogues-2.json", include_str!("../data/listening-dialogues-2.json")),
     ("listening-dialogues-3.json", include_str!("../data/listening-dialogues-3.json")),
+    ("listening-dialogues-4.json", include_str!("../data/listening-dialogues-4.json")),
 ];
 /// Japanese glosses for words that appear inside sentences but are not questions themselves.
 const GLOSSARY_JSON: &str = include_str!("../data/glossary.json");
@@ -384,9 +391,9 @@ mod tests {
     use std::collections::{HashMap, HashSet};
 
     #[test]
-    fn seed_data_is_well_formed_and_has_at_least_3000_questions() {
+    fn seed_data_is_well_formed_and_has_at_least_4500_questions() {
         let seed = load_seed();
-        assert!(seed.questions.len() >= 3000, "expected >= 3000 questions, got {}", seed.questions.len());
+        assert!(seed.questions.len() >= 4500, "expected >= 4500 questions, got {}", seed.questions.len());
 
         let mut keys = HashSet::new();
         let mut ja_by_group: HashMap<(String, String), HashSet<String>> = HashMap::new();
