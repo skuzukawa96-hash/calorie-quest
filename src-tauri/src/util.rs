@@ -54,6 +54,8 @@ const IRREGULAR: &[(&str, &str)] = &[
     ("swam", "swim"), ("drank", "drink"), ("drunk", "drink"), ("sang", "sing"), ("sung", "sing"),
     ("woke", "wake"), ("woken", "wake"), ("hung", "hang"), ("blew", "blow"), ("blown", "blow"),
     ("flew", "fly"), ("flown", "fly"), ("slid", "slide"), ("swum", "swim"), ("lent", "lend"),
+    ("stuck", "stick"), ("swept", "sweep"), ("dug", "dig"), ("hid", "hide"), ("shook", "shake"),
+    ("threw", "throw"), ("rang", "ring"), ("rung", "ring"), ("sank", "sink"), ("laid", "lay"),
 ];
 
 /// Candidate dictionary forms for an inflected English word ("studies" → study, "running" → run).
@@ -111,6 +113,15 @@ pub fn lemmas(word: &str) -> Vec<String> {
     }
     if w.ends_with("ly") && n > 2 {
         out.push(cut(2));
+    }
+    // Words ending in -y switch to -i before a suffix (busy → busier, early → earliest).
+    for i in 0..out.len() {
+        if out[i].ends_with('i') {
+            let mut y = out[i].clone();
+            y.pop();
+            y.push('y');
+            out.push(y);
+        }
     }
     out.retain(|s| !s.is_empty());
     out.dedup();

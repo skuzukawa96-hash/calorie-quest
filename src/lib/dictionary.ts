@@ -46,6 +46,8 @@ const IRREGULAR: Record<string, string> = {
   swam: "swim", drank: "drink", drunk: "drink", sang: "sing", sung: "sing",
   woke: "wake", woken: "wake", hung: "hang", blew: "blow", blown: "blow",
   flew: "fly", flown: "fly", slid: "slide", swum: "swim", lent: "lend",
+  stuck: "stick", swept: "sweep", dug: "dig", hid: "hide", shook: "shake",
+  rang: "ring", rung: "ring", sank: "sink", laid: "lay",
 };
 
 /** Candidate dictionary forms for an inflected word. Mirrors `util::lemmas`. */
@@ -78,6 +80,10 @@ export function lemmas(word: string): string[] {
     if (doubled(3)) out.push(cut(4));
   }
   if (w.endsWith("ly") && n > 2) out.push(cut(2));
+  // Words ending in -y switch to -i before a suffix (busy → busier, early → earliest).
+  for (const c of [...out]) {
+    if (c.endsWith("i")) out.push(c.slice(0, -1) + "y");
+  }
   return out.filter(Boolean);
 }
 

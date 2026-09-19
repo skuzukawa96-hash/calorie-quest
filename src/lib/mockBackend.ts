@@ -4,16 +4,24 @@ import seedJson from "../../src-tauri/data/questions.json";
 import words2a from "../../src-tauri/data/words-2a.json";
 import words2b from "../../src-tauri/data/words-2b.json";
 import words3 from "../../src-tauri/data/words-3.json";
+import words4 from "../../src-tauri/data/words-4.json";
+import words5 from "../../src-tauri/data/words-5.json";
 import phrases2 from "../../src-tauri/data/phrases-2.json";
 import phrases3 from "../../src-tauri/data/phrases-3.json";
+import phrases4 from "../../src-tauri/data/phrases-4.json";
+import phrases5 from "../../src-tauri/data/phrases-5.json";
 import grammar2 from "../../src-tauri/data/grammar-2.json";
 import grammar3 from "../../src-tauri/data/grammar-3.json";
+import grammar4 from "../../src-tauri/data/grammar-4.json";
 import idioms2 from "../../src-tauri/data/idioms-2.json";
 import idioms3 from "../../src-tauri/data/idioms-3.json";
+import idioms4 from "../../src-tauri/data/idioms-4.json";
 import sentences2 from "../../src-tauri/data/sentences-2.json";
 import sentences3 from "../../src-tauri/data/sentences-3.json";
+import sentences4 from "../../src-tauri/data/sentences-4.json";
 import dialogues from "../../src-tauri/data/listening-dialogues.json";
 import dialogues2 from "../../src-tauri/data/listening-dialogues-2.json";
+import dialogues3 from "../../src-tauri/data/listening-dialogues-3.json";
 import glossary from "../../src-tauri/data/glossary.json";
 import { expandDictionary, type Dictionary } from "./dictionary";
 import type {
@@ -83,16 +91,24 @@ const seedQuestions: SeedQuestion[] = [
   ...(words2a as unknown as SeedQuestion[]),
   ...(words2b as unknown as SeedQuestion[]),
   ...(words3 as unknown as SeedQuestion[]),
+  ...(words4 as unknown as SeedQuestion[]),
+  ...(words5 as unknown as SeedQuestion[]),
   ...(phrases2 as unknown as SeedQuestion[]),
   ...(phrases3 as unknown as SeedQuestion[]),
+  ...(phrases4 as unknown as SeedQuestion[]),
+  ...(phrases5 as unknown as SeedQuestion[]),
   ...(grammar2 as unknown as SeedQuestion[]),
   ...(grammar3 as unknown as SeedQuestion[]),
+  ...(grammar4 as unknown as SeedQuestion[]),
   ...(idioms2 as unknown as SeedQuestion[]),
   ...(idioms3 as unknown as SeedQuestion[]),
+  ...(idioms4 as unknown as SeedQuestion[]),
   ...(sentences2 as unknown as SeedQuestion[]),
   ...(sentences3 as unknown as SeedQuestion[]),
+  ...(sentences4 as unknown as SeedQuestion[]),
   ...(dialogues as unknown as SeedQuestion[]),
   ...(dialogues2 as unknown as SeedQuestion[]),
+  ...(dialogues3 as unknown as SeedQuestion[]),
 ];
 
 const questions: Question[] = seedQuestions.map(
