@@ -68,16 +68,16 @@ cd src-tauri && cargo test
 
 ## 問題データ
 
-`src-tauri/data/` に15,074問。難易度（低・中・高）と20ジャンルで絞り込めます。
+`src-tauri/data/` に20,167問。難易度（低・中・高）と20ジャンルで絞り込めます。
 
 | 種類 | 難易度 | 問題数 | ファイル |
 | --- | --- | --- | --- |
 | 英単語 | 低 | 4,805 | `questions.json`, `words-2a/2b/3〜19.json` |
-| フレーズ | 中 | 3,816 | `questions.json`, `phrases-2〜18.json` |
-| 文法（穴埋め4択） | 中 | 1,633 | `questions.json`, `grammar-2〜8.json` |
+| フレーズ | 中 | 4,717 | `questions.json`, `phrases-2〜21.json` |
+| 文法（穴埋め4択） | 中 | 1,983 | `questions.json`, `grammar-2〜9.json` |
 | 慣用句 | 高 | 1,611 | `questions.json`, `idioms-2〜8.json` |
-| 長文 | 高 | 1,657 | `questions.json`, `sentences-2〜13.json` |
-| 会話応答（ヒアリング専用） | 中・高 | 1,552 | `listening-dialogues.json`, `-2〜22.json` |
+| 長文 | 高 | 1,900 | `questions.json`, `sentences-2〜14.json` |
+| 会話応答（ヒアリング専用） | 中・高 | 5,151 | `listening-dialogues.json`, `-2〜53.json` |
 
 ジャンル: 食べ物 / 日常生活 / 旅行・交通 / 買い物 / 学校・仕事 / 自然・天気 / からだ・健康 / 気持ち・性格 / 時間・数 / 動物 / 趣味・スポーツ / 色・かたち / 人・職業 / 街・建物 / テクノロジー / 科学 / 社会・くらし / 芸術・文化 / 文法 / 慣用句
 
@@ -90,7 +90,7 @@ cd src-tauri && cargo test
 ## 単語の意味ポップアップ
 
 フレーズや長文では、英文の単語にカーソルを合わせる（タップする）と日本語の意味が出ます。学習画面の「🔤 単語の意味」で切り替えでき、設定は保存されます。
-辞書は単語問題4,805語と `glossary.json`（2,954語）から作られ、起動時に活用形（studies, running, bigger, busiest, lost, brought など）へ展開されます。
+辞書は単語問題4,805語と `glossary.json`（4,439語）から作られ、起動時に活用形（studies, running, bigger, busiest, lost, brought など）へ展開されます。
 
 ## 構成
 

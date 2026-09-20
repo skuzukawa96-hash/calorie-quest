@@ -1,0 +1,2434 @@
+[
+  {
+    "key": "d2992",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "食べ物",
+    "group": "食べ物",
+    "prompt": "Why did the pizzeria switch to a wood-fired oven?",
+    "en": "A more authentic smoky flavor.",
+    "ja": "なぜそのピザ屋は薪窯に切り替えたのですか？",
+    "choices": [
+      "A more authentic smoky flavor.",
+      "She's my chef friend.",
+      "He plays chess.",
+      "It's her oven."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d2993",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "食べ物",
+    "group": "食べ物",
+    "prompt": "Who suggested infusing the olive oil with rosemary?",
+    "en": "A guest at the tasting event.",
+    "ja": "誰がそのオリーブオイルにローズマリーを漬け込むことを提案しましたか？",
+    "choices": [
+      "A guest at the tasting event.",
+      "She's my chef friend.",
+      "He plays cards.",
+      "It's her bottle."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d2994",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "食べ物",
+    "group": "食べ物",
+    "prompt": "How did the food truck decide on its daily route?",
+    "en": "Following the lunchtime foot traffic.",
+    "ja": "そのフードトラックはどうやって毎日のルートを決めたのですか？",
+    "choices": [
+      "Following the lunchtime foot traffic.",
+      "She's my vendor friend.",
+      "He plays soccer.",
+      "It's her truck."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d2995",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "食べ物",
+    "group": "食べ物",
+    "prompt": "What made the pho broth so aromatic this time?",
+    "en": "Charred ginger and star anise.",
+    "ja": "なぜそのフォーのスープは今回あんなに香り高かったのですか？",
+    "choices": [
+      "Charred ginger and star anise.",
+      "She's my cook friend.",
+      "He plays golf.",
+      "It's her pot."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d2996",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "食べ物",
+    "group": "食べ物",
+    "prompt": "Why did the creamery start making small seasonal batches?",
+    "en": "Fresher ingredients, less waste.",
+    "ja": "なぜそのクリーム工房は季節限定の少量生産を始めたのですか？",
+    "choices": [
+      "Fresher ingredients, less waste.",
+      "She's my maker friend.",
+      "He plays chess.",
+      "It's her freezer."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d2997",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "食べ物",
+    "group": "食べ物",
+    "prompt": "Who first suggested serving dessert family-style?",
+    "en": "The restaurant's new manager.",
+    "ja": "誰が最初にデザートをシェアスタイルで出すことを提案しましたか？",
+    "choices": [
+      "The restaurant's new manager.",
+      "She's my manager friend.",
+      "He plays cards.",
+      "It's her plate."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d2998",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "食べ物",
+    "group": "食べ物",
+    "prompt": "How did the diner keep its pie crust so flaky?",
+    "en": "Ice-cold butter, handled quickly.",
+    "ja": "その食堂はどうやってパイ生地をあんなにサクサクに保ったのですか？",
+    "choices": [
+      "Ice-cold butter, handled quickly.",
+      "She's my baker friend.",
+      "He plays soccer.",
+      "It's her rolling pin."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d2999",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "日常生活",
+    "group": "日常生活",
+    "prompt": "Why did the family start a shared chore chart?",
+    "en": "Fairer division of housework.",
+    "ja": "なぜその家族は共同の家事表を始めたのですか？",
+    "choices": [
+      "Fairer division of housework.",
+      "She's my roommate friend.",
+      "He plays golf.",
+      "It's her chart."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d3000",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "日常生活",
+    "group": "日常生活",
+    "prompt": "Who noticed the front gate hinge was squeaking?",
+    "en": "A neighbor walking by.",
+    "ja": "誰がその正門の蝶番がきしんでいることに気づきましたか？",
+    "choices": [
+      "A neighbor walking by.",
+      "She's my neighbor friend.",
+      "He plays chess.",
+      "It's her hinge."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d3001",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "日常生活",
+    "group": "日常生活",
+    "prompt": "How did you keep the houseplants alive during vacation?",
+    "en": "A neighbor watered them daily.",
+    "ja": "その休暇中、観葉植物をどうやって生かし続けましたか？",
+    "choices": [
+      "A neighbor watered them daily.",
+      "She's my neighbor friend.",
+      "He plays cards.",
+      "It's her watering can."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d3002",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "日常生活",
+    "group": "日常生活",
+    "prompt": "What made the reading nook feel so inviting?",
+    "en": "A soft blanket and warm lamp.",
+    "ja": "なぜその読書コーナーはあんなに居心地よく感じられたのですか？",
+    "choices": [
+      "A soft blanket and warm lamp.",
+      "She's my decorator friend.",
+      "He plays soccer.",
+      "It's her lamp."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d3003",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "日常生活",
+    "group": "日常生活",
+    "prompt": "Why did the building repaint the stairwells this spring?",
+    "en": "Overdue maintenance finally scheduled.",
+    "ja": "なぜその建物はこの春、階段室を塗り直したのですか？",
+    "choices": [
+      "Overdue maintenance finally scheduled.",
+      "She's my landlord friend.",
+      "He plays golf.",
+      "It's her brush."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d3004",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "旅行・交通",
+    "group": "旅行・交通",
+    "prompt": "Why did the subway announce a service change tonight?",
+    "en": "Scheduled track maintenance.",
+    "ja": "なぜその地下鉄は今夜、運行変更を案内したのですか？",
+    "choices": [
+      "Scheduled track maintenance.",
+      "She's my conductor friend.",
+      "He plays chess.",
+      "It's her ticket."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d3005",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "旅行・交通",
+    "group": "旅行・交通",
+    "prompt": "Who suggested renting bikes to tour the old town?",
+    "en": "Our bed and breakfast host.",
+    "ja": "誰がその旧市街を自転車で回ることを提案しましたか？",
+    "choices": [
+      "Our bed and breakfast host.",
+      "She's my host friend.",
+      "He plays cards.",
+      "It's her bike."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d3006",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "旅行・交通",
+    "group": "旅行・交通",
+    "prompt": "How did the group navigate without cell service?",
+    "en": "A paper map and compass.",
+    "ja": "そのグループは携帯電話の電波なしでどうやってナビゲートしたのですか？",
+    "choices": [
+      "A paper map and compass.",
+      "She's my guide friend.",
+      "He plays soccer.",
+      "It's her compass."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d3007",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "旅行・交通",
+    "group": "旅行・交通",
+    "prompt": "What made the lighthouse tour worth the climb?",
+    "en": "A stunning panoramic view.",
+    "ja": "なぜその灯台ツアーは登る価値があったのですか？",
+    "choices": [
+      "A stunning panoramic view.",
+      "She's my guide friend.",
+      "He plays golf.",
+      "It's her camera."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d3008",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "買い物",
+    "group": "買い物",
+    "prompt": "Why did the market start a weekly discount day?",
+    "en": "Clearing out near-expiry produce.",
+    "ja": "なぜその市場は毎週の割引日を始めたのですか？",
+    "choices": [
+      "Clearing out near-expiry produce.",
+      "She's my vendor friend.",
+      "He plays chess.",
+      "It's her stall."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d3009",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "買い物",
+    "group": "買い物",
+    "prompt": "Who noticed the shelf label didn't match the price?",
+    "en": "A careful shopper at checkout.",
+    "ja": "誰がその棚のラベルが価格と一致していないことに気づきましたか？",
+    "choices": [
+      "A careful shopper at checkout.",
+      "She's my customer friend.",
+      "He plays cards.",
+      "It's her cart."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d3010",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "学校・仕事",
+    "group": "学校・仕事",
+    "prompt": "Why did the university add a gap-year program?",
+    "en": "Supporting varied student paths.",
+    "ja": "なぜその大学はギャップイヤープログラムを追加したのですか？",
+    "choices": [
+      "Supporting varied student paths.",
+      "She's my advisor friend.",
+      "He plays soccer.",
+      "It's her folder."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d3011",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "学校・仕事",
+    "group": "学校・仕事",
+    "prompt": "Who spotted the typo in the job posting?",
+    "en": "A sharp-eyed applicant.",
+    "ja": "誰がその求人票のタイプミスに気づきましたか？",
+    "choices": [
+      "A sharp-eyed applicant.",
+      "She's my colleague friend.",
+      "He plays golf.",
+      "It's her resume."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d3012",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "自然・天気",
+    "group": "自然・天気",
+    "prompt": "Why did the wildflower meadow bloom so late this year?",
+    "en": "A colder than usual spring.",
+    "ja": "なぜその野花の草原は今年、遅く咲いたのですか？",
+    "choices": [
+      "A colder than usual spring.",
+      "She's my ranger friend.",
+      "He plays chess.",
+      "It's her camera."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d3013",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "からだ・健康",
+    "group": "からだ・健康",
+    "prompt": "Why did the clinic extend its weekend hours?",
+    "en": "High demand from working patients.",
+    "ja": "なぜそのクリニックは週末の診療時間を延長したのですか？",
+    "choices": [
+      "High demand from working patients.",
+      "She's my doctor friend.",
+      "He plays cards.",
+      "It's her chart."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d3014",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "気持ち・性格",
+    "group": "気持ち・性格",
+    "prompt": "Why did she remain so calm during the storm?",
+    "en": "Years of emergency training.",
+    "ja": "なぜ彼女はその嵐の間あんなに冷静だったのですか？",
+    "choices": [
+      "Years of emergency training.",
+      "She's my colleague friend.",
+      "He plays soccer.",
+      "It's her radio."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d3015",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "時間・数",
+    "group": "時間・数",
+    "prompt": "Why did the quarterly report take longer to finalize?",
+    "en": "Late data from one department.",
+    "ja": "なぜその四半期報告書はまとめるのに時間がかかったのですか？",
+    "choices": [
+      "Late data from one department.",
+      "She's my manager friend.",
+      "He plays golf.",
+      "It's her spreadsheet."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d3016",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "動物",
+    "group": "動物",
+    "prompt": "Why did the seals gather near the fishing boats?",
+    "en": "Easy access to leftover fish.",
+    "ja": "なぜそのアザラシたちはその漁船の近くに集まったのですか？",
+    "choices": [
+      "Easy access to leftover fish.",
+      "She's my ranger friend.",
+      "He plays chess.",
+      "It's her camera."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d3017",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "趣味・スポーツ",
+    "group": "趣味・スポーツ",
+    "prompt": "Why did the chess club switch to a rapid format?",
+    "en": "Fitting more matches into meetings.",
+    "ja": "なぜそのチェスクラブは早指し形式に切り替えたのですか？",
+    "choices": [
+      "Fitting more matches into meetings.",
+      "She's my player friend.",
+      "He plays cards.",
+      "It's her clock."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d3018",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "色・かたち",
+    "group": "色・かたち",
+    "prompt": "Why did the jeweler favor asymmetrical designs?",
+    "en": "A more organic, natural look.",
+    "ja": "なぜその宝石職人は非対称のデザインを好んだのですか？",
+    "choices": [
+      "A more organic, natural look.",
+      "She's my jeweler friend.",
+      "He plays soccer.",
+      "It's her tool."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d3019",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "人・職業",
+    "group": "人・職業",
+    "prompt": "Who inspired him to become a bridge engineer?",
+    "en": "Watching a bridge built as a child.",
+    "ja": "誰が彼に橋梁エンジニアになるきっかけを与えましたか？",
+    "choices": [
+      "Watching a bridge built as a child.",
+      "She's my colleague friend.",
+      "He plays golf.",
+      "It's her blueprint."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d3020",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "街・建物",
+    "group": "街・建物",
+    "prompt": "Why did the city widen the sidewalk downtown?",
+    "en": "More space for pedestrian traffic.",
+    "ja": "なぜ市はその繁華街の歩道を広げたのですか？",
+    "choices": [
+      "More space for pedestrian traffic.",
+      "She's my planner friend.",
+      "He plays chess.",
+      "It's her map."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d3021",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "テクノロジー",
+    "group": "テクノロジー",
+    "prompt": "Why did the company open-source its internal tool?",
+    "en": "Giving back to the developer community.",
+    "ja": "なぜその会社は社内ツールをオープンソース化したのですか？",
+    "choices": [
+      "Giving back to the developer community.",
+      "She's my developer friend.",
+      "He plays cards.",
+      "It's her laptop."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d3022",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "科学",
+    "group": "科学",
+    "prompt": "Why did the team use satellite imagery for the survey?",
+    "en": "Covering a much larger area.",
+    "ja": "なぜそのチームはその調査に衛星画像を使ったのですか？",
+    "choices": [
+      "Covering a much larger area.",
+      "She's my researcher friend.",
+      "He plays soccer.",
+      "It's her laptop."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d3023",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "社会・くらし",
+    "group": "社会・くらし",
+    "prompt": "Why did the city launch a language exchange meetup?",
+    "en": "Helping new immigrants connect.",
+    "ja": "なぜ市は言語交換の集まりを開始したのですか？",
+    "choices": [
+      "Helping new immigrants connect.",
+      "She's my council friend.",
+      "He plays golf.",
+      "It's her folder."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d3024",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "芸術・文化",
+    "group": "芸術・文化",
+    "prompt": "Why did the potter use a wood-fired kiln?",
+    "en": "Unique ash glaze effects.",
+    "ja": "なぜその陶芸家は薪窯を使ったのですか？",
+    "choices": [
+      "Unique ash glaze effects.",
+      "She's my potter friend.",
+      "He plays chess.",
+      "It's her wheel."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d3025",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "食べ物",
+    "group": "食べ物",
+    "prompt": "Why did the sushi chef switch to a different rice vinegar?",
+    "en": "A more balanced, rounder taste.",
+    "ja": "なぜその寿司職人は違う米酢に切り替えたのですか？",
+    "choices": [
+      "A more balanced, rounder taste.",
+      "She's my chef friend.",
+      "He plays chess.",
+      "It's her knife."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d3026",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "食べ物",
+    "group": "食べ物",
+    "prompt": "Who suggested adding a gluten-free menu section?",
+    "en": "A regular customer with celiac disease.",
+    "ja": "誰がグルテンフリーメニューの項目を追加することを提案しましたか？",
+    "choices": [
+      "A regular customer with celiac disease.",
+      "She's my customer friend.",
+      "He plays cards.",
+      "It's her menu."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d3027",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "食べ物",
+    "group": "食べ物",
+    "prompt": "How did the cafe train baristas so quickly?",
+    "en": "A structured two-week program.",
+    "ja": "そのカフェはどうやってバリスタをあんなに速く育成したのですか？",
+    "choices": [
+      "A structured two-week program.",
+      "She's my manager friend.",
+      "He plays soccer.",
+      "It's her machine."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d3028",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "食べ物",
+    "group": "食べ物",
+    "prompt": "What made the congee so comforting on a cold day?",
+    "en": "Slow-cooked for hours with ginger.",
+    "ja": "なぜそのお粥は寒い日にあんなに心地よかったのですか？",
+    "choices": [
+      "Slow-cooked for hours with ginger.",
+      "She's my cook friend.",
+      "He plays golf.",
+      "It's her pot."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d3029",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "食べ物",
+    "group": "食べ物",
+    "prompt": "Why did the brewery start bottling in cans instead?",
+    "en": "Lighter, more recyclable packaging.",
+    "ja": "なぜそのブルワリーは代わりに缶で瓶詰めし始めたのですか？",
+    "choices": [
+      "Lighter, more recyclable packaging.",
+      "She's my brewer friend.",
+      "He plays chess.",
+      "It's her can."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d3030",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "食べ物",
+    "group": "食べ物",
+    "prompt": "Who first suggested the pop-up dumpling stand?",
+    "en": "Two former line cooks.",
+    "ja": "誰が最初にそのポップアップ餃子スタンドを提案しましたか？",
+    "choices": [
+      "Two former line cooks.",
+      "She's my cook friend.",
+      "He plays cards.",
+      "It's her steamer."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d3031",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "食べ物",
+    "group": "食べ物",
+    "prompt": "How did the family recipe survive four generations?",
+    "en": "Written down and passed carefully.",
+    "ja": "なぜその家族のレシピは4世代続いたのですか？",
+    "choices": [
+      "Written down and passed carefully.",
+      "She's my grandmother.",
+      "He plays soccer.",
+      "It's her recipe."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d3032",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "日常生活",
+    "group": "日常生活",
+    "prompt": "Why did the family switch to bar soap over bottled?",
+    "en": "Less plastic packaging waste.",
+    "ja": "なぜその家族はボトル入りから固形石鹸に切り替えたのですか？",
+    "choices": [
+      "Less plastic packaging waste.",
+      "She's my roommate friend.",
+      "He plays golf.",
+      "It's her soap."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d3033",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "日常生活",
+    "group": "日常生活",
+    "prompt": "Who noticed the ceiling fan was wobbling badly?",
+    "en": "A visiting electrician.",
+    "ja": "誰がその天井のファンがひどく揺れていることに気づきましたか？",
+    "choices": [
+      "A visiting electrician.",
+      "She's my electrician friend.",
+      "He plays chess.",
+      "It's her ladder."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d3034",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "日常生活",
+    "group": "日常生活",
+    "prompt": "How did you fix the sticking kitchen drawer?",
+    "en": "A little candle wax on the rails.",
+    "ja": "そのキッチンの引っかかる引き出しをどうやって直しましたか？",
+    "choices": [
+      "A little candle wax on the rails.",
+      "She's my roommate friend.",
+      "He plays cards.",
+      "It's her drawer."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d3035",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "日常生活",
+    "group": "日常生活",
+    "prompt": "What made the guest bathroom feel more luxurious?",
+    "en": "Fluffy towels and a new mirror.",
+    "ja": "なぜその来客用のバスルームはあんなに豪華に感じられるようになったのですか？",
+    "choices": [
+      "Fluffy towels and a new mirror.",
+      "She's my decorator friend.",
+      "He plays soccer.",
+      "It's her towel."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d3036",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "日常生活",
+    "group": "日常生活",
+    "prompt": "Why did the tenants ask for a community garden plot?",
+    "en": "More residents wanted to grow food.",
+    "ja": "なぜその住人たちは共同菜園の区画をお願いしたのですか？",
+    "choices": [
+      "More residents wanted to grow food.",
+      "She's my landlord friend.",
+      "He plays golf.",
+      "It's her shovel."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d3037",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "旅行・交通",
+    "group": "旅行・交通",
+    "prompt": "Why did the taxi driver take a different route?",
+    "en": "Avoiding a reported accident ahead.",
+    "ja": "なぜそのタクシー運転手は違うルートを通ったのですか？",
+    "choices": [
+      "Avoiding a reported accident ahead.",
+      "She's my driver friend.",
+      "He plays chess.",
+      "It's her ticket."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d3038",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "旅行・交通",
+    "group": "旅行・交通",
+    "prompt": "Who suggested watching the sunrise from the summit?",
+    "en": "A fellow hiker we met.",
+    "ja": "誰がその山頂から日の出を見ることを提案しましたか？",
+    "choices": [
+      "A fellow hiker we met.",
+      "She's my hiking friend.",
+      "He plays cards.",
+      "It's her camera."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d3039",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "旅行・交通",
+    "group": "旅行・交通",
+    "prompt": "How did the family pack light for the two-week trip?",
+    "en": "Rolled clothes and shared toiletries.",
+    "ja": "その家族はどうやってその2週間の旅行の荷物を軽くしたのですか？",
+    "choices": [
+      "Rolled clothes and shared toiletries.",
+      "She's my travel friend.",
+      "He plays soccer.",
+      "It's her suitcase."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d3040",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "旅行・交通",
+    "group": "旅行・交通",
+    "prompt": "What made the overnight ferry so memorable?",
+    "en": "Dolphins swimming alongside at dawn.",
+    "ja": "なぜその夜行フェリーはあんなに思い出深かったのですか？",
+    "choices": [
+      "Dolphins swimming alongside at dawn.",
+      "She's my captain friend.",
+      "He plays golf.",
+      "It's her camera."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d3041",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "買い物",
+    "group": "買い物",
+    "prompt": "Why did the shop start a repair cafe event monthly?",
+    "en": "Extending the life of old goods.",
+    "ja": "なぜその店は毎月の修理カフェイベントを始めたのですか？",
+    "choices": [
+      "Extending the life of old goods.",
+      "She's my technician friend.",
+      "He plays chess.",
+      "It's her toolbox."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d3042",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "買い物",
+    "group": "買い物",
+    "prompt": "Who noticed the return policy had quietly changed?",
+    "en": "A customer reading the fine print.",
+    "ja": "誰がその返品ポリシーがひっそり変更されたことに気づきましたか？",
+    "choices": [
+      "A customer reading the fine print.",
+      "She's my customer friend.",
+      "He plays cards.",
+      "It's her receipt."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d3043",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "学校・仕事",
+    "group": "学校・仕事",
+    "prompt": "Why did the school introduce a peer tutoring hour?",
+    "en": "Struggling students needed more support.",
+    "ja": "なぜその学校は仲間同士の個別指導の時間を導入したのですか？",
+    "choices": [
+      "Struggling students needed more support.",
+      "She's my teacher friend.",
+      "He plays soccer.",
+      "It's her book."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d3044",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "学校・仕事",
+    "group": "学校・仕事",
+    "prompt": "Who flagged the outdated safety certificate?",
+    "en": "Our compliance officer.",
+    "ja": "誰がその期限切れの安全証明書に気づきましたか？",
+    "choices": [
+      "Our compliance officer.",
+      "She's my colleague friend.",
+      "He plays golf.",
+      "It's her certificate."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d3045",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "自然・天気",
+    "group": "自然・天気",
+    "prompt": "Why did the river level drop so much this summer?",
+    "en": "An unusually dry rainy season.",
+    "ja": "なぜその川の水位は今年の夏あんなに下がったのですか？",
+    "choices": [
+      "An unusually dry rainy season.",
+      "She's my researcher friend.",
+      "He plays chess.",
+      "It's her gauge."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d3046",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "からだ・健康",
+    "group": "からだ・健康",
+    "prompt": "Why did the hospital add a pediatric play area?",
+    "en": "Easing anxiety for young patients.",
+    "ja": "なぜその病院は小児用の遊びスペースを追加したのですか？",
+    "choices": [
+      "Easing anxiety for young patients.",
+      "She's my nurse friend.",
+      "He plays cards.",
+      "It's her toy."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d3047",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "気持ち・性格",
+    "group": "気持ち・性格",
+    "prompt": "Why did he stay so composed after losing the match?",
+    "en": "Focusing on lessons learned instead.",
+    "ja": "なぜ彼はその試合に負けた後もあんなに落ち着いていたのですか？",
+    "choices": [
+      "Focusing on lessons learned instead.",
+      "She's my colleague friend.",
+      "He plays soccer.",
+      "It's her racket."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d3048",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "時間・数",
+    "group": "時間・数",
+    "prompt": "Why did the meeting run twenty minutes over?",
+    "en": "An unplanned but important discussion.",
+    "ja": "なぜその会議は20分オーバーしたのですか？",
+    "choices": [
+      "An unplanned but important discussion.",
+      "She's my manager friend.",
+      "He plays golf.",
+      "It's her agenda."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d3049",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "動物",
+    "group": "動物",
+    "prompt": "Why did the owls become more active after dusk?",
+    "en": "Their natural nocturnal hunting habits.",
+    "ja": "なぜそのフクロウたちは夕暮れ後により活発になったのですか？",
+    "choices": [
+      "Their natural nocturnal hunting habits.",
+      "She's my ranger friend.",
+      "He plays chess.",
+      "It's her binoculars."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d3050",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "趣味・スポーツ",
+    "group": "趣味・スポーツ",
+    "prompt": "Why did the running club add a beginner pace group?",
+    "en": "Welcoming more casual runners.",
+    "ja": "なぜそのランニングクラブは初心者ペースグループを追加したのですか？",
+    "choices": [
+      "Welcoming more casual runners.",
+      "She's my coach friend.",
+      "He plays cards.",
+      "It's her watch."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d3051",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "色・かたち",
+    "group": "色・かたち",
+    "prompt": "Why did the tattoo artist favor geometric line work?",
+    "en": "A clean, modern signature style.",
+    "ja": "なぜそのタトゥー彫師は幾何学的な線画を好んだのですか？",
+    "choices": [
+      "A clean, modern signature style.",
+      "She's my artist friend.",
+      "He plays soccer.",
+      "It's her needle."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d3052",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "人・職業",
+    "group": "人・職業",
+    "prompt": "Who convinced him to become a park ranger?",
+    "en": "Summers spent camping as a kid.",
+    "ja": "誰が彼に公園レンジャーになるきっかけを与えましたか？",
+    "choices": [
+      "Summers spent camping as a kid.",
+      "She's my colleague friend.",
+      "He plays golf.",
+      "It's her binoculars."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d3053",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "街・建物",
+    "group": "街・建物",
+    "prompt": "Why did the neighborhood repaint the community center?",
+    "en": "Volunteers organized a weekend project.",
+    "ja": "なぜその地域はコミュニティセンターを塗り直したのですか？",
+    "choices": [
+      "Volunteers organized a weekend project.",
+      "She's my neighbor friend.",
+      "He plays chess.",
+      "It's her brush."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d3054",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "科学",
+    "group": "科学",
+    "prompt": "Why did the chemist recalibrate the instrument daily?",
+    "en": "Ensuring consistently accurate readings.",
+    "ja": "なぜその化学者は毎日その機器を再校正したのですか？",
+    "choices": [
+      "Ensuring consistently accurate readings.",
+      "She's my researcher friend.",
+      "He plays soccer.",
+      "It's her gauge."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d3055",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "社会・くらし",
+    "group": "社会・くらし",
+    "prompt": "Why did the district open a free clothing swap shop?",
+    "en": "Reducing textile waste locally.",
+    "ja": "なぜその地区は無料の衣類交換ショップを開いたのですか？",
+    "choices": [
+      "Reducing textile waste locally.",
+      "She's my council friend.",
+      "He plays golf.",
+      "It's her rack."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d3056",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "芸術・文化",
+    "group": "芸術・文化",
+    "prompt": "Why did the embroiderer stick to hand stitching?",
+    "en": "A slower but more personal result.",
+    "ja": "なぜその刺繍職人は手縫いにこだわったのですか？",
+    "choices": [
+      "A slower but more personal result.",
+      "She's my artist friend.",
+      "He plays chess.",
+      "It's her needle."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d3057",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "食べ物",
+    "group": "食べ物",
+    "prompt": "Why did the steakhouse start dry-aging in a glass room?",
+    "en": "A visual centerpiece for diners.",
+    "ja": "なぜそのステーキハウスはガラス張りの部屋で熟成を始めたのですか？",
+    "choices": [
+      "A visual centerpiece for diners.",
+      "She's my chef friend.",
+      "He plays chess.",
+      "It's her knife."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d3058",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "食べ物",
+    "group": "食べ物",
+    "prompt": "Who suggested the build-your-own salad bar?",
+    "en": "A health-conscious regular customer.",
+    "ja": "誰が自分でサラダを作るバーを提案しましたか？",
+    "choices": [
+      "A health-conscious regular customer.",
+      "She's my customer friend.",
+      "He plays cards.",
+      "It's her bowl."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d3059",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "食べ物",
+    "group": "食べ物",
+    "prompt": "How did the bakery decide which pastries to retire?",
+    "en": "Tracking weekly sales data.",
+    "ja": "そのパン屋はどうやってどの菓子をやめるか決めたのですか？",
+    "choices": [
+      "Tracking weekly sales data.",
+      "She's my baker friend.",
+      "He plays soccer.",
+      "It's her ledger."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d3060",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "食べ物",
+    "group": "食べ物",
+    "prompt": "What made the curry taste so much richer this time?",
+    "en": "Toasted whole spices, ground fresh.",
+    "ja": "なぜそのカレーは今回あんなに濃厚な味だったのですか？",
+    "choices": [
+      "Toasted whole spices, ground fresh.",
+      "She's my cook friend.",
+      "He plays golf.",
+      "It's her pan."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d3061",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "食べ物",
+    "group": "食べ物",
+    "prompt": "Why did the food stall switch to compostable trays?",
+    "en": "New market sustainability rules.",
+    "ja": "なぜその屋台は堆肥化可能なトレーに切り替えたのですか？",
+    "choices": [
+      "New market sustainability rules.",
+      "She's my vendor friend.",
+      "He plays chess.",
+      "It's her tray."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d3062",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "食べ物",
+    "group": "食べ物",
+    "prompt": "Who first suggested pairing tempura with matcha salt?",
+    "en": "The head chef's apprentice.",
+    "ja": "誰が最初に天ぷらに抹茶塩を合わせることを提案しましたか？",
+    "choices": [
+      "The head chef's apprentice.",
+      "She's my chef friend.",
+      "He plays cards.",
+      "It's her plate."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d3063",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "食べ物",
+    "group": "食べ物",
+    "prompt": "How did the deli keep the roast beef so tender?",
+    "en": "Slow-roasted overnight at low heat.",
+    "ja": "そのデリはどうやってローストビーフをあんなに柔らかく保ったのですか？",
+    "choices": [
+      "Slow-roasted overnight at low heat.",
+      "She's my butcher friend.",
+      "He plays soccer.",
+      "It's her oven."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d3064",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "日常生活",
+    "group": "日常生活",
+    "prompt": "Why did the family switch to a digital chore app?",
+    "en": "Easier tracking for the kids.",
+    "ja": "なぜその家族はデジタル家事アプリに切り替えたのですか？",
+    "choices": [
+      "Easier tracking for the kids.",
+      "She's my roommate friend.",
+      "He plays golf.",
+      "It's her phone."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d3065",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "日常生活",
+    "group": "日常生活",
+    "prompt": "Who noticed the basement window well had flooded?",
+    "en": "A neighbor after the storm.",
+    "ja": "誰がその地下室の窓の溝が浸水していることに気づきましたか？",
+    "choices": [
+      "A neighbor after the storm.",
+      "She's my neighbor friend.",
+      "He plays chess.",
+      "It's her pump."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d3066",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "日常生活",
+    "group": "日常生活",
+    "prompt": "How did you keep the new puppy from chewing furniture?",
+    "en": "Plenty of chew toys around.",
+    "ja": "その新しい子犬が家具を噛まないようどうやって防ぎましたか？",
+    "choices": [
+      "Plenty of chew toys around.",
+      "She's my roommate friend.",
+      "He plays cards.",
+      "It's her toy."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d3067",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "日常生活",
+    "group": "日常生活",
+    "prompt": "What made the home office finally feel productive?",
+    "en": "A dedicated door that actually closes.",
+    "ja": "なぜそのホームオフィスはついに生産的に感じられるようになったのですか？",
+    "choices": [
+      "A dedicated door that actually closes.",
+      "She's my contractor friend.",
+      "He plays soccer.",
+      "It's her desk."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d3068",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "日常生活",
+    "group": "日常生活",
+    "prompt": "Why did the building host a monthly potluck dinner?",
+    "en": "Building stronger resident relationships.",
+    "ja": "なぜその建物は毎月の持ち寄り夕食会を開いたのですか？",
+    "choices": [
+      "Building stronger resident relationships.",
+      "She's my neighbor friend.",
+      "He plays golf.",
+      "It's her dish."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d3069",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "旅行・交通",
+    "group": "旅行・交通",
+    "prompt": "Why did the airport add more charging stations?",
+    "en": "Traveler complaints about dead batteries.",
+    "ja": "なぜその空港はより多くの充電スポットを追加したのですか？",
+    "choices": [
+      "Traveler complaints about dead batteries.",
+      "She's my agent friend.",
+      "He plays chess.",
+      "It's her ticket."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d3070",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "旅行・交通",
+    "group": "旅行・交通",
+    "prompt": "Who suggested visiting the market before it got crowded?",
+    "en": "An early-rising local vendor.",
+    "ja": "誰がその市場が混雑する前に訪れることを提案しましたか？",
+    "choices": [
+      "An early-rising local vendor.",
+      "She's my vendor friend.",
+      "He plays cards.",
+      "It's her map."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d3071",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "旅行・交通",
+    "group": "旅行・交通",
+    "prompt": "How did the road crew reopen the highway so fast?",
+    "en": "Working through the night in shifts.",
+    "ja": "その道路工事班はどうやってその高速道路をあんなに早く再開したのですか？",
+    "choices": [
+      "Working through the night in shifts.",
+      "She's my worker friend.",
+      "He plays soccer.",
+      "It's her sign."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d3072",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "旅行・交通",
+    "group": "旅行・交通",
+    "prompt": "What made the canal boat trip so relaxing?",
+    "en": "Slow pace and quiet countryside.",
+    "ja": "なぜその運河ボートの旅はあんなに落ち着いていたのですか？",
+    "choices": [
+      "Slow pace and quiet countryside.",
+      "She's my captain friend.",
+      "He plays golf.",
+      "It's her camera."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d3073",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "買い物",
+    "group": "買い物",
+    "prompt": "Why did the store add self-checkout kiosks?",
+    "en": "Shorter lines during peak hours.",
+    "ja": "なぜその店はセルフレジを追加したのですか？",
+    "choices": [
+      "Shorter lines during peak hours.",
+      "She's my clerk friend.",
+      "He plays chess.",
+      "It's her scanner."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d3074",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "買い物",
+    "group": "買い物",
+    "prompt": "Who noticed the price tag was for a different item?",
+    "en": "A sharp-eyed shopper.",
+    "ja": "誰がその値札が別の商品のものであることに気づきましたか？",
+    "choices": [
+      "A sharp-eyed shopper.",
+      "She's my customer friend.",
+      "He plays cards.",
+      "It's her tag."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d3075",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "学校・仕事",
+    "group": "学校・仕事",
+    "prompt": "Why did the office add a quiet focus room?",
+    "en": "Reducing distractions for deep work.",
+    "ja": "なぜそのオフィスは集中用の静かな部屋を追加したのですか？",
+    "choices": [
+      "Reducing distractions for deep work.",
+      "She's my manager friend.",
+      "He plays soccer.",
+      "It's her desk."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d3076",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "学校・仕事",
+    "group": "学校・仕事",
+    "prompt": "Who suggested the flexible summer work hours?",
+    "en": "Our department head.",
+    "ja": "誰がその柔軟な夏の勤務時間を提案しましたか？",
+    "choices": [
+      "Our department head.",
+      "She's my colleague friend.",
+      "He plays golf.",
+      "It's her calendar."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d3077",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "自然・天気",
+    "group": "自然・天気",
+    "prompt": "Why did the glacier retreat faster than predicted?",
+    "en": "Warmer summer temperatures overall.",
+    "ja": "なぜその氷河は予測より速く後退したのですか？",
+    "choices": [
+      "Warmer summer temperatures overall.",
+      "She's my researcher friend.",
+      "He plays chess.",
+      "It's her camera."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d3078",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "からだ・健康",
+    "group": "からだ・健康",
+    "prompt": "Why did the pharmacy start a medication reminder app?",
+    "en": "Helping elderly patients stay on schedule.",
+    "ja": "なぜその薬局は服薬リマインダーアプリを始めたのですか？",
+    "choices": [
+      "Helping elderly patients stay on schedule.",
+      "She's my pharmacist friend.",
+      "He plays cards.",
+      "It's her phone."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d3079",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "気持ち・性格",
+    "group": "気持ち・性格",
+    "prompt": "Why did she seem so unfazed by the sudden change?",
+    "en": "Her naturally adaptable personality.",
+    "ja": "なぜ彼女はその急な変化にあんなに動じなかったのですか？",
+    "choices": [
+      "Her naturally adaptable personality.",
+      "She's my colleague friend.",
+      "He plays soccer.",
+      "It's her notebook."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d3080",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "時間・数",
+    "group": "時間・数",
+    "prompt": "Why did the delivery estimate change overnight?",
+    "en": "A warehouse restocking delay.",
+    "ja": "なぜその配送予定は一晩で変わったのですか？",
+    "choices": [
+      "A warehouse restocking delay.",
+      "She's my manager friend.",
+      "He plays golf.",
+      "It's her tracker."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d3081",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "動物",
+    "group": "動物",
+    "prompt": "Why did the deer venture closer to the neighborhood?",
+    "en": "Shrinking natural habitat nearby.",
+    "ja": "なぜその鹿はその地域に近づいてきたのですか？",
+    "choices": [
+      "Shrinking natural habitat nearby.",
+      "She's my ranger friend.",
+      "He plays chess.",
+      "It's her camera."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d3082",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "趣味・スポーツ",
+    "group": "趣味・スポーツ",
+    "prompt": "Why did the swim team switch to morning practices?",
+    "en": "Better pool availability early on.",
+    "ja": "なぜその水泳チームは朝の練習に切り替えたのですか？",
+    "choices": [
+      "Better pool availability early on.",
+      "She's my coach friend.",
+      "He plays cards.",
+      "It's her goggles."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d3083",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "色・かたち",
+    "group": "色・かたち",
+    "prompt": "Why did the set designer choose muted earth tones?",
+    "en": "Matching the story's rustic setting.",
+    "ja": "なぜその舞台美術家はくすんだアースカラーを選んだのですか？",
+    "choices": [
+      "Matching the story's rustic setting.",
+      "She's my designer friend.",
+      "He plays soccer.",
+      "It's her sketchbook."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d3084",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "人・職業",
+    "group": "人・職業",
+    "prompt": "Who inspired her to become a cartographer?",
+    "en": "A love of old hand-drawn maps.",
+    "ja": "誰が彼女に地図製作者になるきっかけを与えましたか？",
+    "choices": [
+      "A love of old hand-drawn maps.",
+      "She's my colleague friend.",
+      "He plays golf.",
+      "It's her compass."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d3085",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "街・建物",
+    "group": "街・建物",
+    "prompt": "Why did the city add solar panels to the library roof?",
+    "en": "Cutting long-term energy costs.",
+    "ja": "なぜ市はその図書館の屋根に太陽光パネルを追加したのですか？",
+    "choices": [
+      "Cutting long-term energy costs.",
+      "She's my planner friend.",
+      "He plays chess.",
+      "It's her clipboard."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d3086",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "テクノロジー",
+    "group": "テクノロジー",
+    "prompt": "Why did the platform introduce two-factor login?",
+    "en": "Protecting accounts from unauthorized access.",
+    "ja": "なぜそのプラットフォームは二段階認証を導入したのですか？",
+    "choices": [
+      "Protecting accounts from unauthorized access.",
+      "She's my developer friend.",
+      "He plays cards.",
+      "It's her phone."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d3087",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "科学",
+    "group": "科学",
+    "prompt": "Why did the entomologist collect beetles at night?",
+    "en": "Many species are nocturnal.",
+    "ja": "なぜその昆虫学者は夜にカブトムシを採集したのですか？",
+    "choices": [
+      "Many species are nocturnal.",
+      "She's my researcher friend.",
+      "He plays soccer.",
+      "It's her net."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d3088",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "社会・くらし",
+    "group": "社会・くらし",
+    "prompt": "Why did the town start a neighbor check-in program?",
+    "en": "Supporting isolated elderly residents.",
+    "ja": "なぜその町は近隣安否確認プログラムを始めたのですか？",
+    "choices": [
+      "Supporting isolated elderly residents.",
+      "She's my council friend.",
+      "He plays golf.",
+      "It's her phone."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d3089",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "芸術・文化",
+    "group": "芸術・文化",
+    "prompt": "Why did the woodcarver choose to work with driftwood?",
+    "en": "Unique natural shapes to start from.",
+    "ja": "なぜその木彫り職人は流木を使うことを選んだのですか？",
+    "choices": [
+      "Unique natural shapes to start from.",
+      "She's my artist friend.",
+      "He plays chess.",
+      "It's her chisel."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d3090",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "食べ物",
+    "group": "食べ物",
+    "prompt": "Why did the coffee roaster switch to single-origin beans?",
+    "en": "More distinct regional flavors.",
+    "ja": "なぜそのコーヒー焙煎士はシングルオリジンの豆に切り替えたのですか？",
+    "choices": [
+      "More distinct regional flavors.",
+      "She's my roaster friend.",
+      "He plays chess.",
+      "It's her scale."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d3091",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "食べ物",
+    "group": "食べ物",
+    "prompt": "How did the vineyard protect the grapes from frost?",
+    "en": "Large fans circulating warm air.",
+    "ja": "そのぶどう園はどうやってそのブドウを霜から守ったのですか？",
+    "choices": [
+      "Large fans circulating warm air.",
+      "She's my farmer friend.",
+      "He plays soccer.",
+      "It's her fan."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d3092",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "食べ物",
+    "group": "食べ物",
+    "prompt": "What made the banana bread so moist and dense?",
+    "en": "Extra ripe, almost black bananas.",
+    "ja": "なぜそのバナナブレッドはあんなにしっとりして密だったのですか？",
+    "choices": [
+      "Extra ripe, almost black bananas.",
+      "She's my baker friend.",
+      "He plays golf.",
+      "It's her pan."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d3093",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "食べ物",
+    "group": "食べ物",
+    "prompt": "Why did the oyster bar start hosting shucking classes?",
+    "en": "Teaching customers a valued skill.",
+    "ja": "なぜそのオイスターバーは殻剥き教室を始めたのですか？",
+    "choices": [
+      "Teaching customers a valued skill.",
+      "She's my chef friend.",
+      "He plays chess.",
+      "It's her knife."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d3094",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "食べ物",
+    "group": "食べ物",
+    "prompt": "Who first suggested a rotating guest chef series?",
+    "en": "The restaurant's marketing director.",
+    "ja": "誰が最初にゲストシェフの持ち回りシリーズを提案しましたか？",
+    "choices": [
+      "The restaurant's marketing director.",
+      "She's my manager friend.",
+      "He plays cards.",
+      "It's her menu."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d3095",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "食べ物",
+    "group": "食べ物",
+    "prompt": "How did the cafe manage the sudden lunch rush?",
+    "en": "Called in extra staff quickly.",
+    "ja": "そのカフェはその突然のランチラッシュをどう対処しましたか？",
+    "choices": [
+      "Called in extra staff quickly.",
+      "She's my manager friend.",
+      "He plays soccer.",
+      "It's her apron."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d3096",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "日常生活",
+    "group": "日常生活",
+    "prompt": "Why did the family install a whole-house water filter?",
+    "en": "Better tasting tap water overall.",
+    "ja": "なぜその家族は家全体の浄水フィルターを設置したのですか？",
+    "choices": [
+      "Better tasting tap water overall.",
+      "She's my contractor friend.",
+      "He plays golf.",
+      "It's her filter."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d3097",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "日常生活",
+    "group": "日常生活",
+    "prompt": "Who noticed the mailbox lock had been forced?",
+    "en": "A neighbor checking their own mail.",
+    "ja": "誰がその郵便受けの鍵がこじ開けられていることに気づきましたか？",
+    "choices": [
+      "A neighbor checking their own mail.",
+      "She's my neighbor friend.",
+      "He plays chess.",
+      "It's her key."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d3098",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "日常生活",
+    "group": "日常生活",
+    "prompt": "How did you keep the kids' art supplies contained?",
+    "en": "Labeled bins on a low shelf.",
+    "ja": "その子供たちの画材をどうやってまとめておきましたか？",
+    "choices": [
+      "Labeled bins on a low shelf.",
+      "She's my roommate friend.",
+      "He plays cards.",
+      "It's her bin."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d3099",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "日常生活",
+    "group": "日常生活",
+    "prompt": "What made the front porch feel more welcoming?",
+    "en": "New planters and a doormat.",
+    "ja": "なぜその玄関ポーチはあんなに歓迎的に感じられるようになったのですか？",
+    "choices": [
+      "New planters and a doormat.",
+      "She's my decorator friend.",
+      "He plays soccer.",
+      "It's her planter."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d3100",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "日常生活",
+    "group": "日常生活",
+    "prompt": "Why did the tenants request more visitor parking?",
+    "en": "Frequent complaints about street parking.",
+    "ja": "なぜその住人たちはより多くの来客用駐車場をお願いしたのですか？",
+    "choices": [
+      "Frequent complaints about street parking.",
+      "She's my landlord friend.",
+      "He plays golf.",
+      "It's her permit."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d3101",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "旅行・交通",
+    "group": "旅行・交通",
+    "prompt": "Why did the train station add a quiet waiting car?",
+    "en": "Requests from business travelers.",
+    "ja": "なぜその駅は静かな待合車両を追加したのですか？",
+    "choices": [
+      "Requests from business travelers.",
+      "She's my conductor friend.",
+      "He plays chess.",
+      "It's her ticket."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d3102",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "旅行・交通",
+    "group": "旅行・交通",
+    "prompt": "Who suggested skipping the crowded viewpoint entirely?",
+    "en": "A local hiking guide.",
+    "ja": "誰がその混雑した展望台を完全に飛ばすことを提案しましたか？",
+    "choices": [
+      "A local hiking guide.",
+      "She's my guide friend.",
+      "He plays cards.",
+      "It's her map."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d3103",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "旅行・交通",
+    "group": "旅行・交通",
+    "prompt": "How did the travelers avoid jet lag on arrival?",
+    "en": "Adjusted their sleep schedule early.",
+    "ja": "その旅行者たちはどうやって到着時の時差ぼけを避けたのですか？",
+    "choices": [
+      "Adjusted their sleep schedule early.",
+      "She's my traveler friend.",
+      "He plays soccer.",
+      "It's her pillow."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d3104",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "旅行・交通",
+    "group": "旅行・交通",
+    "prompt": "What made the desert road trip so unforgettable?",
+    "en": "A sky full of stars each night.",
+    "ja": "なぜその砂漠のロードトリップはあんなに忘れられなかったのですか？",
+    "choices": [
+      "A sky full of stars each night.",
+      "She's my driver friend.",
+      "He plays golf.",
+      "It's her camera."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d3105",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "買い物",
+    "group": "買い物",
+    "prompt": "Who noticed the gift wrap station had run out?",
+    "en": "An employee restocking shelves.",
+    "ja": "誰がそのギフトラッピングコーナーの在庫がなくなったことに気づきましたか？",
+    "choices": [
+      "An employee restocking shelves.",
+      "She's my clerk friend.",
+      "He plays cards.",
+      "It's her ribbon."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d3106",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "学校・仕事",
+    "group": "学校・仕事",
+    "prompt": "Why did the company add a wellness stipend?",
+    "en": "Supporting employee mental health.",
+    "ja": "なぜその会社はウェルネス手当を追加したのですか？",
+    "choices": [
+      "Supporting employee mental health.",
+      "She's my manager friend.",
+      "He plays soccer.",
+      "It's her memo."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d3107",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "学校・仕事",
+    "group": "学校・仕事",
+    "prompt": "Who caught the error in the shipping manifest?",
+    "en": "A warehouse supervisor.",
+    "ja": "誰がその出荷目録の誤りに気づきましたか？",
+    "choices": [
+      "A warehouse supervisor.",
+      "She's my colleague friend.",
+      "He plays golf.",
+      "It's her clipboard."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d3108",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "自然・天気",
+    "group": "自然・天気",
+    "prompt": "Why did the salt marsh attract so many migrating birds?",
+    "en": "Rich feeding grounds this season.",
+    "ja": "なぜその塩性湿地はあんなに多くの渡り鳥を引き寄せたのですか？",
+    "choices": [
+      "Rich feeding grounds this season.",
+      "She's my ranger friend.",
+      "He plays chess.",
+      "It's her binoculars."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d3109",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "からだ・健康",
+    "group": "からだ・健康",
+    "prompt": "Why did the clinic add a nutrition counseling service?",
+    "en": "Addressing patient requests directly.",
+    "ja": "なぜそのクリニックは栄養相談サービスを追加したのですか？",
+    "choices": [
+      "Addressing patient requests directly.",
+      "She's my doctor friend.",
+      "He plays cards.",
+      "It's her chart."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d3110",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "気持ち・性格",
+    "group": "気持ち・性格",
+    "prompt": "Why did he handle the delay so patiently?",
+    "en": "Nothing to gain from frustration.",
+    "ja": "なぜ彼はその遅延にあんなに辛抱強く対応したのですか？",
+    "choices": [
+      "Nothing to gain from frustration.",
+      "She's my colleague friend.",
+      "He plays soccer.",
+      "It's her ticket."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d3111",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "時間・数",
+    "group": "時間・数",
+    "prompt": "Why did the survey take longer to distribute this year?",
+    "en": "A new approval process added.",
+    "ja": "なぜ今年、そのアンケートは配布に時間がかかったのですか？",
+    "choices": [
+      "A new approval process added.",
+      "She's my researcher friend.",
+      "He plays golf.",
+      "It's her clipboard."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d3112",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "動物",
+    "group": "動物",
+    "prompt": "Why did the raccoons return to the same tree nightly?",
+    "en": "A reliable food source nearby.",
+    "ja": "なぜそのアライグマたちは毎晩同じ木に戻ったのですか？",
+    "choices": [
+      "A reliable food source nearby.",
+      "She's my ranger friend.",
+      "He plays chess.",
+      "It's her camera."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d3113",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "趣味・スポーツ",
+    "group": "趣味・スポーツ",
+    "prompt": "Why did the pottery studio add evening classes?",
+    "en": "Working adults wanted access too.",
+    "ja": "なぜその陶芸スタジオは夜間クラスを追加したのですか？",
+    "choices": [
+      "Working adults wanted access too.",
+      "She's my instructor friend.",
+      "He plays cards.",
+      "It's her wheel."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d3114",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "色・かたち",
+    "group": "色・かたち",
+    "prompt": "Why did the illustrator favor a limited palette?",
+    "en": "A cohesive, recognizable visual style.",
+    "ja": "なぜそのイラストレーターは限られた色数を好んだのですか？",
+    "choices": [
+      "A cohesive, recognizable visual style.",
+      "She's my artist friend.",
+      "He plays soccer.",
+      "It's her tablet."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d3115",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "街・建物",
+    "group": "街・建物",
+    "prompt": "Why did the district add bike lanes downtown?",
+    "en": "Reducing car traffic congestion.",
+    "ja": "なぜその地区は繁華街に自転車専用レーンを追加したのですか？",
+    "choices": [
+      "Reducing car traffic congestion.",
+      "She's my planner friend.",
+      "He plays chess.",
+      "It's her map."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d3116",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "テクノロジー",
+    "group": "テクノロジー",
+    "prompt": "Why did the studio switch to cloud rendering?",
+    "en": "Faster turnaround on big projects.",
+    "ja": "なぜそのスタジオはクラウドレンダリングに切り替えたのですか？",
+    "choices": [
+      "Faster turnaround on big projects.",
+      "She's my developer friend.",
+      "He plays cards.",
+      "It's her laptop."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d3117",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "科学",
+    "group": "科学",
+    "prompt": "Why did the astronomer track the meteor shower closely?",
+    "en": "Rare data on particle composition.",
+    "ja": "なぜその天文学者はその流星群を注意深く追跡したのですか？",
+    "choices": [
+      "Rare data on particle composition.",
+      "She's my researcher friend.",
+      "He plays soccer.",
+      "It's her telescope."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d3118",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "社会・くらし",
+    "group": "社会・くらし",
+    "prompt": "Why did the city fund a youth mentorship network?",
+    "en": "Reducing dropout rates citywide.",
+    "ja": "なぜ市は青少年メンターシップネットワークに資金を提供したのですか？",
+    "choices": [
+      "Reducing dropout rates citywide.",
+      "She's my council friend.",
+      "He plays golf.",
+      "It's her folder."
+    ],
+    "modes": [
+      "listening"
+    ]
+  },
+  {
+    "key": "d3119",
+    "kind": "dialogue",
+    "difficulty": "mid",
+    "category": "芸術・文化",
+    "group": "芸術・文化",
+    "prompt": "Why did the origami artist prefer handmade paper?",
+    "en": "A more textured final result.",
+    "ja": "なぜその折り紙作家は手漉きの紙を好んだのですか？",
+    "choices": [
+      "A more textured final result.",
+      "She's my artist friend.",
+      "He plays chess.",
+      "It's her paper."
+    ],
+    "modes": [
+      "listening"
+    ]
+  }
+]

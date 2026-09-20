@@ -47,6 +47,9 @@ const EXTRA_QUESTION_PACKS: &[(&str, &str)] = &[
     ("phrases-16.json", include_str!("../data/phrases-16.json")),
     ("phrases-17.json", include_str!("../data/phrases-17.json")),
     ("phrases-18.json", include_str!("../data/phrases-18.json")),
+    ("phrases-19.json", include_str!("../data/phrases-19.json")),
+    ("phrases-20.json", include_str!("../data/phrases-20.json")),
+    ("phrases-21.json", include_str!("../data/phrases-21.json")),
     ("grammar-2.json", include_str!("../data/grammar-2.json")),
     ("grammar-3.json", include_str!("../data/grammar-3.json")),
     ("grammar-4.json", include_str!("../data/grammar-4.json")),
@@ -54,6 +57,7 @@ const EXTRA_QUESTION_PACKS: &[(&str, &str)] = &[
     ("grammar-6.json", include_str!("../data/grammar-6.json")),
     ("grammar-7.json", include_str!("../data/grammar-7.json")),
     ("grammar-8.json", include_str!("../data/grammar-8.json")),
+    ("grammar-9.json", include_str!("../data/grammar-9.json")),
     ("idioms-2.json", include_str!("../data/idioms-2.json")),
     ("idioms-3.json", include_str!("../data/idioms-3.json")),
     ("idioms-4.json", include_str!("../data/idioms-4.json")),
@@ -73,6 +77,7 @@ const EXTRA_QUESTION_PACKS: &[(&str, &str)] = &[
     ("sentences-11.json", include_str!("../data/sentences-11.json")),
     ("sentences-12.json", include_str!("../data/sentences-12.json")),
     ("sentences-13.json", include_str!("../data/sentences-13.json")),
+    ("sentences-14.json", include_str!("../data/sentences-14.json")),
     ("listening-dialogues.json", include_str!("../data/listening-dialogues.json")),
     ("listening-dialogues-2.json", include_str!("../data/listening-dialogues-2.json")),
     ("listening-dialogues-3.json", include_str!("../data/listening-dialogues-3.json")),
@@ -95,6 +100,37 @@ const EXTRA_QUESTION_PACKS: &[(&str, &str)] = &[
     ("listening-dialogues-20.json", include_str!("../data/listening-dialogues-20.json")),
     ("listening-dialogues-21.json", include_str!("../data/listening-dialogues-21.json")),
     ("listening-dialogues-22.json", include_str!("../data/listening-dialogues-22.json")),
+    ("listening-dialogues-23.json", include_str!("../data/listening-dialogues-23.json")),
+    ("listening-dialogues-24.json", include_str!("../data/listening-dialogues-24.json")),
+    ("listening-dialogues-25.json", include_str!("../data/listening-dialogues-25.json")),
+    ("listening-dialogues-26.json", include_str!("../data/listening-dialogues-26.json")),
+    ("listening-dialogues-27.json", include_str!("../data/listening-dialogues-27.json")),
+    ("listening-dialogues-28.json", include_str!("../data/listening-dialogues-28.json")),
+    ("listening-dialogues-29.json", include_str!("../data/listening-dialogues-29.json")),
+    ("listening-dialogues-30.json", include_str!("../data/listening-dialogues-30.json")),
+    ("listening-dialogues-31.json", include_str!("../data/listening-dialogues-31.json")),
+    ("listening-dialogues-32.json", include_str!("../data/listening-dialogues-32.json")),
+    ("listening-dialogues-33.json", include_str!("../data/listening-dialogues-33.json")),
+    ("listening-dialogues-34.json", include_str!("../data/listening-dialogues-34.json")),
+    ("listening-dialogues-35.json", include_str!("../data/listening-dialogues-35.json")),
+    ("listening-dialogues-36.json", include_str!("../data/listening-dialogues-36.json")),
+    ("listening-dialogues-37.json", include_str!("../data/listening-dialogues-37.json")),
+    ("listening-dialogues-38.json", include_str!("../data/listening-dialogues-38.json")),
+    ("listening-dialogues-39.json", include_str!("../data/listening-dialogues-39.json")),
+    ("listening-dialogues-40.json", include_str!("../data/listening-dialogues-40.json")),
+    ("listening-dialogues-41.json", include_str!("../data/listening-dialogues-41.json")),
+    ("listening-dialogues-42.json", include_str!("../data/listening-dialogues-42.json")),
+    ("listening-dialogues-43.json", include_str!("../data/listening-dialogues-43.json")),
+    ("listening-dialogues-44.json", include_str!("../data/listening-dialogues-44.json")),
+    ("listening-dialogues-45.json", include_str!("../data/listening-dialogues-45.json")),
+    ("listening-dialogues-46.json", include_str!("../data/listening-dialogues-46.json")),
+    ("listening-dialogues-47.json", include_str!("../data/listening-dialogues-47.json")),
+    ("listening-dialogues-48.json", include_str!("../data/listening-dialogues-48.json")),
+    ("listening-dialogues-49.json", include_str!("../data/listening-dialogues-49.json")),
+    ("listening-dialogues-50.json", include_str!("../data/listening-dialogues-50.json")),
+    ("listening-dialogues-51.json", include_str!("../data/listening-dialogues-51.json")),
+    ("listening-dialogues-52.json", include_str!("../data/listening-dialogues-52.json")),
+    ("listening-dialogues-53.json", include_str!("../data/listening-dialogues-53.json")),
 ];
 /// Japanese glosses for words that appear inside sentences but are not questions themselves.
 const GLOSSARY_JSON: &str = include_str!("../data/glossary.json");
@@ -447,9 +483,9 @@ mod tests {
     use std::collections::{HashMap, HashSet};
 
     #[test]
-    fn seed_data_is_well_formed_and_has_at_least_15000_questions() {
+    fn seed_data_is_well_formed_and_has_at_least_20000_questions() {
         let seed = load_seed();
-        assert!(seed.questions.len() >= 15000, "expected >= 15000 questions, got {}", seed.questions.len());
+        assert!(seed.questions.len() >= 20000, "expected >= 20000 questions, got {}", seed.questions.len());
 
         let mut keys = HashSet::new();
         let mut ja_by_group: HashMap<(String, String), HashSet<String>> = HashMap::new();

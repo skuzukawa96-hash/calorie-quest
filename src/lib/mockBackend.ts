@@ -37,6 +37,9 @@ import phrases15 from "../../src-tauri/data/phrases-15.json";
 import phrases16 from "../../src-tauri/data/phrases-16.json";
 import phrases17 from "../../src-tauri/data/phrases-17.json";
 import phrases18 from "../../src-tauri/data/phrases-18.json";
+import phrases19 from "../../src-tauri/data/phrases-19.json";
+import phrases20 from "../../src-tauri/data/phrases-20.json";
+import phrases21 from "../../src-tauri/data/phrases-21.json";
 import grammar2 from "../../src-tauri/data/grammar-2.json";
 import grammar3 from "../../src-tauri/data/grammar-3.json";
 import grammar4 from "../../src-tauri/data/grammar-4.json";
@@ -44,6 +47,7 @@ import grammar5 from "../../src-tauri/data/grammar-5.json";
 import grammar6 from "../../src-tauri/data/grammar-6.json";
 import grammar7 from "../../src-tauri/data/grammar-7.json";
 import grammar8 from "../../src-tauri/data/grammar-8.json";
+import grammar9 from "../../src-tauri/data/grammar-9.json";
 import idioms2 from "../../src-tauri/data/idioms-2.json";
 import idioms3 from "../../src-tauri/data/idioms-3.json";
 import idioms4 from "../../src-tauri/data/idioms-4.json";
@@ -63,6 +67,7 @@ import sentences10 from "../../src-tauri/data/sentences-10.json";
 import sentences11 from "../../src-tauri/data/sentences-11.json";
 import sentences12 from "../../src-tauri/data/sentences-12.json";
 import sentences13 from "../../src-tauri/data/sentences-13.json";
+import sentences14 from "../../src-tauri/data/sentences-14.json";
 import dialogues from "../../src-tauri/data/listening-dialogues.json";
 import dialogues2 from "../../src-tauri/data/listening-dialogues-2.json";
 import dialogues3 from "../../src-tauri/data/listening-dialogues-3.json";
@@ -85,6 +90,37 @@ import dialogues19 from "../../src-tauri/data/listening-dialogues-19.json";
 import dialogues20 from "../../src-tauri/data/listening-dialogues-20.json";
 import dialogues21 from "../../src-tauri/data/listening-dialogues-21.json";
 import dialogues22 from "../../src-tauri/data/listening-dialogues-22.json";
+import dialogues23 from "../../src-tauri/data/listening-dialogues-23.json";
+import dialogues24 from "../../src-tauri/data/listening-dialogues-24.json";
+import dialogues25 from "../../src-tauri/data/listening-dialogues-25.json";
+import dialogues26 from "../../src-tauri/data/listening-dialogues-26.json";
+import dialogues27 from "../../src-tauri/data/listening-dialogues-27.json";
+import dialogues28 from "../../src-tauri/data/listening-dialogues-28.json";
+import dialogues29 from "../../src-tauri/data/listening-dialogues-29.json";
+import dialogues30 from "../../src-tauri/data/listening-dialogues-30.json";
+import dialogues31 from "../../src-tauri/data/listening-dialogues-31.json";
+import dialogues32 from "../../src-tauri/data/listening-dialogues-32.json";
+import dialogues33 from "../../src-tauri/data/listening-dialogues-33.json";
+import dialogues34 from "../../src-tauri/data/listening-dialogues-34.json";
+import dialogues35 from "../../src-tauri/data/listening-dialogues-35.json";
+import dialogues36 from "../../src-tauri/data/listening-dialogues-36.json";
+import dialogues37 from "../../src-tauri/data/listening-dialogues-37.json";
+import dialogues38 from "../../src-tauri/data/listening-dialogues-38.json";
+import dialogues39 from "../../src-tauri/data/listening-dialogues-39.json";
+import dialogues40 from "../../src-tauri/data/listening-dialogues-40.json";
+import dialogues41 from "../../src-tauri/data/listening-dialogues-41.json";
+import dialogues42 from "../../src-tauri/data/listening-dialogues-42.json";
+import dialogues43 from "../../src-tauri/data/listening-dialogues-43.json";
+import dialogues44 from "../../src-tauri/data/listening-dialogues-44.json";
+import dialogues45 from "../../src-tauri/data/listening-dialogues-45.json";
+import dialogues46 from "../../src-tauri/data/listening-dialogues-46.json";
+import dialogues47 from "../../src-tauri/data/listening-dialogues-47.json";
+import dialogues48 from "../../src-tauri/data/listening-dialogues-48.json";
+import dialogues49 from "../../src-tauri/data/listening-dialogues-49.json";
+import dialogues50 from "../../src-tauri/data/listening-dialogues-50.json";
+import dialogues51 from "../../src-tauri/data/listening-dialogues-51.json";
+import dialogues52 from "../../src-tauri/data/listening-dialogues-52.json";
+import dialogues53 from "../../src-tauri/data/listening-dialogues-53.json";
 import glossary from "../../src-tauri/data/glossary.json";
 import { expandDictionary, type Dictionary } from "./dictionary";
 import type {
@@ -187,6 +223,9 @@ const seedQuestions: SeedQuestion[] = [
   ...(phrases16 as unknown as SeedQuestion[]),
   ...(phrases17 as unknown as SeedQuestion[]),
   ...(phrases18 as unknown as SeedQuestion[]),
+  ...(phrases19 as unknown as SeedQuestion[]),
+  ...(phrases20 as unknown as SeedQuestion[]),
+  ...(phrases21 as unknown as SeedQuestion[]),
   ...(grammar2 as unknown as SeedQuestion[]),
   ...(grammar3 as unknown as SeedQuestion[]),
   ...(grammar4 as unknown as SeedQuestion[]),
@@ -194,6 +233,7 @@ const seedQuestions: SeedQuestion[] = [
   ...(grammar6 as unknown as SeedQuestion[]),
   ...(grammar7 as unknown as SeedQuestion[]),
   ...(grammar8 as unknown as SeedQuestion[]),
+  ...(grammar9 as unknown as SeedQuestion[]),
   ...(idioms2 as unknown as SeedQuestion[]),
   ...(idioms3 as unknown as SeedQuestion[]),
   ...(idioms4 as unknown as SeedQuestion[]),
@@ -213,6 +253,7 @@ const seedQuestions: SeedQuestion[] = [
   ...(sentences11 as unknown as SeedQuestion[]),
   ...(sentences12 as unknown as SeedQuestion[]),
   ...(sentences13 as unknown as SeedQuestion[]),
+  ...(sentences14 as unknown as SeedQuestion[]),
   ...(dialogues as unknown as SeedQuestion[]),
   ...(dialogues2 as unknown as SeedQuestion[]),
   ...(dialogues3 as unknown as SeedQuestion[]),
@@ -235,6 +276,37 @@ const seedQuestions: SeedQuestion[] = [
   ...(dialogues20 as unknown as SeedQuestion[]),
   ...(dialogues21 as unknown as SeedQuestion[]),
   ...(dialogues22 as unknown as SeedQuestion[]),
+  ...(dialogues23 as unknown as SeedQuestion[]),
+  ...(dialogues24 as unknown as SeedQuestion[]),
+  ...(dialogues25 as unknown as SeedQuestion[]),
+  ...(dialogues26 as unknown as SeedQuestion[]),
+  ...(dialogues27 as unknown as SeedQuestion[]),
+  ...(dialogues28 as unknown as SeedQuestion[]),
+  ...(dialogues29 as unknown as SeedQuestion[]),
+  ...(dialogues30 as unknown as SeedQuestion[]),
+  ...(dialogues31 as unknown as SeedQuestion[]),
+  ...(dialogues32 as unknown as SeedQuestion[]),
+  ...(dialogues33 as unknown as SeedQuestion[]),
+  ...(dialogues34 as unknown as SeedQuestion[]),
+  ...(dialogues35 as unknown as SeedQuestion[]),
+  ...(dialogues36 as unknown as SeedQuestion[]),
+  ...(dialogues37 as unknown as SeedQuestion[]),
+  ...(dialogues38 as unknown as SeedQuestion[]),
+  ...(dialogues39 as unknown as SeedQuestion[]),
+  ...(dialogues40 as unknown as SeedQuestion[]),
+  ...(dialogues41 as unknown as SeedQuestion[]),
+  ...(dialogues42 as unknown as SeedQuestion[]),
+  ...(dialogues43 as unknown as SeedQuestion[]),
+  ...(dialogues44 as unknown as SeedQuestion[]),
+  ...(dialogues45 as unknown as SeedQuestion[]),
+  ...(dialogues46 as unknown as SeedQuestion[]),
+  ...(dialogues47 as unknown as SeedQuestion[]),
+  ...(dialogues48 as unknown as SeedQuestion[]),
+  ...(dialogues49 as unknown as SeedQuestion[]),
+  ...(dialogues50 as unknown as SeedQuestion[]),
+  ...(dialogues51 as unknown as SeedQuestion[]),
+  ...(dialogues52 as unknown as SeedQuestion[]),
+  ...(dialogues53 as unknown as SeedQuestion[]),
 ];
 
 const questions: Question[] = seedQuestions.map(
