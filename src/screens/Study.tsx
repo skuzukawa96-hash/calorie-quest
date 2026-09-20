@@ -3,7 +3,7 @@ import GlossedText from "../components/GlossedText";
 import PronunciationTips, { HighlightedText } from "../components/PronunciationTips";
 import { api, runningInTauri } from "../lib/api";
 import { loadDictionary, type Dictionary } from "../lib/dictionary";
-import { checkTyping, makeHint, PASS_SCORE, scorePronunciation, type PronunciationScore, type TipKey } from "../lib/scoring";
+import { checkTyping, maskWord, PASS_SCORE, scorePronunciation, type PronunciationScore, type TipKey } from "../lib/scoring";
 import { playCrunch, playFanfare, playPop, playWrong } from "../lib/sfx";
 import {
   describeRecognitionError,
@@ -448,10 +448,13 @@ function ChoiceCard({
 function TypingCard({ q, disabled, onAnswer }: { q: SessionQuestion; disabled: boolean; onAnswer: (s: string) => void }) {
   const [value, setValue] = useState("");
   const [showHint, setShowHint] = useState(false);
+  const [revealed, setRevealed] = useState<number[]>([]);
   const ref = useRef<HTMLInputElement>(null);
   useEffect(() => {
     ref.current?.focus();
   }, []);
+
+  const hintWords = q.answer.split(" ");
 
   return (
     <form
@@ -479,10 +482,38 @@ function TypingCard({ q, disabled, onAnswer }: { q: SessionQuestion; disabled: b
         <button type="submit" className="btn btn-primary" disabled={disabled || !value.trim()}>
           回答する
         </button>
-        <button type="button" className="btn-link" onClick={() => setShowHint((h) => !h)} disabled={disabled}>
+        <button
+          type="button"
+          className="btn-link"
+          onClick={() => {
+            setShowHint((h) => !h);
+            setRevealed([]);
+          }}
+          disabled={disabled}
+        >
           {showHint ? "ヒントを隠す" : "ヒント"}
         </button>
-        {showHint && <code className="hint">{makeHint(q.answer)}</code>}
+        {showHint && (
+          <code className="hint">
+            {hintWords.map((word, i) => {
+              const masked = maskWord(word);
+              if (revealed.includes(i)) return <span key={i} className="hint-word revealed">{word}</span>;
+              if (masked === word) return <span key={i}>{word}</span>;
+              return (
+                <button
+                  key={i}
+                  type="button"
+                  className="hint-word"
+                  disabled={disabled}
+                  title="タップでこの単語を表示"
+                  onClick={() => setRevealed((r) => [...r, i])}
+                >
+                  {masked}
+                </button>
+              );
+            })}
+          </code>
+        )}
       </div>
     </form>
   );

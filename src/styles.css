@@ -735,6 +735,30 @@ main {
   padding: 4px 10px;
   border-radius: 8px;
   letter-spacing: 0.12em;
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 8px;
+}
+.hint-word {
+  font: inherit;
+  letter-spacing: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  border-bottom: 1px dashed var(--caramel);
+  border-radius: 4px;
+  padding: 2px 3px;
+  cursor: pointer;
+}
+.hint-word:hover:not(:disabled) {
+  background: var(--caramel-light);
+}
+.hint-word.revealed {
+  border-bottom-color: transparent;
+  color: var(--caramel-dark);
+  font-weight: 700;
+  cursor: default;
 }
 .speak-controls {
   margin-top: 8px;

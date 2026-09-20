@@ -124,14 +124,9 @@ export function detectTrickySounds(text: string): TipKey[] {
   return keys;
 }
 
-/** "Nice to meet you." -> "N___ t_ m___ y__." */
-export function makeHint(answer: string): string {
-  return answer
-    .split(" ")
-    .map((w) => {
-      const m = w.match(/^([a-zA-Z])(.*)$/);
-      if (!m) return w;
-      return m[1] + m[2].replace(/[a-zA-Z]/g, "_");
-    })
-    .join(" ");
+/** ヒント1語分。"Nice" -> "N___"（記号はそのまま、2文字目以降の英字だけ伏せる） */
+export function maskWord(word: string): string {
+  const m = word.match(/^([a-zA-Z])(.*)$/);
+  if (!m) return word;
+  return m[1] + m[2].replace(/[a-zA-Z]/g, "_");
 }
