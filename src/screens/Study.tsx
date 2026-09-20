@@ -131,11 +131,11 @@ export default function Study({ mode, difficulty, category, rates, onExit, onPro
   const finished = questions !== null && idx >= questions.length;
 
   const submit = useCallback(
-    async (correct: boolean, score: number | null, given?: string, ps?: PronunciationScore | null) => {
+    async (correct: boolean, score: number | null, given?: string, ps?: PronunciationScore | null, hintsUsed = 0) => {
       if (!current || submitting || feedback) return;
       setSubmitting(true);
       try {
-        const result = await api.submitAnswer({ questionId: current.question.id, mode, correct, score });
+        const result = await api.submitAnswer({ questionId: current.question.id, mode, correct, score, hintsUsed });
         setTally((t) => ({
           correct: t.correct + (correct ? 1 : 0),
           kcal: t.kcal + result.kcalEarned,
@@ -286,7 +286,11 @@ export default function Study({ mode, difficulty, category, rates, onExit, onPro
           />
         )}
         {mode === "typing" && (
-          <TypingCard q={current} disabled={!!feedback || submitting} onAnswer={(input) => submit(checkTyping(current.answer, input), null, input)} />
+          <TypingCard
+            q={current}
+            disabled={!!feedback || submitting}
+            onAnswer={(input, hintsUsed) => submit(checkTyping(current.answer, input), null, input, null, hintsUsed)}
+          />
         )}
         {mode === "listening" && (
           <ListeningCard
@@ -445,7 +449,7 @@ function ChoiceCard({
 
 /* ---------- Typing ---------- */
 
-function TypingCard({ q, disabled, onAnswer }: { q: SessionQuestion; disabled: boolean; onAnswer: (s: string) => void }) {
+function TypingCard({ q, disabled, onAnswer }: { q: SessionQuestion; disabled: boolean; onAnswer: (s: string, hintsUsed: number) => void }) {
   const [value, setValue] = useState("");
   const [showHint, setShowHint] = useState(false);
   const [revealed, setRevealed] = useState<number[]>([]);
@@ -460,7 +464,7 @@ function TypingCard({ q, disabled, onAnswer }: { q: SessionQuestion; disabled: b
     <form
       onSubmit={(e) => {
         e.preventDefault();
-        if (!disabled && value.trim()) onAnswer(value);
+        if (!disabled && value.trim()) onAnswer(value, revealed.length);
       }}
     >
       <div className="prompt-label">日本語に合う英語を入力しよう</div>
@@ -482,15 +486,7 @@ function TypingCard({ q, disabled, onAnswer }: { q: SessionQuestion; disabled: b
         <button type="submit" className="btn btn-primary" disabled={disabled || !value.trim()}>
           回答する
         </button>
-        <button
-          type="button"
-          className="btn-link"
-          onClick={() => {
-            setShowHint((h) => !h);
-            setRevealed([]);
-          }}
-          disabled={disabled}
-        >
+        <button type="button" className="btn-link" onClick={() => setShowHint((h) => !h)} disabled={disabled}>
           {showHint ? "ヒントを隠す" : "ヒント"}
         </button>
         {showHint && (
@@ -505,7 +501,7 @@ function TypingCard({ q, disabled, onAnswer }: { q: SessionQuestion; disabled: b
                   type="button"
                   className="hint-word"
                   disabled={disabled}
-                  title="タップでこの単語を表示"
+                  title="タップでこの単語を表示（獲得カロリーが半分になります）"
                   onClick={() => setRevealed((r) => [...r, i])}
                 >
                   {masked}
@@ -514,6 +510,7 @@ function TypingCard({ q, disabled, onAnswer }: { q: SessionQuestion; disabled: b
             })}
           </code>
         )}
+        {revealed.length > 0 && <span className="muted small">獲得カロリー ×1/{2 ** revealed.length}</span>}
       </div>
     </form>
   );

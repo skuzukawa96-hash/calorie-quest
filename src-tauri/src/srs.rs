@@ -4,10 +4,10 @@ use crate::util::date_plus;
 /// Review intervals in days, indexed by SRS level (翌日 → 3日後 → 1週間後 → 2週間後 → 1か月後).
 pub const INTERVALS: [i64; 5] = [1, 3, 7, 14, 30];
 
-/// kcal per correct answer. 10 correct = 50 / 100 / 250 kcal as in the spec.
-pub const KCAL_LOW: i64 = 5;
-pub const KCAL_MID: i64 = 10;
-pub const KCAL_HIGH: i64 = 25;
+/// kcal per correct answer. 10 correct = 20 / 40 / 100 kcal.
+pub const KCAL_LOW: i64 = 2;
+pub const KCAL_MID: i64 = 4;
+pub const KCAL_HIGH: i64 = 10;
 pub const REVIEW_MULTIPLIER: f64 = 1.5;
 pub const CHEAT_DAY_BONUS: i64 = 300;
 
@@ -40,6 +40,13 @@ pub fn apply_review_bonus(kcal: i64) -> i64 {
     ((kcal as f64) * REVIEW_MULTIPLIER).round() as i64
 }
 
+/// ヒントで1語開示するごとに獲得カロリーを半分にする。
+/// 回数は 0..=30 に丸める（`2f64.powi` が無限大になって i64 変換が飽和するのを防ぐ）。
+pub fn apply_hint_penalty(kcal: i64, hints_used: i64) -> i64 {
+    let halvings = hints_used.clamp(0, 30) as i32;
+    ((kcal as f64) / 2f64.powi(halvings)).round() as i64
+}
+
 /// Returns (new_level, needs_review, next_due_date).
 pub fn next_state(level: i64, in_review: bool, correct: bool, low_score: bool) -> (i64, bool, Option<String>) {
     if !correct || low_score {
@@ -63,12 +70,27 @@ mod tests {
 
     #[test]
     fn kcal_matches_spec() {
-        assert_eq!(kcal_for("low", "choice", true, None) * 10, 50);
-        assert_eq!(kcal_for("mid", "typing", true, None) * 10, 100);
-        assert_eq!(kcal_for("high", "speaking", true, Some(100.0)) * 10, 250);
-        assert_eq!(kcal_for("high", "speaking", true, Some(80.0)), 20);
+        assert_eq!(kcal_for("low", "choice", true, None) * 10, 20);
+        assert_eq!(kcal_for("mid", "typing", true, None) * 10, 40);
+        assert_eq!(kcal_for("high", "speaking", true, Some(100.0)) * 10, 100);
+        assert_eq!(kcal_for("high", "speaking", true, Some(80.0)), 8);
         assert_eq!(kcal_for("high", "speaking", false, Some(20.0)), 0);
         assert_eq!(apply_review_bonus(10), 15);
+    }
+
+    #[test]
+    fn each_revealed_hint_word_halves_the_reward() {
+        assert_eq!(apply_hint_penalty(10, 0), 10);
+        assert_eq!(apply_hint_penalty(10, 1), 5);
+        assert_eq!(apply_hint_penalty(10, 2), 3, "2.5 rounds up");
+        assert_eq!(apply_hint_penalty(10, 3), 1);
+        assert_eq!(apply_hint_penalty(0, 3), 0, "a wrong answer stays at zero");
+        assert_eq!(apply_hint_penalty(10, -1), 10, "negative counts never add kcal");
+        assert_eq!(apply_hint_penalty(10, 99), 0, "an absurd count just zeroes the reward");
+        assert!(
+            apply_hint_penalty(i64::MAX, i64::MAX) < i64::MAX,
+            "huge counts must not overflow the exponent and saturate back up"
+        );
     }
 
     #[test]

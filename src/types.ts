@@ -124,6 +124,8 @@ export interface AnswerPayload {
   mode: Mode;
   correct: boolean;
   score?: number | null;
+  /** 記入問題でヒントの単語を開示した数。1語ごとに獲得カロリーが半分になる。 */
+  hintsUsed?: number;
 }
 
 export interface AnswerResult {

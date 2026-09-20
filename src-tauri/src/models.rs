@@ -114,6 +114,8 @@ pub struct AnswerPayload {
     pub mode: String,
     pub correct: bool,
     pub score: Option<f64>,
+    /// 記入問題でヒントの単語を開示した数。1語ごとに獲得カロリーが半分になる。
+    pub hints_used: Option<i64>,
 }
 
 #[derive(Debug, Serialize)]

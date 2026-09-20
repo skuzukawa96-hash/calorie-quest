@@ -25,7 +25,7 @@ npm run tauri build        # 配布ビルド
 
 | 場所 | 役割 |
 | --- | --- |
-| `src-tauri/src/srs.rs` | kcal 換算（低5/中10/高25、発音はスコア按分）、復習倍率 1.5、SRS 間隔 [1,3,7,14,30] 日 |
+| `src-tauri/src/srs.rs` | kcal 換算（低2/中4/高10、発音はスコア按分）、復習倍率 1.5、ヒント開示1語ごとに半減、SRS 間隔 [1,3,7,14,30] 日 |
 | `src-tauri/src/commands.rs` | Tauri コマンド。コアロジックは `session_questions` / `record_answer` / `redeem_ticket` に分離され、`Connection` だけでテストできる |
 | `src-tauri/src/db.rs` | スキーマ、`ensure_column` によるマイグレーション、`questions.json` / お菓子の初期投入 |
 | `src-tauri/src/speech.rs` | SAPI5 で英語 TTS → WAV（フロントで再生）、WinRT `SpeechRecognizer` のリスト文法で発音判定 |

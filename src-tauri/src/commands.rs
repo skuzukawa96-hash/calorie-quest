@@ -367,6 +367,7 @@ pub fn record_answer(conn: &mut Connection, payload: &AnswerPayload) -> Result<A
     if is_due_review && payload.correct {
         kcal = srs::apply_review_bonus(kcal);
     }
+    kcal = srs::apply_hint_penalty(kcal, payload.hints_used.unwrap_or(0));
     let (new_level, new_needs_review, new_next_due) =
         srs::next_state(level, in_review, payload.correct, low_score);
 
@@ -818,7 +819,19 @@ mod tests {
     }
 
     fn answer(conn: &mut Connection, qid: i64, mode: &str, correct: bool, score: Option<f64>) -> AnswerResult {
-        record_answer(conn, &AnswerPayload { question_id: qid, mode: mode.into(), correct, score }).expect("record")
+        answer_with_hints(conn, qid, mode, correct, score, None)
+    }
+
+    fn answer_with_hints(
+        conn: &mut Connection,
+        qid: i64,
+        mode: &str,
+        correct: bool,
+        score: Option<f64>,
+        hints_used: Option<i64>,
+    ) -> AnswerResult {
+        record_answer(conn, &AnswerPayload { question_id: qid, mode: mode.into(), correct, score, hints_used })
+            .expect("record")
     }
 
     #[test]
@@ -831,12 +844,12 @@ mod tests {
     }
 
     #[test]
-    fn correct_low_answer_earns_five_kcal() {
+    fn correct_low_answer_earns_two_kcal() {
         let mut c = conn();
         let qid = question_id(&c, "w001");
         let r = answer(&mut c, qid, "choice", true, None);
-        assert_eq!(r.kcal_earned, 5);
-        assert_eq!(r.today_kcal, 5);
+        assert_eq!(r.kcal_earned, 2);
+        assert_eq!(r.today_kcal, 2);
         assert!(r.first_study_today);
         assert_eq!(r.streak, 1);
         assert!(!r.needs_review);
@@ -878,7 +891,7 @@ mod tests {
 
         let r = answer(&mut c, qid, "choice", true, None);
         assert!(r.is_review);
-        assert_eq!(r.kcal_earned, 8, "5 kcal x 1.5 rounded");
+        assert_eq!(r.kcal_earned, 3, "2 kcal x 1.5 rounded");
         let (level, needs, due) = history(&c, qid);
         assert_eq!((level, needs), (1, 1));
         assert_eq!(due.as_deref(), Some(date_plus(3).as_str()));
@@ -887,13 +900,22 @@ mod tests {
     #[test]
     fn speaking_score_scales_kcal_and_low_scores_go_to_review() {
         let mut c = conn();
-        let qid = question_id(&c, "i001"); // high difficulty: 25 kcal
+        let qid = question_id(&c, "i001"); // high difficulty: 10 kcal
         let r = answer(&mut c, qid, "speaking", true, Some(80.0));
-        assert_eq!(r.kcal_earned, 20);
+        assert_eq!(r.kcal_earned, 8);
         assert!(!r.needs_review);
         let r = answer(&mut c, qid, "speaking", true, Some(65.0));
-        assert_eq!(r.kcal_earned, 16);
+        assert_eq!(r.kcal_earned, 7, "6.5 rounds up");
         assert!(r.needs_review, "scores under 70 are scheduled for review");
+    }
+
+    #[test]
+    fn revealed_hint_words_halve_the_reward() {
+        let mut c = conn();
+        let qid = question_id(&c, "i001"); // high difficulty: 10 kcal
+        let r = answer_with_hints(&mut c, qid, "typing", true, None, Some(2));
+        assert_eq!(r.kcal_earned, 3, "10 kcal halved twice, 2.5 rounds up");
+        assert_eq!(r.today_kcal, 3, "the daily total only counts what was earned");
     }
 
     #[test]
@@ -916,7 +938,7 @@ mod tests {
 
         let redeemed = redeem_ticket(&c).unwrap();
         assert_eq!(redeemed.kcal_added, srs::CHEAT_DAY_BONUS);
-        assert_eq!(redeemed.today_kcal, 10 + 10 + srs::CHEAT_DAY_BONUS);
+        assert_eq!(redeemed.today_kcal, 4 + 4 + srs::CHEAT_DAY_BONUS);
         assert_eq!(redeemed.tickets_left, 0);
         assert!(redeem_ticket(&c).is_err());
     }

@@ -145,7 +145,7 @@ interface MockState {
   nextId: number;
 }
 
-const RATES = { low: 5, mid: 10, high: 25, reviewMultiplier: 1.5, cheatDayBonus: 300 };
+const RATES = { low: 2, mid: 4, high: 10, reviewMultiplier: 1.5, cheatDayBonus: 300 };
 const INTERVALS = [1, 3, 7, 14, 30];
 const STORAGE_KEY = "calorie-quest-mock-v1";
 
@@ -445,6 +445,8 @@ function submitAnswer(p: AnswerPayload): AnswerResult {
     kcal = p.mode === "speaking" ? Math.round((base * Math.min(100, Math.max(0, p.score ?? 100))) / 100) : base;
     if (isDueReview) kcal = Math.round(kcal * RATES.reviewMultiplier);
   }
+  // ヒントで1語開示するごとに半分（srs.rs の apply_hint_penalty と同じ計算）
+  kcal = Math.round(kcal / 2 ** Math.min(30, Math.max(0, p.hintsUsed ?? 0)));
   let level = h.level;
   let needsReview = false;
   let nextDue: string | null = null;
