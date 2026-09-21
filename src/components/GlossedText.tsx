@@ -16,9 +16,14 @@ interface Tip {
   y: number;
 }
 
-/** Splits into word / separator pieces so punctuation and spacing survive untouched. */
+/**
+ * Splits into word / separator pieces so punctuation and spacing survive untouched.
+ * Accents, digits and the dots inside an abbreviation stay in the word so the highlighted text
+ * matches what was looked up: hovering "café", "K9" or "a.m." used to underline only the ASCII
+ * letters up to the first accent, digit or dot.
+ */
 function pieces(text: string): string[] {
-  return text.split(/([A-Za-z]+(?:['’][A-Za-z]+)?)/).filter((p) => p !== "");
+  return text.split(/([\p{L}\p{N}]+(?:['’.][\p{L}\p{N}]+)*)/gu).filter((p) => p !== "");
 }
 
 /**

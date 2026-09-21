@@ -19,14 +19,23 @@ pub fn date_plus(days: i64) -> String {
 
 /// Splits English text into lookup-ready words: lowercase, hyphens broken apart,
 /// possessives dropped. The frontend tokenizes hovered text the same way.
+///
+/// Accents, digits and the dots inside an abbreviation are part of a word, not separators:
+/// splitting on them turned "papier-mâché" into "m" and "ch", "K9" into "k" and "a.m." into "a"
+/// and "m" — fragments no gloss can honestly describe. A run of digits on its own ("1995") is
+/// dropped, since a year is not vocabulary.
 pub fn tokens(text: &str) -> Vec<String> {
     text.to_lowercase()
         .chars()
-        .map(|c| if c.is_ascii_alphabetic() || c == '\'' { c } else { ' ' })
+        .map(|c| if c.is_alphanumeric() || c == '\'' || c == '.' { c } else { ' ' })
         .collect::<String>()
         .split_whitespace()
-        .map(|w| w.trim_matches('\'').trim_end_matches("'s").to_string())
-        .filter(|w| !w.is_empty())
+        .map(|w| {
+            w.trim_matches(|c: char| c == '\'' || c == '.')
+                .trim_end_matches("'s")
+                .to_string()
+        })
+        .filter(|w| w.chars().any(char::is_alphabetic))
         .collect()
 }
 

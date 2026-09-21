@@ -4,21 +4,25 @@
 import { api } from "./api";
 
 /** Splits English text into lookup-ready words. Mirrors `util::tokens` in the Rust backend. */
+/**
+ * Mirrors `util::tokens`: accents, digits and the dots inside an abbreviation belong to the word,
+ * and digit-only runs are dropped.
+ */
 export function tokenize(text: string): string[] {
   return text
     .toLowerCase()
     .replace(/[’]/g, "'")
-    .replace(/[^a-z']+/g, " ")
+    .replace(/[^\p{L}\p{N}'.]+/gu, " ")
     .split(/\s+/)
     .map(normalizeWord)
-    .filter(Boolean);
+    .filter((w) => /\p{L}/u.test(w));
 }
 
 export function normalizeWord(raw: string): string {
   return raw
     .toLowerCase()
     .replace(/[’]/g, "'")
-    .replace(/^'+|'+$/g, "")
+    .replace(/^['.]+|['.]+$/g, "")
     .replace(/'s$/, "");
 }
 
