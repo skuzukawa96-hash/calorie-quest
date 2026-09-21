@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { lookup, type Dictionary } from "../lib/dictionary";
+import { isTtsSupported, speak } from "../lib/speech";
 
 interface Props {
   text: string;
   dict: Dictionary | null;
-  /** When off the text renders as plain text with no hover targets. */
+  /** When off the words still speak on click, but no meanings are shown. */
   enabled: boolean;
   className?: string;
 }
@@ -28,14 +29,19 @@ function pieces(text: string): string[] {
 
 /**
  * Renders an English sentence where every word the dictionary knows shows its meaning
- * on hover (or tap). Used for phrases, idioms and sentences, where the learner is
- * reading a full line rather than a single vocabulary item.
+ * on hover (or tap), and every English word is read aloud when clicked. Used for phrases,
+ * idioms and sentences, where the learner is reading a full line rather than a single item.
  */
 export default function GlossedText({ text, dict, enabled, className }: Props) {
   const [tip, setTip] = useState<Tip | null>(null);
+  const [saying, setSaying] = useState<number | null>(null);
   const parts = useMemo(() => pieces(text), [text]);
+  const canSpeak = isTtsSupported();
 
-  useEffect(() => setTip(null), [text, enabled]);
+  useEffect(() => {
+    setTip(null);
+    setSaying(null);
+  }, [text, enabled]);
   useEffect(() => {
     if (!tip) return;
     const clear = () => setTip(null);
@@ -43,28 +49,42 @@ export default function GlossedText({ text, dict, enabled, className }: Props) {
     return () => window.removeEventListener("scroll", clear, true);
   }, [tip]);
 
-  if (!enabled || !dict) return <span className={className}>{text}</span>;
+  // Nothing to offer: no meanings to show and no voice to play.
+  if ((!enabled || !dict) && !canSpeak) return <span className={className}>{text}</span>;
 
   const show = (word: string, gloss: string, el: HTMLElement) => {
     const r = el.getBoundingClientRect();
     setTip({ word, gloss, x: r.left + r.width / 2, y: r.top });
   };
 
+  const say = (word: string, at: number) => {
+    setSaying(at);
+    speak(word)
+      .catch(() => undefined)
+      .finally(() => setSaying((cur) => (cur === at ? null : cur)));
+  };
+
   return (
     <span className={className}>
       {parts.map((part, i) => {
-        const gloss = /^[A-Za-z]/.test(part) ? lookup(dict, part) : undefined;
-        if (!gloss) return <span key={i}>{part}</span>;
+        // Only Latin-script words are looked up or spoken; Japanese and punctuation pass through.
+        if (!/^[A-Za-z]/.test(part)) return <span key={i}>{part}</span>;
+        const gloss = enabled && dict ? lookup(dict, part) : undefined;
+        if (!gloss && !canSpeak) return <span key={i}>{part}</span>;
+        const cls = [gloss ? "glossed" : "speakable", canSpeak ? "can-speak" : "", tip?.word === part ? "active" : "", saying === i ? "saying" : ""]
+          .filter(Boolean)
+          .join(" ");
         return (
           <span
             key={i}
-            className={"glossed " + (tip?.word === part ? "active" : "")}
-            onMouseEnter={(e) => show(part, gloss, e.currentTarget)}
-            onMouseLeave={() => setTip(null)}
+            className={cls}
+            title={canSpeak ? "クリックで発音" : undefined}
+            onMouseEnter={gloss ? (e) => show(part, gloss, e.currentTarget) : undefined}
+            onMouseLeave={gloss ? () => setTip(null) : undefined}
             onClick={(e) => {
               e.stopPropagation();
-              if (tip?.word === part) setTip(null);
-              else show(part, gloss, e.currentTarget);
+              if (gloss) show(part, gloss, e.currentTarget);
+              if (canSpeak) say(part, i);
             }}
           >
             {part}

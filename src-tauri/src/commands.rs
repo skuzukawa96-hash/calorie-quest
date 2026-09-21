@@ -298,6 +298,7 @@ fn build_session_question(
     } else {
         vec![answer.clone()]
     };
+    let grammar_note = grammar_note_for(&q);
     Ok(SessionQuestion {
         question: q,
         mode: mode.to_string(),
@@ -309,6 +310,19 @@ fn build_session_question(
         accepted,
         audio_text,
         hide_text,
+        grammar_note,
+    })
+}
+
+/// The explanation to show with a grammar answer. Questions of other kinds have no point, and an
+/// unknown point yields nothing rather than an empty box: a test keeps the two files in step.
+fn grammar_note_for(q: &Question) -> Option<GrammarNote> {
+    let point = q.point.as_deref()?;
+    let note = db::grammar_notes().get(point)?;
+    Some(GrammarNote {
+        title: note.title.clone(),
+        body: note.body.clone(),
+        example: note.example.clone(),
     })
 }
 
@@ -1127,6 +1141,42 @@ mod tests {
         // And the session hands that list to the frontend, which is what does the grading.
         let sq = build_session_question(&c, q, "typing", false).unwrap();
         assert_eq!(sq.accepted, accepted, "typing must expose the accepted answers");
+    }
+
+    #[test]
+    fn every_grammar_question_is_served_with_its_explanation() {
+        let c = conn();
+        let mut stmt = c
+            .prepare(&format!("SELECT {Q_COLS} FROM questions q WHERE q.kind = 'grammar'"))
+            .unwrap();
+        let all: Vec<Question> = stmt
+            .query_map([], db::row_to_question)
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert!(!all.is_empty(), "no grammar questions were seeded");
+
+        // Sampled rather than exhaustive: building every session question runs distractor queries.
+        for q in all.iter().step_by(37) {
+            let key = q.key.clone();
+            let sq = build_session_question(&c, q.clone(), "choice", false).unwrap();
+            let note = sq
+                .grammar_note
+                .unwrap_or_else(|| panic!("{key} was served without an explanation"));
+            assert!(!note.title.trim().is_empty(), "{key} got a note with no title");
+            assert!(!note.body.trim().is_empty(), "{key} got a note with no body");
+        }
+
+        // Other kinds have nothing to explain, so the panel stays off for them.
+        let word = c
+            .query_row(
+                &format!("SELECT {Q_COLS} FROM questions q WHERE q.kind = 'word' LIMIT 1"),
+                [],
+                db::row_to_question,
+            )
+            .unwrap();
+        let sq = build_session_question(&c, word, "choice", false).unwrap();
+        assert!(sq.grammar_note.is_none(), "only grammar questions carry an explanation");
     }
 
     #[test]

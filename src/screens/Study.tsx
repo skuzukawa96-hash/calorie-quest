@@ -352,6 +352,21 @@ export default function Study({ mode, difficulty, category, rates, onExit, onPro
                   </button>
                 )}
               </div>
+              {current.question.kind === "grammar" && (
+                <div className="filled-line">
+                  <span className="label">完成した文</span>{" "}
+                  <GlossedText text={current.audioText} dict={dict} enabled={showGloss} />
+                </div>
+              )}
+              {current.grammarNote && (
+                <div className="grammar-note">
+                  <div className="grammar-note-title">📘 {current.grammarNote.title}</div>
+                  <div>{current.grammarNote.body}</div>
+                  <div className="grammar-note-example">
+                    <GlossedText text={current.grammarNote.example} dict={dict} enabled={showGloss} />
+                  </div>
+                </div>
+              )}
               {current.question.example && (
                 <div className="example-line">
                   <span className="label">例文</span>

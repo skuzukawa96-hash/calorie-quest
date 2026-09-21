@@ -5,7 +5,8 @@ fn main() {
     tauri_build::build()
 }
 
-/// Every JSON in `data/` except the seed file and the glossary is a question pack. The list used to
+/// Every JSON in `data/` except the seed file, the glossary and the grammar notes is a question
+/// pack. The list used to
 /// be typed out by hand in `db.rs` and again in `mockBackend.ts`, so a new pack could be registered
 /// on one side only and silently change the question set on just that platform. Deriving it from
 /// the directory makes the files on disk the single source of truth; `include_str!` still embeds
@@ -35,7 +36,10 @@ fn generate_question_pack_list() {
 }
 
 fn is_pack(name: &str) -> bool {
-    name.ends_with(".json") && name != "questions.json" && name != "glossary.json"
+    name.ends_with(".json")
+        && name != "questions.json"
+        && name != "glossary.json"
+        && name != "grammar-notes.json"
 }
 
 /// Groups packs by family and orders them numerically, so `-2` comes before `-10` and the seeded

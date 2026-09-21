@@ -319,6 +319,22 @@ main {
 .glossed.active {
   background: #fde7b8;
 }
+/* A word with no dictionary entry is still worth a click: it gets read aloud. */
+.speakable {
+  border-radius: 3px;
+}
+.glossed.can-speak,
+.speakable.can-speak {
+  cursor: pointer;
+}
+.speakable.can-speak:hover {
+  background: #fdf0d6;
+}
+.glossed.saying,
+.speakable.saying {
+  background: var(--caramel);
+  color: #fff;
+}
 .gloss-tip {
   position: fixed;
   transform: translate(-50%, calc(-100% - 10px));
@@ -412,6 +428,30 @@ main {
 }
 .example-en .btn-link {
   padding: 0 4px;
+}
+
+/* Grammar answers come with the rule behind them. */
+.filled-line {
+  font-weight: 600;
+  color: var(--choco);
+}
+.grammar-note {
+  margin-top: 6px;
+  padding: 10px 14px;
+  background: rgba(255, 255, 255, 0.72);
+  border-left: 3px solid var(--choco);
+  border-radius: 0 10px 10px 0;
+  line-height: 1.65;
+}
+.grammar-note-title {
+  font-weight: 700;
+  color: var(--choco);
+  margin-bottom: 2px;
+}
+.grammar-note-example {
+  margin-top: 4px;
+  font-size: 14px;
+  color: var(--muted);
 }
 
 .q-category {

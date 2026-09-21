@@ -24,6 +24,18 @@ pub struct Question {
     /// Idioms carry a sentence that shows the expression in use, with its translation.
     pub example: Option<String>,
     pub example_ja: Option<String>,
+    /// Grammar questions name the point they test ("present-perfect", "relative-pronoun", ...).
+    pub point: Option<String>,
+}
+
+/// The explanation shown with the answer to a grammar question, looked up from the question's
+/// `point`. One note serves every question that tests the same thing.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GrammarNote {
+    pub title: String,
+    pub body: String,
+    pub example: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -45,6 +57,8 @@ pub struct SessionQuestion {
     pub audio_text: String,
     /// Listening mode hides the English until the answer is in.
     pub hide_text: bool,
+    /// Grammar questions carry the explanation of the point they test, shown with the answer.
+    pub grammar_note: Option<GrammarNote>,
 }
 
 #[derive(Debug, Clone, Serialize)]

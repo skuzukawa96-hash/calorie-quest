@@ -21,6 +21,15 @@ export interface Question {
   /** idioms carry a sentence showing the expression in use, plus its translation */
   example?: string | null;
   exampleJa?: string | null;
+  /** grammar questions name the point they test ("present-perfect", "relative-pronoun", …) */
+  point?: string | null;
+}
+
+/** The explanation shown with a grammar answer; one note serves every question on that point. */
+export interface GrammarNote {
+  title: string;
+  body: string;
+  example: string;
 }
 
 export interface SessionQuestion {
@@ -37,6 +46,8 @@ export interface SessionQuestion {
   audioText: string;
   /** listening mode keeps the English hidden until the answer is in */
   hideText: boolean;
+  /** grammar questions carry the explanation of the point they test */
+  grammarNote?: GrammarNote | null;
 }
 
 export interface UserInfo {

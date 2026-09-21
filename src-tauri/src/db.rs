@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use std::path::Path;
 
 pub const Q_COLS: &str =
-    "q.id, q.key, q.kind, q.difficulty, q.en, q.ja, q.modes, q.choices, q.prompt, q.hint, q.audio_path, q.category, q.word_group, q.example, q.example_ja";
+    "q.id, q.key, q.kind, q.difficulty, q.en, q.ja, q.modes, q.choices, q.prompt, q.hint, q.audio_path, q.category, q.word_group, q.example, q.example_ja, q.point";
 
 /// Main seed file: carries the seed `version` plus the original question set.
 const QUESTIONS_JSON: &str = include_str!("../data/questions.json");
@@ -15,6 +15,9 @@ const QUESTIONS_JSON: &str = include_str!("../data/questions.json");
 const EXTRA_QUESTION_PACKS: &[(&str, &str)] = include!(concat!(env!("OUT_DIR"), "/question_packs.rs"));
 /// Japanese glosses for words that appear inside sentences but are not questions themselves.
 const GLOSSARY_JSON: &str = include_str!("../data/glossary.json");
+/// One explanation per grammar point, looked up by a grammar question's `point` tag. The same
+/// point covers dozens of questions, so the text lives here once instead of in every row.
+const GRAMMAR_NOTES_JSON: &str = include_str!("../data/grammar-notes.json");
 
 const SCHEMA: &str = "
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -43,7 +46,8 @@ CREATE TABLE IF NOT EXISTS questions (
   category TEXT NOT NULL DEFAULT '',
   word_group TEXT NOT NULL DEFAULT '',
   example TEXT,
-  example_ja TEXT
+  example_ja TEXT,
+  point TEXT
 );
 CREATE TABLE IF NOT EXISTS learning_history (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -154,6 +158,18 @@ struct SeedQuestion {
     example: Option<String>,
     #[serde(default, rename = "exampleJa")]
     example_ja: Option<String>,
+    /// Grammar questions name the point they test; `grammar-notes.json` holds the explanation.
+    #[serde(default)]
+    point: Option<String>,
+}
+
+/// One entry of `data/grammar-notes.json`.
+#[derive(serde::Deserialize)]
+pub struct GrammarNoteSeed {
+    pub point: String,
+    pub title: String,
+    pub body: String,
+    pub example: String,
 }
 
 pub fn init(path: &Path) -> rusqlite::Result<Connection> {
@@ -175,6 +191,7 @@ fn setup(conn: Connection) -> rusqlite::Result<Connection> {
     ensure_column(&conn, "questions", "word_group", "TEXT NOT NULL DEFAULT ''")?;
     ensure_column(&conn, "questions", "example", "TEXT")?;
     ensure_column(&conn, "questions", "example_ja", "TEXT")?;
+    ensure_column(&conn, "questions", "point", "TEXT")?;
     conn.execute(
         "INSERT OR IGNORE INTO users (id, name, created_at) VALUES (1, 'Player', ?1)",
         params![now_ts()],
@@ -235,13 +252,13 @@ fn seed_questions(conn: &Connection) -> rusqlite::Result<()> {
     let tx = conn.unchecked_transaction()?;
     {
         let mut stmt = tx.prepare(
-            "INSERT INTO questions (key, kind, difficulty, en, ja, modes, choices, prompt, hint, audio_path, category, word_group, example, example_ja)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)
+            "INSERT INTO questions (key, kind, difficulty, en, ja, modes, choices, prompt, hint, audio_path, category, word_group, example, example_ja, point)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)
              ON CONFLICT(key) DO UPDATE SET kind = excluded.kind, difficulty = excluded.difficulty,
                en = excluded.en, ja = excluded.ja, modes = excluded.modes, choices = excluded.choices,
                prompt = excluded.prompt, hint = excluded.hint, audio_path = excluded.audio_path,
                category = excluded.category, word_group = excluded.word_group,
-               example = excluded.example, example_ja = excluded.example_ja",
+               example = excluded.example, example_ja = excluded.example_ja, point = excluded.point",
         )?;
         for q in &seed.questions {
             let modes = serde_json::to_string(&q.modes).unwrap_or_else(|_| "[]".into());
@@ -252,7 +269,7 @@ fn seed_questions(conn: &Connection) -> rusqlite::Result<()> {
             let group = if q.group.is_empty() { &q.category } else { &q.group };
             stmt.execute(params![
                 q.key, q.kind, q.difficulty, q.en, q.ja, modes, choices, q.prompt, q.hint, q.audio_path, q.category,
-                group, q.example, q.example_ja
+                group, q.example, q.example_ja, q.point
             ])?;
         }
     }
@@ -294,6 +311,18 @@ pub fn row_to_question(row: &Row) -> rusqlite::Result<Question> {
         group: row.get(12)?,
         example: row.get(13)?,
         example_ja: row.get(14)?,
+        point: row.get(15)?,
+    })
+}
+
+/// The grammar explanations, keyed by point. Parsed once and cached: the file ships in the binary,
+/// so a mistake in it is a build problem rather than a runtime condition.
+pub fn grammar_notes() -> &'static HashMap<String, GrammarNoteSeed> {
+    static NOTES: std::sync::OnceLock<HashMap<String, GrammarNoteSeed>> = std::sync::OnceLock::new();
+    NOTES.get_or_init(|| {
+        let list: Vec<GrammarNoteSeed> = serde_json::from_str(GRAMMAR_NOTES_JSON)
+            .expect("data/grammar-notes.json must be a valid JSON array");
+        list.into_iter().map(|n| (n.point.clone(), n)).collect()
     })
 }
 
@@ -406,6 +435,25 @@ mod tests {
                 let prompt = q.prompt.as_deref().unwrap_or_else(|| panic!("{} needs a prompt", q.key));
                 if q.kind == "grammar" {
                     assert!(prompt.contains("___"), "{} prompt needs ___", q.key);
+                    let point = q.point.as_deref().unwrap_or_else(|| panic!("{} needs a point", q.key));
+                    assert!(
+                        grammar_notes().contains_key(point),
+                        "{}: no explanation for grammar point {point}",
+                        q.key
+                    );
+                    // The answer goes into the blank, so a prompt that also spells it out on the
+                    // other side produces "getting over over her cold" — spoken aloud and, since
+                    // the explanation panel landed, shown to the learner as the completed sentence.
+                    let filled = prompt.replace("___", &q.en).to_lowercase();
+                    let words: Vec<&str> = filled.split_whitespace().collect();
+                    for pair in words.windows(2) {
+                        assert_ne!(
+                            pair[0].trim_matches(|c: char| !c.is_alphanumeric()),
+                            pair[1].trim_matches(|c: char| !c.is_alphanumeric()),
+                            "{}: filling the blank repeats a word: {filled}",
+                            q.key
+                        );
+                    }
                 } else {
                     assert!(!prompt.trim().is_empty(), "{} prompt is empty", q.key);
                 }
@@ -454,7 +502,12 @@ mod tests {
             .expect("src-tauri/data must exist")
             .filter_map(|e| e.ok())
             .map(|e| e.file_name().to_string_lossy().into_owned())
-            .filter(|n| n.ends_with(".json") && n != "questions.json" && n != "glossary.json")
+            .filter(|n| {
+                n.ends_with(".json")
+                    && n != "questions.json"
+                    && n != "glossary.json"
+                    && n != "grammar-notes.json"
+            })
             .count();
         assert_eq!(
             EXTRA_QUESTION_PACKS.len(),
@@ -465,6 +518,32 @@ mod tests {
             let pack: Vec<SeedQuestion> =
                 serde_json::from_str(json).unwrap_or_else(|e| panic!("{name} is not a question array: {e}"));
             assert!(!pack.is_empty(), "{name} contributes no questions");
+        }
+    }
+
+    /// Both halves of the pairing. `seed_data_is_well_formed` catches a question whose point has no
+    /// explanation; this catches an explanation nothing points at, which would otherwise sit in the
+    /// binary forever after a question was retagged.
+    #[test]
+    fn every_grammar_note_explains_a_point_the_bank_actually_uses() {
+        let seed = load_seed();
+        let used: HashSet<&str> = seed
+            .questions
+            .iter()
+            .filter(|q| q.kind == "grammar")
+            .filter_map(|q| q.point.as_deref())
+            .collect();
+        for point in grammar_notes().keys() {
+            assert!(used.contains(point.as_str()), "no grammar question tests {point}");
+        }
+        for note in grammar_notes().values() {
+            assert!(!note.title.trim().is_empty(), "{} has no title", note.point);
+            assert!(note.body.chars().count() >= 20, "{} has too thin an explanation", note.point);
+            assert!(!note.example.trim().is_empty(), "{} has no example", note.point);
+        }
+        // Only grammar questions carry a point: anywhere else it would be dead weight in the row.
+        for q in &seed.questions {
+            assert!(q.kind == "grammar" || q.point.is_none(), "{} is not a grammar question", q.key);
         }
     }
 

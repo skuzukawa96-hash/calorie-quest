@@ -2,6 +2,7 @@
 // It mirrors the rules in src-tauri/src/srs.rs and commands.rs; the Tauri build never loads it.
 import seedJson from "../../src-tauri/data/questions.json";
 import glossary from "../../src-tauri/data/glossary.json";
+import grammarNotes from "../../src-tauri/data/grammar-notes.json";
 import { expandDictionary, type Dictionary } from "./dictionary";
 import type {
   AnswerPayload,
@@ -11,6 +12,7 @@ import type {
   DailyStats,
   Dashboard,
   DayPoint,
+  GrammarNote,
   Level,
   Mode,
   Question,
@@ -35,6 +37,7 @@ interface SeedQuestion {
   prompt?: string;
   example?: string;
   exampleJa?: string;
+  point?: string;
 }
 
 interface Hist {
@@ -75,8 +78,8 @@ const STORAGE_KEY = "calorie-quest-mock-v2";
 
 /**
  * Every pack in src-tauri/data, discovered the same way build.rs discovers them for the Rust
- * side, so adding a file needs no edit here. questions.json and glossary.json are imported by
- * name above and excluded; the rest are plain arrays of questions.
+ * side, so adding a file needs no edit here. questions.json, glossary.json and grammar-notes.json
+ * are imported by name above and excluded; the rest are plain arrays of questions.
  */
 const packModules = import.meta.glob<SeedQuestion[]>("../../src-tauri/data/*.json", {
   eager: true,
@@ -97,7 +100,7 @@ function packOrder(path: string): [string, number, string] {
 const seedQuestions: SeedQuestion[] = [
   ...(seedJson as unknown as { questions: SeedQuestion[] }).questions,
   ...Object.entries(packModules)
-    .filter(([path]) => !/\/(questions|glossary)\.json$/.test(path))
+    .filter(([path]) => !/\/(questions|glossary|grammar-notes)\.json$/.test(path))
     .sort(([a], [b]) => {
       const x = packOrder(a);
       const y = packOrder(b);
@@ -123,6 +126,7 @@ const questions: Question[] = seedQuestions.map(
     audioPath: null,
     example: q.example ?? null,
     exampleJa: q.exampleJa ?? null,
+    point: q.point ?? null,
   }),
 );
 
@@ -273,8 +277,25 @@ function audioTextFor(q: Question): string {
   return q.en;
 }
 
+/** Mirrors grammar_note_for in commands.rs: the point names the explanation to show. */
+const notesByPoint = new Map(
+  (grammarNotes as (GrammarNote & { point: string })[]).map((n) => [n.point, n]),
+);
+
+function grammarNoteFor(q: Question): GrammarNote | null {
+  const note = q.point ? notesByPoint.get(q.point) : undefined;
+  return note ? { title: note.title, body: note.body, example: note.example } : null;
+}
+
 function buildSessionQuestion(q: Question, mode: Mode, isReview: boolean): SessionQuestion {
-  const base = { question: q, mode, isReview, audioText: audioTextFor(q), hideText: false };
+  const base = {
+    question: q,
+    mode,
+    isReview,
+    audioText: audioTextFor(q),
+    hideText: false,
+    grammarNote: grammarNoteFor(q),
+  };
   if (mode === "choice") {
     if (q.choices && q.choices.length) {
       return {
