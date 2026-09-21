@@ -9,129 +9,10 @@ pub const Q_COLS: &str =
 
 /// Main seed file: carries the seed `version` plus the original question set.
 const QUESTIONS_JSON: &str = include_str!("../data/questions.json");
-/// Additional question packs (plain JSON arrays). Add a file here and bump `version` in questions.json.
-const EXTRA_QUESTION_PACKS: &[(&str, &str)] = &[
-    ("words-2a.json", include_str!("../data/words-2a.json")),
-    ("words-2b.json", include_str!("../data/words-2b.json")),
-    ("words-3.json", include_str!("../data/words-3.json")),
-    ("words-4.json", include_str!("../data/words-4.json")),
-    ("words-5.json", include_str!("../data/words-5.json")),
-    ("words-6.json", include_str!("../data/words-6.json")),
-    ("words-7.json", include_str!("../data/words-7.json")),
-    ("words-8.json", include_str!("../data/words-8.json")),
-    ("words-9.json", include_str!("../data/words-9.json")),
-    ("words-10.json", include_str!("../data/words-10.json")),
-    ("words-11.json", include_str!("../data/words-11.json")),
-    ("words-12.json", include_str!("../data/words-12.json")),
-    ("words-13.json", include_str!("../data/words-13.json")),
-    ("words-14.json", include_str!("../data/words-14.json")),
-    ("words-15.json", include_str!("../data/words-15.json")),
-    ("words-16.json", include_str!("../data/words-16.json")),
-    ("words-17.json", include_str!("../data/words-17.json")),
-    ("words-18.json", include_str!("../data/words-18.json")),
-    ("words-19.json", include_str!("../data/words-19.json")),
-    ("phrases-2.json", include_str!("../data/phrases-2.json")),
-    ("phrases-3.json", include_str!("../data/phrases-3.json")),
-    ("phrases-4.json", include_str!("../data/phrases-4.json")),
-    ("phrases-5.json", include_str!("../data/phrases-5.json")),
-    ("phrases-6.json", include_str!("../data/phrases-6.json")),
-    ("phrases-7.json", include_str!("../data/phrases-7.json")),
-    ("phrases-8.json", include_str!("../data/phrases-8.json")),
-    ("phrases-9.json", include_str!("../data/phrases-9.json")),
-    ("phrases-10.json", include_str!("../data/phrases-10.json")),
-    ("phrases-11.json", include_str!("../data/phrases-11.json")),
-    ("phrases-12.json", include_str!("../data/phrases-12.json")),
-    ("phrases-13.json", include_str!("../data/phrases-13.json")),
-    ("phrases-14.json", include_str!("../data/phrases-14.json")),
-    ("phrases-15.json", include_str!("../data/phrases-15.json")),
-    ("phrases-16.json", include_str!("../data/phrases-16.json")),
-    ("phrases-17.json", include_str!("../data/phrases-17.json")),
-    ("phrases-18.json", include_str!("../data/phrases-18.json")),
-    ("phrases-19.json", include_str!("../data/phrases-19.json")),
-    ("phrases-20.json", include_str!("../data/phrases-20.json")),
-    ("phrases-21.json", include_str!("../data/phrases-21.json")),
-    ("grammar-2.json", include_str!("../data/grammar-2.json")),
-    ("grammar-3.json", include_str!("../data/grammar-3.json")),
-    ("grammar-4.json", include_str!("../data/grammar-4.json")),
-    ("grammar-5.json", include_str!("../data/grammar-5.json")),
-    ("grammar-6.json", include_str!("../data/grammar-6.json")),
-    ("grammar-7.json", include_str!("../data/grammar-7.json")),
-    ("grammar-8.json", include_str!("../data/grammar-8.json")),
-    ("grammar-9.json", include_str!("../data/grammar-9.json")),
-    ("idioms-2.json", include_str!("../data/idioms-2.json")),
-    ("idioms-3.json", include_str!("../data/idioms-3.json")),
-    ("idioms-4.json", include_str!("../data/idioms-4.json")),
-    ("idioms-5.json", include_str!("../data/idioms-5.json")),
-    ("idioms-6.json", include_str!("../data/idioms-6.json")),
-    ("idioms-7.json", include_str!("../data/idioms-7.json")),
-    ("idioms-8.json", include_str!("../data/idioms-8.json")),
-    ("sentences-2.json", include_str!("../data/sentences-2.json")),
-    ("sentences-3.json", include_str!("../data/sentences-3.json")),
-    ("sentences-4.json", include_str!("../data/sentences-4.json")),
-    ("sentences-5.json", include_str!("../data/sentences-5.json")),
-    ("sentences-6.json", include_str!("../data/sentences-6.json")),
-    ("sentences-7.json", include_str!("../data/sentences-7.json")),
-    ("sentences-8.json", include_str!("../data/sentences-8.json")),
-    ("sentences-9.json", include_str!("../data/sentences-9.json")),
-    ("sentences-10.json", include_str!("../data/sentences-10.json")),
-    ("sentences-11.json", include_str!("../data/sentences-11.json")),
-    ("sentences-12.json", include_str!("../data/sentences-12.json")),
-    ("sentences-13.json", include_str!("../data/sentences-13.json")),
-    ("sentences-14.json", include_str!("../data/sentences-14.json")),
-    ("listening-dialogues.json", include_str!("../data/listening-dialogues.json")),
-    ("listening-dialogues-2.json", include_str!("../data/listening-dialogues-2.json")),
-    ("listening-dialogues-3.json", include_str!("../data/listening-dialogues-3.json")),
-    ("listening-dialogues-4.json", include_str!("../data/listening-dialogues-4.json")),
-    ("listening-dialogues-5.json", include_str!("../data/listening-dialogues-5.json")),
-    ("listening-dialogues-6.json", include_str!("../data/listening-dialogues-6.json")),
-    ("listening-dialogues-7.json", include_str!("../data/listening-dialogues-7.json")),
-    ("listening-dialogues-8.json", include_str!("../data/listening-dialogues-8.json")),
-    ("listening-dialogues-9.json", include_str!("../data/listening-dialogues-9.json")),
-    ("listening-dialogues-10.json", include_str!("../data/listening-dialogues-10.json")),
-    ("listening-dialogues-11.json", include_str!("../data/listening-dialogues-11.json")),
-    ("listening-dialogues-12.json", include_str!("../data/listening-dialogues-12.json")),
-    ("listening-dialogues-13.json", include_str!("../data/listening-dialogues-13.json")),
-    ("listening-dialogues-14.json", include_str!("../data/listening-dialogues-14.json")),
-    ("listening-dialogues-15.json", include_str!("../data/listening-dialogues-15.json")),
-    ("listening-dialogues-16.json", include_str!("../data/listening-dialogues-16.json")),
-    ("listening-dialogues-17.json", include_str!("../data/listening-dialogues-17.json")),
-    ("listening-dialogues-18.json", include_str!("../data/listening-dialogues-18.json")),
-    ("listening-dialogues-19.json", include_str!("../data/listening-dialogues-19.json")),
-    ("listening-dialogues-20.json", include_str!("../data/listening-dialogues-20.json")),
-    ("listening-dialogues-21.json", include_str!("../data/listening-dialogues-21.json")),
-    ("listening-dialogues-22.json", include_str!("../data/listening-dialogues-22.json")),
-    ("listening-dialogues-23.json", include_str!("../data/listening-dialogues-23.json")),
-    ("listening-dialogues-24.json", include_str!("../data/listening-dialogues-24.json")),
-    ("listening-dialogues-25.json", include_str!("../data/listening-dialogues-25.json")),
-    ("listening-dialogues-26.json", include_str!("../data/listening-dialogues-26.json")),
-    ("listening-dialogues-27.json", include_str!("../data/listening-dialogues-27.json")),
-    ("listening-dialogues-28.json", include_str!("../data/listening-dialogues-28.json")),
-    ("listening-dialogues-29.json", include_str!("../data/listening-dialogues-29.json")),
-    ("listening-dialogues-30.json", include_str!("../data/listening-dialogues-30.json")),
-    ("listening-dialogues-31.json", include_str!("../data/listening-dialogues-31.json")),
-    ("listening-dialogues-32.json", include_str!("../data/listening-dialogues-32.json")),
-    ("listening-dialogues-33.json", include_str!("../data/listening-dialogues-33.json")),
-    ("listening-dialogues-34.json", include_str!("../data/listening-dialogues-34.json")),
-    ("listening-dialogues-35.json", include_str!("../data/listening-dialogues-35.json")),
-    ("listening-dialogues-36.json", include_str!("../data/listening-dialogues-36.json")),
-    ("listening-dialogues-37.json", include_str!("../data/listening-dialogues-37.json")),
-    ("listening-dialogues-38.json", include_str!("../data/listening-dialogues-38.json")),
-    ("listening-dialogues-39.json", include_str!("../data/listening-dialogues-39.json")),
-    ("listening-dialogues-40.json", include_str!("../data/listening-dialogues-40.json")),
-    ("listening-dialogues-41.json", include_str!("../data/listening-dialogues-41.json")),
-    ("listening-dialogues-42.json", include_str!("../data/listening-dialogues-42.json")),
-    ("listening-dialogues-43.json", include_str!("../data/listening-dialogues-43.json")),
-    ("listening-dialogues-44.json", include_str!("../data/listening-dialogues-44.json")),
-    ("listening-dialogues-45.json", include_str!("../data/listening-dialogues-45.json")),
-    ("listening-dialogues-46.json", include_str!("../data/listening-dialogues-46.json")),
-    ("listening-dialogues-47.json", include_str!("../data/listening-dialogues-47.json")),
-    ("listening-dialogues-48.json", include_str!("../data/listening-dialogues-48.json")),
-    ("listening-dialogues-49.json", include_str!("../data/listening-dialogues-49.json")),
-    ("listening-dialogues-50.json", include_str!("../data/listening-dialogues-50.json")),
-    ("listening-dialogues-51.json", include_str!("../data/listening-dialogues-51.json")),
-    ("listening-dialogues-52.json", include_str!("../data/listening-dialogues-52.json")),
-    ("listening-dialogues-53.json", include_str!("../data/listening-dialogues-53.json")),
-];
+/// Additional question packs (plain JSON arrays), generated by `build.rs` from every file in
+/// `data/` that is not the seed or the glossary. Drop a new pack in that directory and both this
+/// list and the browser mock pick it up; bump `version` in questions.json to have it seeded.
+const EXTRA_QUESTION_PACKS: &[(&str, &str)] = include!(concat!(env!("OUT_DIR"), "/question_packs.rs"));
 /// Japanese glosses for words that appear inside sentences but are not questions themselves.
 const GLOSSARY_JSON: &str = include_str!("../data/glossary.json");
 
@@ -483,9 +364,19 @@ mod tests {
     use std::collections::{HashMap, HashSet};
 
     #[test]
-    fn seed_data_is_well_formed_and_has_at_least_20000_questions() {
+    fn seed_data_is_well_formed() {
         let seed = load_seed();
-        assert!(seed.questions.len() >= 20000, "expected >= 20000 questions, got {}", seed.questions.len());
+        // A floor per kind rather than one total. The total was raised in the same commit that grew
+        // the bank every time, so it never failed first; these numbers only move if a pack or a
+        // whole kind goes missing, which is the failure worth catching.
+        let mut by_kind: HashMap<&str, usize> = HashMap::new();
+        for q in &seed.questions {
+            *by_kind.entry(q.kind.as_str()).or_default() += 1;
+        }
+        for kind in ["word", "phrase", "grammar", "idiom", "sentence", "dialogue"] {
+            let n = by_kind.get(kind).copied().unwrap_or(0);
+            assert!(n >= 300, "only {n} {kind} questions; a pack is probably missing");
+        }
 
         let mut keys = HashSet::new();
         let mut ja_by_group: HashMap<(String, String), HashSet<String>> = HashMap::new();
@@ -552,6 +443,28 @@ mod tests {
                 continue;
             }
             assert!(*n >= 4, "group {group} ({kind}) has only {n} questions; needs at least 4");
+        }
+    }
+
+    /// build.rs derives the pack list from the data directory, so this guards what can still go
+    /// wrong: a stale build, or a file that is present but empty or unparseable.
+    #[test]
+    fn every_pack_in_the_data_directory_is_loaded() {
+        let on_disk = std::fs::read_dir(concat!(env!("CARGO_MANIFEST_DIR"), "/data"))
+            .expect("src-tauri/data must exist")
+            .filter_map(|e| e.ok())
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .filter(|n| n.ends_with(".json") && n != "questions.json" && n != "glossary.json")
+            .count();
+        assert_eq!(
+            EXTRA_QUESTION_PACKS.len(),
+            on_disk,
+            "the generated pack list is stale; re-run the build"
+        );
+        for (name, json) in EXTRA_QUESTION_PACKS {
+            let pack: Vec<SeedQuestion> =
+                serde_json::from_str(json).unwrap_or_else(|e| panic!("{name} is not a question array: {e}"));
+            assert!(!pack.is_empty(), "{name} contributes no questions");
         }
     }
 

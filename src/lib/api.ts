@@ -23,9 +23,14 @@ async function call<T>(cmd: string, args: Record<string, unknown> = {}): Promise
   if (runningInTauri) {
     return invoke<T>(cmd, args);
   }
-  // Browser preview: an in-memory backend keeps the UI usable without Rust.
-  const { mockInvoke } = await import("./mockBackend");
-  return mockInvoke<T>(cmd, args);
+  // Browser preview (`npm run dev`): an in-memory backend keeps the UI usable without Rust.
+  // Dev-only, so the ~6 MB of bundled question data is dropped from the production build that
+  // `tauri build` packages — the shipped app always has the Rust side and never runs this.
+  if (import.meta.env.DEV) {
+    const { mockInvoke } = await import("./mockBackend");
+    return mockInvoke<T>(cmd, args);
+  }
+  throw new Error(`${cmd}: no backend available — a production build runs only inside Tauri`);
 }
 
 export const api = {
