@@ -454,6 +454,7 @@ mod tests {
                             q.key
                         );
                     }
+                    assert_conditional_has_one_answer(&q.key, prompt, &q.en, choices);
                 } else {
                     assert!(!prompt.trim().is_empty(), "{} prompt is empty", q.key);
                 }
@@ -519,6 +520,57 @@ mod tests {
                 serde_json::from_str(json).unwrap_or_else(|e| panic!("{name} is not a question array: {e}"));
             assert!(!pack.is_empty(), "{name} contributes no questions");
         }
+    }
+
+    /// "If you press this button, the machine ___" accepts both "stops" (this is how the machine
+    /// behaves) and "will stop" (here is what will happen) — both are ordinary English, so offering
+    /// the pair in one four-choice question marks a right answer wrong. Whichever of the two the
+    /// bank names as the answer, the other one cannot also be on the list.
+    fn assert_conditional_has_one_answer(key: &str, prompt: &str, answer: &str, choices: &[String]) {
+        let lower = prompt.to_lowercase();
+        let blank = lower.find("___").unwrap_or(0);
+        let head = &lower[..blank];
+        // Only the result clause is at risk: inside the if-clause "will" is simply wrong, and an
+        // unreal conditional ("If I had ...") rules out both plain present and will on its own.
+        if !head.contains("if ") && !head.contains("unless ") {
+            return;
+        }
+        if !head.contains(',') {
+            return;
+        }
+        let unreal = ["had ", "were ", "knew ", "lived ", "stayed ", "won "]
+            .iter()
+            .any(|v| head.contains(v));
+        if unreal {
+            return;
+        }
+
+        let has = |c: &str| choices.iter().any(|x| x.eq_ignore_ascii_case(c));
+        let a = answer.to_lowercase();
+        // Modals do not stack, so "will must" is not a rival answer but a perfectly wrong one.
+        if ["can", "could", "may", "might", "must", "shall", "should", "would"].contains(&a.as_str()) {
+            return;
+        }
+        let twin = match a.strip_prefix("will ") {
+            // Answer is the will form: neither the bare present nor its -s form may be offered.
+            Some(base) => [base.to_string(), format!("{base}s"), format!("{base}es")]
+                .into_iter()
+                .find(|c| has(c)),
+            // Answer is the present form: its will form may not be offered.
+            None if a == "won't" => Some("don't".to_string()).filter(|c| has(c)),
+            None if a == "don't" => Some("won't".to_string()).filter(|c| has(c)),
+            None => {
+                let base = a.strip_suffix("es").or_else(|| a.strip_suffix('s')).unwrap_or(&a);
+                [format!("will {a}"), format!("will {base}")]
+                    .into_iter()
+                    .find(|c| has(c))
+            }
+        };
+        assert!(
+            twin.is_none(),
+            "{key}: \"{answer}\" and \"{}\" are both correct in \"{prompt}\"",
+            twin.unwrap_or_default()
+        );
     }
 
     /// Both halves of the pairing. `seed_data_is_well_formed` catches a question whose point has no
