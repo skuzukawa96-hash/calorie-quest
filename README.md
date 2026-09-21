@@ -85,7 +85,9 @@ cd src-tauri && cargo test
 
 慣用句1,611個にはすべて **例文と訳** が付いており、回答後に正解の下に表示されます（読み上げボタン付き）。
 
-追記するときは末尾に新しい `key` で追加し（新しいファイルなら `src-tauri/src/db.rs` の `EXTRA_QUESTION_PACKS` と `src/lib/mockBackend.ts` にも登録）、`questions.json` 先頭の `version` を 1 つ上げると次回起動時に取り込まれます。`cargo test` がキーの重複・文法問題の選択肢・グループ内の訳の重複・グループの最小人数・単語の意味の網羅を検査します。
+追記するときは末尾に新しい `key` で追加し（新しいファイルなら `src-tauri/src/db.rs` の `EXTRA_QUESTION_PACKS` と `src/lib/mockBackend.ts` にも登録）、`questions.json` 先頭の `version` を 1 つ上げると次回起動時に取り込まれます。`cargo test` がキーの重複・文法問題の選択肢・**単語問題の**グループ内の訳の重複・グループの最小人数・単語の意味の網羅を検査します。
+
+単語以外は同じグループで訳が重なっても構いません（「幸運を祈る」= *keep your fingers crossed* / *best of luck* のように、同じ意味の別表現は実際にあります）。記入問題では同じ日本語を持つ問題の英語をすべて正解として受け付けるので、どちらを書いても正解になります。
 
 ## 単語の意味ポップアップ
 

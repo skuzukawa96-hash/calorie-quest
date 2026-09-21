@@ -441,6 +441,17 @@ function japaneseDistractors(q: Question): string[] {
   return out;
 }
 
+/** Every English the bank treats as a correct rendering of this question's Japanese. */
+function acceptedAnswers(q: Question): string[] {
+  const out = [q.en];
+  for (const o of questions) {
+    if (o.id !== q.id && o.kind === q.kind && o.group === q.group && o.ja === q.ja && !out.includes(o.en)) {
+      out.push(o.en);
+    }
+  }
+  return out;
+}
+
 /** Three wrong replies borrowed from sibling dialogues; mirrors the Rust side. */
 function englishDistractors(q: Question): string[] {
   const out: string[] = [];
@@ -469,7 +480,14 @@ function buildSessionQuestion(q: Question, mode: Mode, isReview: boolean): Sessi
   const base = { question: q, mode, isReview, audioText: audioTextFor(q), hideText: false };
   if (mode === "choice") {
     if (q.choices && q.choices.length) {
-      return { ...base, display: q.prompt ?? q.en, subDisplay: q.ja, options: shuffle(q.choices), answer: q.en };
+      return {
+        ...base,
+        display: q.prompt ?? q.en,
+        subDisplay: q.ja,
+        options: shuffle(q.choices),
+        answer: q.en,
+        accepted: [q.en],
+      };
     }
     return {
       ...base,
@@ -477,10 +495,19 @@ function buildSessionQuestion(q: Question, mode: Mode, isReview: boolean): Sessi
       subDisplay: null,
       options: shuffle([...japaneseDistractors(q), q.ja]),
       answer: q.ja,
+      accepted: [q.ja],
     };
   }
   if (mode === "typing") {
-    return { ...base, display: q.ja, subDisplay: q.prompt ?? null, options: [], answer: q.en };
+    // Only typing is graded on free text, so it is the only mode that needs the sibling renderings.
+    return {
+      ...base,
+      display: q.ja,
+      subDisplay: q.prompt ?? null,
+      options: [],
+      answer: q.en,
+      accepted: acceptedAnswers(q),
+    };
   }
   if (mode === "listening") {
     if (q.kind === "dialogue") {
@@ -492,7 +519,15 @@ function buildSessionQuestion(q: Question, mode: Mode, isReview: boolean): Sessi
           if (c !== q.en && !opts.includes(c)) opts.push(c);
         }
       }
-      return { ...base, hideText: true, display: "", subDisplay: q.ja, options: shuffle([...opts, q.en]), answer: q.en };
+      return {
+        ...base,
+        hideText: true,
+        display: "",
+        subDisplay: q.ja,
+        options: shuffle([...opts, q.en]),
+        answer: q.en,
+        accepted: [q.en],
+      };
     }
     return {
       ...base,
@@ -501,9 +536,10 @@ function buildSessionQuestion(q: Question, mode: Mode, isReview: boolean): Sessi
       subDisplay: null,
       options: shuffle([...japaneseDistractors(q), q.ja]),
       answer: q.ja,
+      accepted: [q.ja],
     };
   }
-  return { ...base, display: q.en, subDisplay: q.ja, options: [], answer: q.en };
+  return { ...base, display: q.en, subDisplay: q.ja, options: [], answer: q.en, accepted: [q.en] };
 }
 
 function getSessionQuestions(mode: Mode, difficulty: string, category: string, count: number): SessionQuestion[] {

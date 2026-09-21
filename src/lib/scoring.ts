@@ -44,10 +44,14 @@ export function similarity(a: string, b: string): number {
   return Math.max(0, Math.min(1, 0.5 * wordSim + 0.5 * charSim));
 }
 
-/** Typing answers: case, punctuation and spacing are ignored; letters must match exactly. */
-export function checkTyping(answer: string, input: string): boolean {
+/**
+ * Typing answers: case, punctuation and spacing are ignored; letters must match exactly.
+ * Any of `accepted` counts, since the bank can teach several English renderings of one Japanese.
+ */
+export function checkTyping(accepted: string | string[], input: string): boolean {
   const strip = (s: string) => normalizeText(s).replace(/'/g, "");
-  return strip(answer) === strip(input);
+  const stripped = strip(input);
+  return (Array.isArray(accepted) ? accepted : [accepted]).some((a) => strip(a) === stripped);
 }
 
 export interface PronunciationScore {

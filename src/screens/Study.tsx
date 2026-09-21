@@ -289,7 +289,9 @@ export default function Study({ mode, difficulty, category, rates, onExit, onPro
           <TypingCard
             q={current}
             disabled={!!feedback || submitting}
-            onAnswer={(input, hintsUsed) => submit(checkTyping(current.answer, input), null, input, null, hintsUsed)}
+            onAnswer={(input, hintsUsed) =>
+              submit(checkTyping(current.accepted ?? current.answer, input), null, input, null, hintsUsed)
+            }
           />
         )}
         {mode === "listening" && (

@@ -36,6 +36,11 @@ pub struct SessionQuestion {
     pub sub_display: Option<String>,
     pub options: Vec<String>,
     pub answer: String,
+    /// Every English the grader accepts for a typing question. The prompt is Japanese, and the
+    /// bank often holds more than one question meaning the same thing in the same group
+    /// ("best of luck" and "keep your fingers crossed" are both 幸運を祈る), so marking anything
+    /// but `answer` wrong would fail a learner who wrote a translation the bank itself teaches.
+    pub accepted: Vec<String>,
     /// English to speak: the full sentence for grammar blanks, the spoken line for dialogues.
     pub audio_text: String,
     /// Listening mode hides the English until the answer is in.

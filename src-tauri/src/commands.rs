@@ -174,6 +174,26 @@ fn japanese_distractors(conn: &Connection, q: &Question) -> rusqlite::Result<Vec
     Ok(opts)
 }
 
+/// Every English the bank considers a correct rendering of this question's Japanese: its own `en`
+/// plus any sibling in the same group whose `ja` is identical. Synonymous idioms and reworded
+/// phrases both land here, and the learner is typing from the Japanese alone, so any of them is a
+/// right answer.
+fn accepted_answers(conn: &Connection, q: &Question) -> rusqlite::Result<Vec<String>> {
+    let mut stmt = conn.prepare(
+        "SELECT en FROM questions WHERE id != ?1 AND kind = ?2 AND word_group = ?3 AND ja = ?4",
+    )?;
+    let siblings: Vec<String> = stmt
+        .query_map(params![q.id, q.kind, &q.group, &q.ja], |r| r.get(0))?
+        .collect::<Result<_, _>>()?;
+    let mut out = vec![q.en.clone()];
+    for s in siblings {
+        if !out.contains(&s) {
+            out.push(s);
+        }
+    }
+    Ok(out)
+}
+
 /// Three plausible wrong replies for a dialogue, from the same tightening circle as
 /// `japanese_distractors`: same group → same genre → any other dialogue. Replies are borrowed from
 /// sibling conversations so every option is a real English sentence about the same topic. Writing
@@ -272,6 +292,12 @@ fn build_session_question(
         }
         _ => (q.en.clone(), Some(q.ja.clone()), Vec::new(), q.en.clone()),
     };
+    // Only typing is graded by comparing free text; everywhere else the learner picks an option.
+    let accepted = if mode == "typing" {
+        accepted_answers(conn, &q)?
+    } else {
+        vec![answer.clone()]
+    };
     Ok(SessionQuestion {
         question: q,
         mode: mode.to_string(),
@@ -280,6 +306,7 @@ fn build_session_question(
         sub_display,
         options,
         answer,
+        accepted,
         audio_text,
         hide_text,
     })
@@ -1063,6 +1090,43 @@ mod tests {
             }
         }
         assert!(seen, "no dialogue question was ever served in listening mode");
+    }
+
+    #[test]
+    fn typing_accepts_every_sibling_rendering_of_the_same_japanese() {
+        let c = conn();
+        // The learner types from the Japanese alone, so if the bank teaches two English renderings
+        // of one meaning in one group, both have to count. Otherwise a correct answer is marked
+        // wrong purely because the session happened to draw the other key.
+        let mut stmt = c
+            .prepare(
+                "SELECT a.id FROM questions a JOIN questions b \
+                 ON a.id != b.id AND a.kind = b.kind AND a.word_group = b.word_group \
+                 AND a.ja = b.ja AND a.en != b.en \
+                 WHERE a.modes LIKE '%typing%' LIMIT 1",
+            )
+            .unwrap();
+        let shared: Option<i64> = stmt.query_row([], |r| r.get(0)).optional().unwrap();
+        let Some(id) = shared else {
+            return; // No shared translations in the bank: nothing to protect.
+        };
+
+        let q = c
+            .query_row(&format!("SELECT {Q_COLS} FROM questions q WHERE q.id = ?1"), params![id], db::row_to_question)
+            .unwrap();
+        let accepted = accepted_answers(&c, &q).unwrap();
+        assert!(accepted.contains(&q.en), "{} must accept its own English", q.key);
+        assert!(
+            accepted.len() > 1,
+            "{} shares its Japanese '{}' with another question but accepts only '{}'",
+            q.key,
+            q.ja,
+            q.en
+        );
+
+        // And the session hands that list to the frontend, which is what does the grading.
+        let sq = build_session_question(&c, q, "typing", false).unwrap();
+        assert_eq!(sq.accepted, accepted, "typing must expose the accepted answers");
     }
 
     #[test]

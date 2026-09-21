@@ -31,6 +31,8 @@ export interface SessionQuestion {
   subDisplay?: string | null;
   options: string[];
   answer: string;
+  /** every English the grader accepts for typing: `answer` plus same-meaning siblings in the group */
+  accepted: string[];
   /** English to speak: the completed sentence for grammar, the spoken line for dialogues */
   audioText: string;
   /** listening mode keeps the English hidden until the answer is in */

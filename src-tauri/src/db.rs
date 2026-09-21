@@ -535,7 +535,10 @@ mod tests {
                 });
                 assert!(hit.count() >= head.len().min(2), "{}: example does not use the idiom: {example}", q.key);
             }
-            // Distractors are drawn from `ja` within the same semantic group, so they must be distinct there.
+            // Word distractors are drawn from `ja` within the group, so duplicates there would
+            // shrink the pool and can also leave two entries teaching one meaning. The other kinds
+            // may legitimately share a translation — synonymous idioms, reworded phrases — and the
+            // grader handles that by accepting every sibling rendering (see `accepted_answers`).
             if q.kind == "word" {
                 let set = ja_by_group.entry((q.group.clone(), q.kind.clone())).or_default();
                 assert!(set.insert(q.ja.clone()), "{}: duplicate translation '{}' in group {}", q.key, q.ja, q.group);
