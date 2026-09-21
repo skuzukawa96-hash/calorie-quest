@@ -173,7 +173,13 @@ interface StoredConsumption extends ConsumptionEntry {
 
 interface MockState {
   user: UserInfo;
-  history: Record<number, Hist>;
+  /**
+   * Keyed by the question's immutable `key`, never its `id`. Ids here are array positions, so
+   * inserting a pack anywhere but the end renumbers everything after it and would silently move a
+   * learner's progress onto unrelated questions. The Tauri build has the same guarantee for free:
+   * SQLite assigns the id once and the seed upsert matches on `key`.
+   */
+  history: Record<string, Hist>;
   daily: Record<string, DailyStats>;
   snacks: Snack[];
   consumption: StoredConsumption[];
@@ -183,7 +189,9 @@ interface MockState {
 
 const RATES = { low: 2, mid: 4, high: 10, reviewMultiplier: 1.5, cheatDayBonus: 300 };
 const INTERVALS = [1, 3, 7, 14, 30];
-const STORAGE_KEY = "calorie-quest-mock-v1";
+// v2 keys history by question key. v1 keyed it by array position, and those numbers no longer
+// mean anything, so a v1 blob is dropped rather than read back onto the wrong questions.
+const STORAGE_KEY = "calorie-quest-mock-v2";
 
 const seedQuestions: SeedQuestion[] = [
   ...(seedJson as unknown as { questions: SeedQuestion[] }).questions,
@@ -552,13 +560,13 @@ function getSessionQuestions(mode: Mode, difficulty: string, category: string, c
     (category === "all" || q.category === category);
   const maxReviews = Math.ceil(count * 0.6);
   const due = questions
-    .filter((q) => fits(q) && state.history[q.id]?.needsReview && (state.history[q.id].nextDue ?? "9999") <= t)
-    .sort((a, b) => (state.history[a.id].nextDue ?? "").localeCompare(state.history[b.id].nextDue ?? ""))
+    .filter((q) => fits(q) && state.history[q.key]?.needsReview && (state.history[q.key].nextDue ?? "9999") <= t)
+    .sort((a, b) => (state.history[a.key].nextDue ?? "").localeCompare(state.history[b.key].nextDue ?? ""))
     .slice(0, maxReviews);
-  const dueIds = new Set(due.map((q) => q.id));
-  const freshPool = questions.filter((q) => fits(q) && !dueIds.has(q.id) && !state.history[q.id]?.needsReview);
-  const unseen = shuffle(freshPool.filter((q) => !state.history[q.id]));
-  const seen = shuffle(freshPool.filter((q) => !!state.history[q.id]));
+  const dueKeys = new Set(due.map((q) => q.key));
+  const freshPool = questions.filter((q) => fits(q) && !dueKeys.has(q.key) && !state.history[q.key]?.needsReview);
+  const unseen = shuffle(freshPool.filter((q) => !state.history[q.key]));
+  const seen = shuffle(freshPool.filter((q) => !!state.history[q.key]));
   const fresh = [...unseen, ...seen].slice(0, Math.max(0, count - due.length));
   return shuffle([
     ...due.map((q) => buildSessionQuestion(q, mode, true)),
@@ -570,7 +578,7 @@ function submitAnswer(p: AnswerPayload): AnswerResult {
   const q = questions.find((x) => x.id === p.questionId);
   if (!q) throw new Error(`question ${p.questionId} not found`);
   const t = today();
-  const h = state.history[q.id] ?? { level: 0, needsReview: false, nextDue: null, correct: 0, wrong: 0, lastScore: null, lastStudiedAt: "" };
+  const h = state.history[q.key] ?? { level: 0, needsReview: false, nextDue: null, correct: 0, wrong: 0, lastScore: null, lastStudiedAt: "" };
   const isDueReview = h.needsReview && h.nextDue !== null && h.nextDue <= t;
   const lowScore = p.mode === "speaking" && (p.score ?? 100) < 70;
   const base = RATES[q.difficulty];
@@ -595,7 +603,7 @@ function submitAnswer(p: AnswerPayload): AnswerResult {
       nextDue = datePlus(INTERVALS[level]);
     }
   }
-  state.history[q.id] = {
+  state.history[q.key] = {
     level,
     needsReview,
     nextDue,
@@ -649,13 +657,12 @@ function getStats(): Stats {
   }
   const weakQuestions: WeakQuestion[] = Object.entries(state.history)
     .filter(([, h]) => h.needsReview || h.wrong > 0)
-    .map(([id, h]) => ({
-      question: questions.find((q) => q.id === Number(id))!,
-      wrongCount: h.wrong,
-      lastScore: h.lastScore,
-      nextDue: h.nextDue,
-      srsLevel: h.level,
-    }))
+    .flatMap(([key, h]) => {
+      // A key can outlive its question if a pack is removed; drop those rather than render a hole.
+      const question = questions.find((q) => q.key === key);
+      if (!question) return [];
+      return [{ question, wrongCount: h.wrong, lastScore: h.lastScore, nextDue: h.nextDue, srsLevel: h.level }];
+    })
     .sort((a, b) => b.wrongCount - a.wrongCount)
     .slice(0, 12);
   return {
