@@ -441,6 +441,24 @@ function japaneseDistractors(q: Question): string[] {
   return out;
 }
 
+/** Three wrong replies borrowed from sibling dialogues; mirrors the Rust side. */
+function englishDistractors(q: Question): string[] {
+  const out: string[] = [];
+  const pools = [
+    questions.filter((o) => o.id !== q.id && o.kind === q.kind && o.group === q.group && o.en !== q.en),
+    questions.filter((o) => o.id !== q.id && o.kind === q.kind && o.category === q.category && o.en !== q.en),
+    questions.filter((o) => o.id !== q.id && o.kind === q.kind && o.en !== q.en),
+  ];
+  for (const pool of pools) {
+    for (const o of shuffle(pool)) {
+      if (out.length >= 3) break;
+      if (!out.includes(o.en)) out.push(o.en);
+    }
+    if (out.length >= 3) break;
+  }
+  return out;
+}
+
 function audioTextFor(q: Question): string {
   if (q.kind === "grammar") return (q.prompt ?? q.en).replace(/_{2,}/g, q.en);
   if (q.kind === "dialogue") return q.prompt ?? q.en;
@@ -466,7 +484,15 @@ function buildSessionQuestion(q: Question, mode: Mode, isReview: boolean): Sessi
   }
   if (mode === "listening") {
     if (q.kind === "dialogue") {
-      return { ...base, hideText: true, display: "", subDisplay: q.ja, options: shuffle(q.choices ?? []), answer: q.en };
+      const opts = englishDistractors(q);
+      if (opts.length < 3) {
+        // Genre too small to borrow from: fall back to the replies written in the data.
+        for (const c of q.choices ?? []) {
+          if (opts.length >= 3) break;
+          if (c !== q.en && !opts.includes(c)) opts.push(c);
+        }
+      }
+      return { ...base, hideText: true, display: "", subDisplay: q.ja, options: shuffle([...opts, q.en]), answer: q.en };
     }
     return {
       ...base,

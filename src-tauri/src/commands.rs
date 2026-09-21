@@ -174,6 +174,40 @@ fn japanese_distractors(conn: &Connection, q: &Question) -> rusqlite::Result<Vec
     Ok(opts)
 }
 
+/// Three plausible wrong replies for a dialogue, from the same tightening circle as
+/// `japanese_distractors`: same group → same genre → any other dialogue. Replies are borrowed from
+/// sibling conversations so every option is a real English sentence about the same topic. Writing
+/// them into the data instead produced options the learner could rule out on shape alone.
+fn english_distractors(conn: &Connection, q: &Question) -> rusqlite::Result<Vec<String>> {
+    let mut opts: Vec<String> = Vec::new();
+
+    let mut fill = |sql: &str, field: &str| -> rusqlite::Result<()> {
+        if opts.len() >= 3 {
+            return Ok(());
+        }
+        let mut stmt = conn.prepare(sql)?;
+        let found: Vec<String> = stmt
+            .query_map(params![q.id, q.kind, field, q.en], |r| r.get(0))?
+            .collect::<Result<_, _>>()?;
+        extend_unique(&mut opts, found, &q.en);
+        Ok(())
+    };
+
+    fill(
+        "SELECT en FROM questions WHERE id != ?1 AND kind = ?2 AND word_group = ?3 AND en != ?4 ORDER BY RANDOM() LIMIT 8",
+        &q.group,
+    )?;
+    fill(
+        "SELECT en FROM questions WHERE id != ?1 AND kind = ?2 AND category = ?3 AND en != ?4 ORDER BY RANDOM() LIMIT 8",
+        &q.category,
+    )?;
+    fill(
+        "SELECT en FROM questions WHERE id != ?1 AND kind = ?2 AND ?3 IS NOT NULL AND en != ?4 ORDER BY RANDOM() LIMIT 8",
+        &q.category,
+    )?;
+    Ok(opts)
+}
+
 /// The English the app speaks: grammar blanks are filled in so the learner hears a real sentence,
 /// dialogues play the other speaker's line.
 fn audio_text_for(q: &Question) -> String {
@@ -220,7 +254,12 @@ fn build_session_question(
             hide_text = true;
             if q.kind == "dialogue" {
                 // Heard: one side of a conversation. Answer: the natural reply, in English.
-                let mut opts = q.choices.clone().unwrap_or_default();
+                let mut opts = english_distractors(conn, &q)?;
+                if opts.len() < 3 {
+                    // Genre too small to borrow from: fall back to the replies written in the data.
+                    extend_unique(&mut opts, q.choices.clone().unwrap_or_default(), &q.en);
+                }
+                opts.push(q.en.clone());
                 shuffle(&mut opts);
                 (String::new(), Some(q.ja.clone()), opts, q.en.clone())
             } else {
@@ -1024,6 +1063,30 @@ mod tests {
             }
         }
         assert!(seen, "no dialogue question was ever served in listening mode");
+    }
+
+    #[test]
+    fn dialogue_replies_are_borrowed_from_other_dialogues() {
+        let c = conn();
+        // The replies written into the data all follow a handful of templates ("He plays chess."),
+        // so the odd one out was the answer and the learner never had to listen. Options must be
+        // borrowed from sibling dialogues instead.
+        let mut checked = 0;
+        for _ in 0..20 {
+            let s = session_questions(&c, "listening", "mid", "食べ物", 20).unwrap();
+            for d in s.iter().filter(|q| q.question.kind == "dialogue") {
+                assert_eq!(d.options.len(), 4, "{} should offer four replies", d.question.key);
+                assert!(d.options.contains(&d.question.en), "{} lost its answer", d.question.key);
+                let baked = d.question.choices.clone().unwrap_or_default();
+                let borrowed = d.options.iter().filter(|o| **o != d.question.en && !baked.contains(o)).count();
+                assert!(borrowed > 0, "{} still serves only its written replies: {:?}", d.question.key, d.options);
+                checked += 1;
+            }
+            if checked >= 5 {
+                break;
+            }
+        }
+        assert!(checked >= 5, "not enough dialogue questions were served to check");
     }
 
     #[test]
