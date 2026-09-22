@@ -269,6 +269,75 @@ const NUMBER_NEUTRAL_AFTER = new Set(
    almost`.split(/\s+/),
 );
 
+const MASS_NOUNS = new Set(
+  `water milk juice tea rice bread butter cheese meat sugar salt pepper flour oil food money cash
+   furniture luggage baggage equipment information advice news homework housework traffic weather
+   music research knowledge progress evidence education fun help health happiness sadness anger
+   love space air oxygen smoke dust sand snow ice wood plastic metal gold silver electricity energy
+   mail software jewelry clothing machinery transportation accommodation garbage trash pollution
+   sleep patience courage luck peace safety silence stuff wildlife poetry literature vocabulary
+   slang feedback grass hair laundry scenery pasta soup chaos damage wealth`.split(/\s+/),
+);
+const IRREGULAR_PLURALS: Record<string, string> = {
+  child: "children", person: "people", man: "men", woman: "women", foot: "feet", tooth: "teeth",
+  mouse: "mice", goose: "geese", leaf: "leaves", life: "lives", knife: "knives", wife: "wives",
+  shelf: "shelves", wolf: "wolves", half: "halves", loaf: "loaves", thief: "thieves",
+  calf: "calves", scarf: "scarves",
+};
+/** Verbs taking a bare infinitive, which never agrees: "watched the lizard(s) bask". */
+const BARE_INFINITIVE_VERBS = new Set(
+  `watch watched watches see saw sees hear heard hears notice noticed notices feel felt feels let
+   lets make made makes have had has help helped helps observe observed`.split(/\s+/),
+);
+
+function pluralOf(word: string): string | null {
+  if (word.length < 2 || MASS_NOUNS.has(word)) return null;
+  if (IRREGULAR_PLURALS[word]) return IRREGULAR_PLURALS[word];
+  if (word.endsWith("s") || word.endsWith("ese") || word.endsWith("fish") || word.endsWith("sheep")) return null;
+  if (/(x|z|ch|sh)$/.test(word)) return word + "es";
+  if (/[^aeiou]y$/.test(word)) return word.slice(0, -1) + "ies";
+  return word + "s";
+}
+
+/** Mirrors db::is_countable_noun: evidence from the bank that the noun takes a plural at all. */
+let countableCache: { heads: Set<string>; used: Set<string> } | null = null;
+function countabilityEvidence() {
+  if (countableCache) return countableCache;
+  const heads = new Set<string>();
+  const used = new Set<string>();
+  const bare = (t: string) => t.replace(/[^A-Za-z0-9]/g, "").toLowerCase();
+  const isBoundary = (w: string) =>
+    w.endsWith("ing") ||
+    w.endsWith("ed") ||
+    `at in on by for with of to from about under over between among into onto during since until
+     before after through across along around behind below beside near and or but that which who
+     whose when where while because`
+      .split(/\s+/)
+      .includes(w);
+  for (const q of questions) {
+    for (const text of [q.en, q.prompt ?? "", q.example ?? ""]) {
+      const toks = text.split(/\s+/).filter(Boolean);
+      toks.forEach((tok, i) => {
+        const w = bare(tok);
+        if (!w) return;
+        used.add(w);
+        if (i === 0) return;
+        if (!["a", "an", "one", "each", "every", "another"].includes(bare(toks[i - 1]))) return;
+        const ends = /[.,?!;:]$/.test(tok) || i + 1 === toks.length;
+        if (ends || isBoundary(bare(toks[i + 1] ?? ""))) heads.add(w);
+      });
+    }
+  }
+  countableCache = { heads, used };
+  return countableCache;
+}
+
+function isCountableNoun(word: string): boolean {
+  const { heads, used } = countabilityEvidence();
+  const p = pluralOf(word);
+  return heads.has(word) || (p !== null && used.has(p));
+}
+
 function singularCandidates(word: string): string[] {
   if (word.length < 4 || !word.endsWith("s") || word.endsWith("ss") || ALWAYS_PLURAL.has(word)) return [];
   const out: string[] = [];
@@ -279,13 +348,14 @@ function singularCandidates(word: string): string[] {
   return out;
 }
 
-function numberNeutralAfter(next: string | undefined): boolean {
+function numberNeutralAfter(next: string | undefined, governed: boolean): boolean {
   if (!next) return true;
+  if (governed && !next.endsWith("s")) return true;
   return next.endsWith("ing") || next.endsWith("ed") || next.endsWith("ly") || NUMBER_NEUTRAL_AFTER.has(next);
 }
 
-/** Mirrors singular_variants in util.rs: see the reasoning there. */
-function singularVariants(sentence: string, known: (w: string) => boolean): string[] {
+/** Mirrors number_variants in util.rs: see the reasoning there. */
+function numberVariants(sentence: string, known: (w: string) => boolean): string[] {
   const tokens = sentence.split(" ");
   const bare = (t: string) => t.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, "").toLowerCase();
   const swaps: [number, string][] = [];
@@ -293,12 +363,17 @@ function singularVariants(sentence: string, known: (w: string) => boolean): stri
     if (!TWO_WAY_DETERMINERS.has(bare(tokens[i - 1]))) continue;
     if ([2, 3].some((back) => i - back >= 0 && FORCES_PLURAL.has(bare(tokens[i - back])))) continue;
     const word = bare(tokens[i]);
-    const singular = singularCandidates(word).find(known);
-    if (!singular) continue;
-    if (!numberNeutralAfter(tokens[i + 1] === undefined ? undefined : bare(tokens[i + 1]))) continue;
+    const governed = i >= 2 && BARE_INFINITIVE_VERBS.has(bare(tokens[i - 2]));
+    if (!numberNeutralAfter(tokens[i + 1] === undefined ? undefined : bare(tokens[i + 1]), governed)) continue;
+    const other = word.endsWith("s")
+      ? singularCandidates(word).find(known)
+      : known(word) && isCountableNoun(word)
+        ? pluralOf(word) ?? undefined
+        : undefined;
+    if (!other || other === word) continue;
     const start = tokens[i].search(/[\p{L}\p{N}]/u);
     const end = tokens[i].length - [...tokens[i]].reverse().join("").search(/[\p{L}\p{N}]/u);
-    const cased = /[A-Z]/.test(tokens[i][start]) ? singular[0].toUpperCase() + singular.slice(1) : singular;
+    const cased = /[A-Z]/.test(tokens[i][start]) ? other[0].toUpperCase() + other.slice(1) : other;
     swaps.push([i, tokens[i].slice(0, start) + cased + tokens[i].slice(end)]);
   }
   const out: string[] = [];
@@ -322,7 +397,7 @@ function acceptedAnswers(q: Question): string[] {
   // An idiom's wording is fixed, so only ordinary sentences get the singular reading.
   if (q.kind !== "idiom") {
     const known = (w: string) => w in mockDictionary();
-    for (const v of singularVariants(q.en, known)) if (!out.includes(v)) out.push(v);
+    for (const v of numberVariants(q.en, known)) if (!out.includes(v)) out.push(v);
   }
   return out;
 }

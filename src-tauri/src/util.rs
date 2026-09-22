@@ -207,12 +207,91 @@ const ALWAYS_PLURAL: &[&str] = &[
     "findings", "drums", "customs", "leftovers", "valuables", "refreshments", "odds", "wits",
 ];
 
+/// The letters of a token, lowercased, with punctuation dropped.
+pub fn bare_word(token: &str) -> String {
+    token.trim_matches(|c: char| !c.is_alphanumeric()).to_lowercase()
+}
+
+/// True when the word cannot continue a noun phrase, so whatever came before it was the head.
+pub fn is_phrase_boundary(word: &str) -> bool {
+    word.ends_with("ing")
+        || word.ends_with("ed")
+        || [
+            "at", "in", "on", "by", "for", "with", "of", "to", "from", "about", "under", "over",
+            "between", "among", "into", "onto", "during", "since", "until", "before", "after",
+            "through", "across", "along", "around", "behind", "below", "beside", "near", "and",
+            "or", "but", "that", "which", "who", "whose", "when", "where", "while", "because",
+        ]
+        .contains(&word)
+}
+
+/// Nouns with no plural: "the informations" is not English, so a singular answer stays singular.
+const MASS_NOUNS: &[&str] = &[
+    "water", "milk", "juice", "tea", "rice", "bread", "butter", "cheese", "meat", "sugar", "salt",
+    "pepper", "flour", "oil", "food", "money", "cash", "furniture", "luggage", "baggage",
+    "equipment", "information", "advice", "news", "homework", "housework", "traffic", "weather",
+    "music", "research", "knowledge", "progress", "evidence", "education", "fun", "help", "health",
+    "happiness", "sadness", "anger", "love", "space", "air", "oxygen", "smoke", "dust", "sand",
+    "snow", "ice", "wood", "plastic", "metal", "gold", "silver", "electricity", "energy", "mail",
+    "software", "jewelry", "clothing", "machinery", "transportation", "accommodation", "garbage",
+    "trash", "pollution", "sleep", "patience", "courage", "luck", "peace", "safety", "silence",
+    "stuff", "wildlife", "poetry", "literature", "vocabulary", "slang", "feedback", "grass",
+    "hair", "weather", "laundry", "scenery", "pasta", "soup", "chaos", "damage", "wealth",
+];
+
+/// Plurals the -s rules do not reach.
+const IRREGULAR_PLURALS: &[(&str, &str)] = &[
+    ("child", "children"), ("person", "people"), ("man", "men"), ("woman", "women"),
+    ("foot", "feet"), ("tooth", "teeth"), ("mouse", "mice"), ("goose", "geese"),
+    ("leaf", "leaves"), ("life", "lives"), ("knife", "knives"), ("wife", "wives"),
+    ("shelf", "shelves"), ("wolf", "wolves"), ("half", "halves"), ("loaf", "loaves"),
+    ("thief", "thieves"), ("calf", "calves"), ("scarf", "scarves"),
+];
+
+/// Verbs that take a bare infinitive, which never agrees with the noun in front of it. "We watched
+/// the lizard bask" and "We watched the lizards bask" are both English.
+const BARE_INFINITIVE_VERBS: &[&str] = &[
+    "watch", "watched", "watches", "see", "saw", "sees", "hear", "heard", "hears", "notice",
+    "noticed", "notices", "feel", "felt", "feels", "let", "lets", "make", "made", "makes",
+    "have", "had", "has", "help", "helped", "helps", "observe", "observed",
+];
+
+/// The regular plural of a countable noun.
+pub fn plural_of(word: &str) -> Option<String> {
+    let w = word.to_lowercase();
+    if w.len() < 2 || MASS_NOUNS.contains(&w.as_str()) {
+        return None;
+    }
+    if let Some((_, plural)) = IRREGULAR_PLURALS.iter().find(|(s, _)| *s == w) {
+        return Some(plural.to_string());
+    }
+    // Anything that already looks plural, or never takes one, is left alone.
+    if w.ends_with('s') || w.ends_with("ese") || w.ends_with("fish") || w.ends_with("sheep") {
+        return None;
+    }
+    for suffix in ["x", "z", "ch", "sh"] {
+        if w.ends_with(suffix) {
+            return Some(format!("{w}es"));
+        }
+    }
+    if let Some(stem) = w.strip_suffix('y') {
+        if !stem.ends_with(['a', 'e', 'i', 'o', 'u']) {
+            return Some(format!("{stem}ies"));
+        }
+    }
+    Some(format!("{w}s"))
+}
+
 /// What may follow the noun. A finite verb may not: it agrees with the noun, so "the guests arrive"
 /// has no singular unless the verb moves too. A preposition, a conjunction, an adverb, a participle
 /// or the end of the sentence all read the same either way.
-fn number_neutral_after(next: Option<&str>) -> bool {
+fn number_neutral_after(next: Option<&str>, governed_by_perception_verb: bool) -> bool {
     let Some(word) = next else { return true };
     if word.is_empty() {
+        return true;
+    }
+    // "We watched the lizard bask": the bare infinitive belongs to "watched", not to the noun.
+    if governed_by_perception_verb && !word.ends_with('s') {
         return true;
     }
     word.ends_with("ing")
@@ -293,12 +372,16 @@ fn respell(token: &str, singular: &str) -> String {
     format!("{}{}{}", &token[..start], word, &token[end..])
 }
 
-/// Japanese does not mark number, so nothing in "彼は毎朝馬に水を運びました" can tell a learner the
-/// answer is "the horses" rather than "the horse". Where the prompt cannot say it, the singular has
-/// to count too. Only a noun sitting right after a two-way determiner qualifies: that is what keeps
-/// the singular grammatical ("He collects stamp" is not English) and what proves the word is a noun
-/// rather than a verb agreeing with its subject ("the boy runs").
-pub fn singular_variants(sentence: &str, known: impl Fn(&str) -> bool) -> Vec<String> {
+/// Japanese does not mark number, so nothing in "私たちはトカゲが石壁で日光浴するのを見ました"
+/// says whether it was one lizard or several. Where the prompt cannot say it, the other number has
+/// to count too. Only a noun sitting right after a two-way determiner qualifies: that keeps both
+/// readings grammatical ("He collects stamp" and "a lizards" are not English) and it is also what
+/// proves the word is a noun rather than a verb agreeing with its subject ("the boy runs").
+pub fn number_variants(
+    sentence: &str,
+    known: impl Fn(&str) -> bool,
+    countable: impl Fn(&str) -> bool,
+) -> Vec<String> {
     let tokens: Vec<&str> = sentence.split(' ').collect();
     let bare = |t: &str| t.trim_matches(|c: char| !c.is_alphanumeric()).to_lowercase();
 
@@ -314,14 +397,24 @@ pub fn singular_variants(sentence: &str, known: impl Fn(&str) -> bool) -> Vec<St
             continue;
         }
         let word = bare(tokens[i]);
-        let Some(singular) = singular_candidates(&word).into_iter().find(|c| known(c)) else {
-            continue;
-        };
+        let governed = i
+            .checked_sub(2)
+            .is_some_and(|j| BARE_INFINITIVE_VERBS.contains(&bare(tokens[j]).as_str()));
         let next = tokens.get(i + 1).map(|t| bare(t));
-        if !number_neutral_after(next.as_deref()) {
+        if !number_neutral_after(next.as_deref(), governed) {
             continue;
         }
-        swaps.push((i, respell(tokens[i], &singular)));
+
+        // Plural answer, singular reading -- and the other way round for a singular answer.
+        let other = if word.ends_with('s') {
+            singular_candidates(&word).into_iter().find(|c| known(c))
+        } else if known(&word) && countable(&word) {
+            plural_of(&word).filter(|p| *p != word)
+        } else {
+            None
+        };
+        let Some(other) = other else { continue };
+        swaps.push((i, respell(tokens[i], &other)));
         if swaps.len() == 3 {
             break; // one sentence never needs more, and the subsets below stay a handful
         }
@@ -346,39 +439,61 @@ pub fn singular_variants(sentence: &str, known: impl Fn(&str) -> bool) -> Vec<St
 
 #[cfg(test)]
 mod plural_tests {
-    use super::singular_variants;
+    use super::number_variants;
+
+    /// The tests only ever vary the sentence, so the two predicates are fixed here.
+    fn number_variants_t(sentence: &str, known: fn(&str) -> bool) -> Vec<String> {
+        number_variants(sentence, known, countable)
+    }
+
+    fn countable(w: &str) -> bool {
+        !matches!(w, "water" | "information")
+    }
 
     fn known(w: &str) -> bool {
-        ["horse", "guest", "pipe", "stamp", "run", "glass", "curtain", "pillow", "new"].contains(&w)
+        ["horse", "guest", "pipe", "stamp", "run", "glass", "curtain", "pillow", "new", "lizard",
+         "boy", "water", "information"]
+            .contains(&w)
     }
 
     #[test]
     fn forgives_a_plural_only_where_the_singular_is_still_english() {
         // The reported case: the Japanese cannot say whether it was one horse or several.
         assert_eq!(
-            singular_variants("He carried water to the horses every morning.", known),
+            number_variants_t("He carried water to the horses every morning.", known),
             vec!["He carried water to the horse every morning."]
         );
 
         // Nouns English keeps plural stay wrong in the singular.
-        assert!(singular_variants("She cleaned her glasses carefully.", known).is_empty());
+        assert!(number_variants_t("She cleaned her glasses carefully.", known).is_empty());
 
         // A subject needs its verb to move too, so there is no one-word singular.
-        assert!(singular_variants("Let's tidy up before the guests arrive.", known).is_empty());
-        assert!(singular_variants("The pipes were made of copper.", known).is_empty());
+        assert!(number_variants_t("Let's tidy up before the guests arrive.", known).is_empty());
+        assert!(number_variants_t("The pipes were made of copper.", known).is_empty());
 
         // Without a determiner the singular is not a sentence: "He collects stamp" is not English.
-        assert!(singular_variants("He collects vintage stamps from the world.", known).is_empty());
+        assert!(number_variants_t("He collects vintage stamps from the world.", known).is_empty());
 
         // A verb agreeing with its subject is never a noun to forgive.
-        assert!(singular_variants("The boy runs fast.", known).is_empty());
+        assert!(number_variants_t("The boy runs fast.", known).is_empty());
 
         // "all the" and "one of the" demand a plural whatever the determiner allows on its own.
-        assert!(singular_variants("He rearranged all the curtains.", known).is_empty());
-        assert!(singular_variants("She is one of the guests here.", known).is_empty());
+        assert!(number_variants_t("He rearranged all the curtains.", known).is_empty());
+        assert!(number_variants_t("She is one of the guests here.", known).is_empty());
+
+        // The reported singular: "the lizards bask" is equally good, because the bare infinitive
+        // after "watched" never agrees with the noun.
+        assert_eq!(
+            number_variants_t("We watched the lizard bask on the warm stone wall.", known),
+            vec!["We watched the lizards bask on the warm stone wall."]
+        );
+
+        // A noun with no plural keeps its singular.
+        assert!(number_variants_t("She drank the water quickly.", known).is_empty());
+        assert!(number_variants_t("He read the information carefully.", known).is_empty());
 
         // Two plurals give every reading, so writing both in the singular also counts.
-        let both = singular_variants("She matched the pillows to the curtains.", known);
+        let both = number_variants_t("She matched the pillows to the curtains.", known);
         assert_eq!(both.len(), 3, "got {both:?}");
         assert!(both.contains(&"She matched the pillow to the curtain.".to_string()));
     }

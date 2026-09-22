@@ -334,6 +334,51 @@ pub fn is_known_word(word: &str) -> bool {
         .contains(&word.to_lowercase())
 }
 
+/// Whether the bank has evidence that a word is a countable noun, which is what licenses offering
+/// its plural as a second right answer. Two kinds of evidence, both taken from the questions
+/// themselves: the word heads an "a/an/one/each/every" phrase somewhere ("a lizard basking ..."),
+/// or its plural is used somewhere. Neither is ever true of "information" or "paperwork", which is
+/// the point -- over-pluralising an uncountable noun is a mistake worth keeping wrong.
+pub fn is_countable_noun(word: &str) -> bool {
+    static EVIDENCE: std::sync::OnceLock<(std::collections::HashSet<String>, std::collections::HashSet<String>)> =
+        std::sync::OnceLock::new();
+    let (heads, used) = EVIDENCE.get_or_init(|| {
+        let mut heads = std::collections::HashSet::new();
+        let mut used = std::collections::HashSet::new();
+        let seed = load_seed();
+        for q in &seed.questions {
+            for text in [Some(&q.en), q.prompt.as_ref(), q.example.as_ref()].into_iter().flatten() {
+                let toks: Vec<&str> = text.split_whitespace().collect();
+                for (i, tok) in toks.iter().enumerate() {
+                    let w = crate::util::bare_word(tok);
+                    if w.is_empty() {
+                        continue;
+                    }
+                    used.insert(w.clone());
+                    if i == 0 {
+                        continue;
+                    }
+                    if !["a", "an", "one", "each", "every", "another"]
+                        .contains(&crate::util::bare_word(toks[i - 1]).as_str())
+                    {
+                        continue;
+                    }
+                    // Only when the word ends its phrase is it the head rather than an adjective:
+                    // "a warm day" is evidence about "day", not about "warm".
+                    let ends = tok.ends_with(['.', ',', '?', '!', ';', ':']) || i + 1 == toks.len();
+                    let next = toks.get(i + 1).map(|t| crate::util::bare_word(t)).unwrap_or_default();
+                    if ends || crate::util::is_phrase_boundary(&next) {
+                        heads.insert(w);
+                    }
+                }
+            }
+        }
+        (heads, used)
+    });
+    let w = word.to_lowercase();
+    heads.contains(&w) || crate::util::plural_of(&w).is_some_and(|p| used.contains(&p))
+}
+
 /// The grammar explanations, keyed by point. Parsed once and cached: the file ships in the binary,
 /// so a mistake in it is a build problem rather than a runtime condition.
 pub fn grammar_notes() -> &'static HashMap<String, GrammarNoteSeed> {

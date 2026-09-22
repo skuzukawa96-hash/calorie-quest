@@ -194,7 +194,7 @@ fn accepted_answers(conn: &Connection, q: &Question) -> rusqlite::Result<Vec<Str
     // An idiom's wording is fixed -- "hit the books" is not "hit the book" -- so only ordinary
     // sentences get the singular reading of a plural the Japanese could not have signalled.
     if q.kind != "idiom" {
-        for variant in util::singular_variants(&q.en, db::is_known_word) {
+        for variant in util::number_variants(&q.en, db::is_known_word, db::is_countable_noun) {
             if !out.contains(&variant) {
                 out.push(variant);
             }
@@ -1177,6 +1177,16 @@ mod tests {
         let sq = build_session_question(&c, q, "typing", false).unwrap();
         assert!(sq.accepted.len() > 1, "the session must hand the frontend both readings");
 
+        // And the other way round: "私たちはトカゲが…日光浴するのを見ました" is just as silent
+        // about number, and after "watched" the bare infinitive agrees with nothing.
+        let q = load("p4527");
+        let accepted = accepted_answers(&c, &q).unwrap();
+        assert!(
+            accepted.iter().any(|a| a.contains("the lizards bask")),
+            "{} should also accept the plural, got {accepted:?}",
+            q.key
+        );
+
         // An idiom is a fixed wording: "hit the book" is not English.
         let idiom: Vec<String> = c
             .prepare("SELECT en FROM questions WHERE kind = 'idiom' AND en LIKE 'hit the books%'")
@@ -1205,12 +1215,18 @@ mod tests {
             .unwrap()
             .collect::<Result<_, _>>()
             .unwrap();
+        // Over-pluralising an uncountable noun is the mistake this must never wave through.
+        let mass = [
+            "informations", "advices", "furnitures", "homeworks", "musics", "datas", "paperworks",
+            "breads", "luggages", "equipments", "weathers", "traffics", "moneys", "knowledges",
+            "evidences", "softwares", "researches", "progresses",
+        ];
         let mut total = 0;
         for (kind, en) in &rows {
             if kind == "idiom" {
                 continue; // accepted_answers never asks for their variants
             }
-            for v in util::singular_variants(en, db::is_known_word) {
+            for v in util::number_variants(en, db::is_known_word, db::is_countable_noun) {
                 total += 1;
                 assert_eq!(
                     v.split_whitespace().count(),
@@ -1218,9 +1234,13 @@ mod tests {
                     "a variant must keep the sentence intact: {en} -> {v}"
                 );
                 assert_ne!(&v, en, "a variant must actually differ: {en}");
+                let lower = v.to_lowercase();
+                for bad in mass {
+                    assert!(!lower.contains(bad), "{en} -> {v} invents an uncountable plural");
+                }
             }
         }
-        assert!(total > 100, "only {total} plurals were forgiven; the rule stopped matching");
+        assert!(total > 1000, "only {total} readings were forgiven; the rule stopped matching");
     }
 
     #[test]
