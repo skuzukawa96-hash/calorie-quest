@@ -315,6 +315,25 @@ pub fn row_to_question(row: &Row) -> rusqlite::Result<Question> {
     })
 }
 
+/// Every English word the bank can gloss: the vocabulary questions plus the supporting glossary.
+/// Used to check that a singular form the grader is about to forgive is a real word, so "the news"
+/// never becomes "the new".
+pub fn is_known_word(word: &str) -> bool {
+    static WORDS: std::sync::OnceLock<std::collections::HashSet<String>> = std::sync::OnceLock::new();
+    WORDS
+        .get_or_init(|| {
+            let glossary: HashMap<String, String> = serde_json::from_str(GLOSSARY_JSON)
+                .expect("data/glossary.json must be a valid JSON object");
+            let mut set: std::collections::HashSet<String> =
+                glossary.into_keys().map(|k| k.to_lowercase()).collect();
+            for q in load_seed().questions.iter().filter(|q| q.kind == "word") {
+                set.insert(q.en.to_lowercase());
+            }
+            set
+        })
+        .contains(&word.to_lowercase())
+}
+
 /// The grammar explanations, keyed by point. Parsed once and cached: the file ships in the binary,
 /// so a mistake in it is a build problem rather than a runtime condition.
 pub fn grammar_notes() -> &'static HashMap<String, GrammarNoteSeed> {

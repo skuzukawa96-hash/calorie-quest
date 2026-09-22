@@ -1,7 +1,7 @@
 use crate::db::{self, Q_COLS};
 use crate::models::*;
 use crate::srs;
-use crate::util::{date_plus, now_ts, shuffle, today};
+use crate::util::{self, date_plus, now_ts, shuffle, today};
 use crate::AppState;
 use rusqlite::{params, Connection, OptionalExtension};
 use std::collections::HashMap;
@@ -189,6 +189,15 @@ fn accepted_answers(conn: &Connection, q: &Question) -> rusqlite::Result<Vec<Str
     for s in siblings {
         if !out.contains(&s) {
             out.push(s);
+        }
+    }
+    // An idiom's wording is fixed -- "hit the books" is not "hit the book" -- so only ordinary
+    // sentences get the singular reading of a plural the Japanese could not have signalled.
+    if q.kind != "idiom" {
+        for variant in util::singular_variants(&q.en, db::is_known_word) {
+            if !out.contains(&variant) {
+                out.push(variant);
+            }
         }
     }
     Ok(out)
@@ -1141,6 +1150,77 @@ mod tests {
         // And the session hands that list to the frontend, which is what does the grading.
         let sq = build_session_question(&c, q, "typing", false).unwrap();
         assert_eq!(sq.accepted, accepted, "typing must expose the accepted answers");
+    }
+
+    #[test]
+    fn typing_forgives_a_plural_the_japanese_could_not_have_signalled() {
+        let c = conn();
+        let load = |key: &str| {
+            c.query_row(
+                &format!("SELECT {Q_COLS} FROM questions q WHERE q.key = ?1"),
+                params![key],
+                db::row_to_question,
+            )
+            .unwrap()
+        };
+
+        // "彼は毎朝、馬たちに水を運びました" now says plural, but nothing stops a learner reading
+        // it as one horse, and "the horse" is the same English sentence.
+        let q = load("p2506");
+        let accepted = accepted_answers(&c, &q).unwrap();
+        assert!(accepted.contains(&q.en), "{} must accept its own English", q.key);
+        assert!(
+            accepted.iter().any(|a| a.contains("to the horse ")),
+            "{} should also accept the singular, got {accepted:?}",
+            q.key
+        );
+        let sq = build_session_question(&c, q, "typing", false).unwrap();
+        assert!(sq.accepted.len() > 1, "the session must hand the frontend both readings");
+
+        // An idiom is a fixed wording: "hit the book" is not English.
+        let idiom: Vec<String> = c
+            .prepare("SELECT en FROM questions WHERE kind = 'idiom' AND en LIKE 'hit the books%'")
+            .unwrap()
+            .query_map([], |r| r.get(0))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        for en in idiom {
+            let q = c
+                .query_row(
+                    &format!("SELECT {Q_COLS} FROM questions q WHERE q.en = ?1"),
+                    params![en],
+                    db::row_to_question,
+                )
+                .unwrap();
+            assert_eq!(accepted_answers(&c, &q).unwrap().len(), 1, "{} must stay exact", q.key);
+        }
+
+        // Whatever is forgiven is still the same sentence, one word shorter in letters only.
+        let mut stmt = c
+            .prepare("SELECT kind, en FROM questions WHERE modes LIKE '%typing%'")
+            .unwrap();
+        let rows: Vec<(String, String)> = stmt
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        let mut total = 0;
+        for (kind, en) in &rows {
+            if kind == "idiom" {
+                continue; // accepted_answers never asks for their variants
+            }
+            for v in util::singular_variants(en, db::is_known_word) {
+                total += 1;
+                assert_eq!(
+                    v.split_whitespace().count(),
+                    en.split_whitespace().count(),
+                    "a variant must keep the sentence intact: {en} -> {v}"
+                );
+                assert_ne!(&v, en, "a variant must actually differ: {en}");
+            }
+        }
+        assert!(total > 100, "only {total} plurals were forgiven; the rule stopped matching");
     }
 
     #[test]

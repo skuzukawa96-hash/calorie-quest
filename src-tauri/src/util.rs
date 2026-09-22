@@ -179,3 +179,207 @@ mod tests {
         assert_eq!(super::tokens("You'd better go."), ["you'd", "better", "go"]);
     }
 }
+
+/// Determiners that read the same with a singular or a plural noun, so swapping the noun's number
+/// leaves the phrase grammatical. "a" and "these" are deliberately absent: they pin the number.
+const TWO_WAY_DETERMINERS: &[&str] = &["the", "his", "her", "my", "your", "our", "their", "its"];
+
+/// Words that pin the noun to plural even through a determiner: "all the shelves" has no singular,
+/// and neither does "one of the students".
+const FORCES_PLURAL: &[&str] = &[
+    "all", "both", "many", "few", "several", "numerous", "various", "most", "some", "one", "two",
+    "three", "four", "five", "six", "seven", "eight", "nine", "ten", "dozens", "hundreds",
+    "thousands", "plenty", "number", "group", "pair", "couple", "bunch", "lots", "none", "each",
+    "every", "list", "series", "row", "line", "set",
+];
+
+/// Nouns English keeps plural. Answering "glass" for "glasses" is simply wrong, so these are left
+/// alone rather than forgiven.
+const ALWAYS_PLURAL: &[&str] = &[
+    "glasses", "sunglasses", "scissors", "pants", "trousers", "jeans", "shorts", "pajamas",
+    "clothes", "stairs", "headphones", "earphones", "binoculars", "tweezers", "pliers",
+    "belongings", "goods", "groceries", "savings", "surroundings", "outskirts", "congratulations",
+    "thanks", "means", "series", "species", "news", "mathematics", "physics", "economics",
+    "politics", "remains", "arms", "hands", "eyes", "ears", "feet", "legs", "shoulders", "knees",
+    "teeth", "fingers", "toes", "lips", "hips", "wrists", "ankles", "elbows", "nails", "lungs",
+    "paws", "wings", "shoes", "socks", "gloves", "boots", "slippers", "chopsticks", "lines",
+    "ropes", "books", "shots", "times", "words", "guns", "rules", "strings", "nerves", "cards",
+    "findings", "drums", "customs", "leftovers", "valuables", "refreshments", "odds", "wits",
+];
+
+/// What may follow the noun. A finite verb may not: it agrees with the noun, so "the guests arrive"
+/// has no singular unless the verb moves too. A preposition, a conjunction, an adverb, a participle
+/// or the end of the sentence all read the same either way.
+fn number_neutral_after(next: Option<&str>) -> bool {
+    let Some(word) = next else { return true };
+    if word.is_empty() {
+        return true;
+    }
+    word.ends_with("ing")
+        || word.ends_with("ed")
+        || word.ends_with("ly")
+        || [
+            "at", "in", "on", "by", "for", "with", "of", "to", "from", "about", "under", "over",
+            "between", "among", "into", "onto", "during", "since", "until", "before", "after",
+            "through", "across", "along", "around", "behind", "below", "beside", "near", "off",
+            "out", "up", "down", "against", "without", "within", "inside", "outside", "and", "or",
+            "but", "that", "which", "who", "whose", "when", "where", "while", "because", "so",
+            // A determiner starts a new phrase, so the noun was not the subject of a verb.
+            "a", "an", "the", "this", "these", "those", "every", "each", "all", "some", "any",
+            "no", "more", "most", "my", "your", "his", "her", "our", "their", "its", "one", "two",
+            "three", "several", "both", "another", "other",
+            // Adverbs that carry no -ly.
+            "never", "always", "often", "again", "still", "also", "too", "here", "there", "now",
+            "then", "today", "yesterday", "tomorrow", "well", "back", "away", "home", "together",
+            "first", "last", "early", "late", "soon", "just", "even", "only", "almost",
+        ]
+        .contains(&word)
+}
+
+/// Candidate singulars for a plural noun. "boxes" drops -es and "horses" only drops -s, and
+/// nothing in the spelling says which, so both are offered and the dictionary picks.
+pub fn singular_candidates(word: &str) -> Vec<String> {
+    let w = word.to_lowercase();
+    if w.len() < 4 || !w.ends_with('s') || w.ends_with("ss") || ALWAYS_PLURAL.contains(&w.as_str()) {
+        return Vec::new();
+    }
+    let mut out = Vec::new();
+    if let Some(stem) = w.strip_suffix("ies") {
+        if stem.len() >= 2 {
+            out.push(format!("{stem}y"));
+        }
+    }
+    if let Some(stem) = w.strip_suffix("ves") {
+        out.push(format!("{stem}f"));
+        out.push(format!("{stem}fe"));
+    }
+    if w.ends_with("es") {
+        out.push(w[..w.len() - 2].to_string());
+    }
+    out.push(w[..w.len() - 1].to_string());
+    out
+}
+
+/// The singular of a plural noun, when the plural is formed the regular way.
+pub fn singular_of(word: &str) -> Option<String> {
+    let w = word.to_lowercase();
+    if w.len() < 4 || !w.ends_with('s') || w.ends_with("ss") || ALWAYS_PLURAL.contains(&w.as_str()) {
+        return None;
+    }
+    if let Some(stem) = w.strip_suffix("ies") {
+        return (stem.len() >= 2).then(|| format!("{stem}y"));
+    }
+    for suffix in ["ses", "xes", "zes", "ches", "shes"] {
+        if w.ends_with(suffix) {
+            return Some(w[..w.len() - 2].to_string());
+        }
+    }
+    w.strip_suffix('s').map(str::to_string)
+}
+
+
+/// Puts `singular` back into the token in place of its letters, keeping the surrounding
+/// punctuation and a leading capital ("Horses," -> "Horse,").
+fn respell(token: &str, singular: &str) -> String {
+    let start = token.find(char::is_alphanumeric).unwrap_or(0);
+    let end = token.rfind(char::is_alphanumeric).map_or(start, |i| i + token[i..].chars().next().unwrap().len_utf8());
+    let mut word = singular.to_string();
+    if token[start..end].chars().next().is_some_and(char::is_uppercase) {
+        word = word
+            .char_indices()
+            .map(|(i, c)| if i == 0 { c.to_ascii_uppercase() } else { c })
+            .collect();
+    }
+    format!("{}{}{}", &token[..start], word, &token[end..])
+}
+
+/// Japanese does not mark number, so nothing in "彼は毎朝馬に水を運びました" can tell a learner the
+/// answer is "the horses" rather than "the horse". Where the prompt cannot say it, the singular has
+/// to count too. Only a noun sitting right after a two-way determiner qualifies: that is what keeps
+/// the singular grammatical ("He collects stamp" is not English) and what proves the word is a noun
+/// rather than a verb agreeing with its subject ("the boy runs").
+pub fn singular_variants(sentence: &str, known: impl Fn(&str) -> bool) -> Vec<String> {
+    let tokens: Vec<&str> = sentence.split(' ').collect();
+    let bare = |t: &str| t.trim_matches(|c: char| !c.is_alphanumeric()).to_lowercase();
+
+    let mut swaps: Vec<(usize, String)> = Vec::new();
+    for i in 1..tokens.len() {
+        if !TWO_WAY_DETERMINERS.contains(&bare(tokens[i - 1]).as_str()) {
+            continue;
+        }
+        if (2..=3).any(|back| {
+            i.checked_sub(back)
+                .is_some_and(|j| FORCES_PLURAL.contains(&bare(tokens[j]).as_str()))
+        }) {
+            continue;
+        }
+        let word = bare(tokens[i]);
+        let Some(singular) = singular_candidates(&word).into_iter().find(|c| known(c)) else {
+            continue;
+        };
+        let next = tokens.get(i + 1).map(|t| bare(t));
+        if !number_neutral_after(next.as_deref()) {
+            continue;
+        }
+        swaps.push((i, respell(tokens[i], &singular)));
+        if swaps.len() == 3 {
+            break; // one sentence never needs more, and the subsets below stay a handful
+        }
+    }
+    if swaps.is_empty() {
+        return Vec::new();
+    }
+
+    // Every combination, so "the pillows to the curtains" also accepts both in the singular.
+    let mut out = Vec::new();
+    for mask in 1..(1u32 << swaps.len()) {
+        let mut words: Vec<String> = tokens.iter().map(|t| t.to_string()).collect();
+        for (bit, (at, replacement)) in swaps.iter().enumerate() {
+            if mask & (1 << bit) != 0 {
+                words[*at] = replacement.clone();
+            }
+        }
+        out.push(words.join(" "));
+    }
+    out
+}
+
+#[cfg(test)]
+mod plural_tests {
+    use super::singular_variants;
+
+    fn known(w: &str) -> bool {
+        ["horse", "guest", "pipe", "stamp", "run", "glass", "curtain", "pillow", "new"].contains(&w)
+    }
+
+    #[test]
+    fn forgives_a_plural_only_where_the_singular_is_still_english() {
+        // The reported case: the Japanese cannot say whether it was one horse or several.
+        assert_eq!(
+            singular_variants("He carried water to the horses every morning.", known),
+            vec!["He carried water to the horse every morning."]
+        );
+
+        // Nouns English keeps plural stay wrong in the singular.
+        assert!(singular_variants("She cleaned her glasses carefully.", known).is_empty());
+
+        // A subject needs its verb to move too, so there is no one-word singular.
+        assert!(singular_variants("Let's tidy up before the guests arrive.", known).is_empty());
+        assert!(singular_variants("The pipes were made of copper.", known).is_empty());
+
+        // Without a determiner the singular is not a sentence: "He collects stamp" is not English.
+        assert!(singular_variants("He collects vintage stamps from the world.", known).is_empty());
+
+        // A verb agreeing with its subject is never a noun to forgive.
+        assert!(singular_variants("The boy runs fast.", known).is_empty());
+
+        // "all the" and "one of the" demand a plural whatever the determiner allows on its own.
+        assert!(singular_variants("He rearranged all the curtains.", known).is_empty());
+        assert!(singular_variants("She is one of the guests here.", known).is_empty());
+
+        // Two plurals give every reading, so writing both in the singular also counts.
+        let both = singular_variants("She matched the pillows to the curtains.", known);
+        assert_eq!(both.len(), 3, "got {both:?}");
+        assert!(both.contains(&"She matched the pillow to the curtain.".to_string()));
+    }
+}

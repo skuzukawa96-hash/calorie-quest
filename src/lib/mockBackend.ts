@@ -243,12 +243,86 @@ function japaneseDistractors(q: Question): string[] {
 }
 
 /** Every English the bank treats as a correct rendering of this question's Japanese. */
+/** Mirrors TWO_WAY_DETERMINERS / ALWAYS_PLURAL / number_neutral_after in util.rs. */
+const TWO_WAY_DETERMINERS = new Set(["the", "his", "her", "my", "your", "our", "their", "its"]);
+const ALWAYS_PLURAL = new Set(
+  `glasses sunglasses scissors pants trousers jeans shorts pajamas clothes stairs headphones
+   earphones binoculars tweezers pliers belongings goods groceries savings surroundings outskirts
+   congratulations thanks means series species news mathematics physics economics politics remains
+   arms hands eyes ears feet legs shoulders knees teeth fingers toes lips hips wrists ankles elbows
+   nails lungs paws wings shoes socks gloves boots slippers chopsticks lines ropes books shots times
+   words guns rules strings nerves cards findings drums customs leftovers valuables refreshments
+   odds wits`.split(/\s+/),
+);
+const FORCES_PLURAL = new Set(
+  `all both many few several numerous various most some one two three four five six seven eight
+   nine ten dozens hundreds thousands plenty number group pair couple bunch lots none each every
+   list series row line set`.split(/\s+/),
+);
+const NUMBER_NEUTRAL_AFTER = new Set(
+  `at in on by for with of to from about under over between among into onto during since until
+   before after through across along around behind below beside near off out up down against
+   without within inside outside and or but that which who whose when where while because so
+   a an the this these those every each all some any no more most my your our their its one two
+   three several both another other never always often again still also too here there now then
+   today yesterday tomorrow well back away home together first last early late soon just even only
+   almost`.split(/\s+/),
+);
+
+function singularCandidates(word: string): string[] {
+  if (word.length < 4 || !word.endsWith("s") || word.endsWith("ss") || ALWAYS_PLURAL.has(word)) return [];
+  const out: string[] = [];
+  if (word.endsWith("ies") && word.length > 5) out.push(word.slice(0, -3) + "y");
+  if (word.endsWith("ves")) out.push(word.slice(0, -3) + "f", word.slice(0, -3) + "fe");
+  if (word.endsWith("es")) out.push(word.slice(0, -2));
+  out.push(word.slice(0, -1));
+  return out;
+}
+
+function numberNeutralAfter(next: string | undefined): boolean {
+  if (!next) return true;
+  return next.endsWith("ing") || next.endsWith("ed") || next.endsWith("ly") || NUMBER_NEUTRAL_AFTER.has(next);
+}
+
+/** Mirrors singular_variants in util.rs: see the reasoning there. */
+function singularVariants(sentence: string, known: (w: string) => boolean): string[] {
+  const tokens = sentence.split(" ");
+  const bare = (t: string) => t.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, "").toLowerCase();
+  const swaps: [number, string][] = [];
+  for (let i = 1; i < tokens.length && swaps.length < 3; i++) {
+    if (!TWO_WAY_DETERMINERS.has(bare(tokens[i - 1]))) continue;
+    if ([2, 3].some((back) => i - back >= 0 && FORCES_PLURAL.has(bare(tokens[i - back])))) continue;
+    const word = bare(tokens[i]);
+    const singular = singularCandidates(word).find(known);
+    if (!singular) continue;
+    if (!numberNeutralAfter(tokens[i + 1] === undefined ? undefined : bare(tokens[i + 1]))) continue;
+    const start = tokens[i].search(/[\p{L}\p{N}]/u);
+    const end = tokens[i].length - [...tokens[i]].reverse().join("").search(/[\p{L}\p{N}]/u);
+    const cased = /[A-Z]/.test(tokens[i][start]) ? singular[0].toUpperCase() + singular.slice(1) : singular;
+    swaps.push([i, tokens[i].slice(0, start) + cased + tokens[i].slice(end)]);
+  }
+  const out: string[] = [];
+  for (let mask = 1; mask < 1 << swaps.length; mask++) {
+    const words = [...tokens];
+    swaps.forEach(([at, replacement], bit) => {
+      if (mask & (1 << bit)) words[at] = replacement;
+    });
+    out.push(words.join(" "));
+  }
+  return out;
+}
+
 function acceptedAnswers(q: Question): string[] {
   const out = [q.en];
   for (const o of questions) {
     if (o.id !== q.id && o.kind === q.kind && o.group === q.group && o.ja === q.ja && !out.includes(o.en)) {
       out.push(o.en);
     }
+  }
+  // An idiom's wording is fixed, so only ordinary sentences get the singular reading.
+  if (q.kind !== "idiom") {
+    const known = (w: string) => w in mockDictionary();
+    for (const v of singularVariants(q.en, known)) if (!out.includes(v)) out.push(v);
   }
   return out;
 }
