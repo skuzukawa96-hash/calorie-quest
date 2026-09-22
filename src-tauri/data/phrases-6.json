@@ -94,7 +94,7 @@
   {"key":"p659","kind":"phrase","difficulty":"mid","category":"日常生活","group":"日常生活","en":"He repaired the broken chair.","ja":"彼は壊れた椅子を修理しました。","modes":["choice","typing","speaking"]},
   {"key":"p660","kind":"phrase","difficulty":"mid","category":"日常生活","group":"日常生活","en":"I like to declutter my desk on Fridays.","ja":"金曜日に机を片付けるのが好きです。","modes":["choice","typing","speaking"]},
   {"key":"p661","kind":"phrase","difficulty":"mid","category":"日常生活","group":"日常生活","en":"She keeps a spare key under the mat.","ja":"彼女はマットの下に予備の鍵を置いています。","modes":["choice","typing","speaking"]},
-  {"key":"p662","kind":"phrase","difficulty":"mid","category":"日常生活","group":"日常生活","en":"The neighbors are having a loud party tonight.","ja":"今夜、隣人がうるさいパーティーをしています。","modes":["choice","typing","speaking"]},
+  {"key":"p662","kind":"phrase","difficulty":"mid","category":"日常生活","group":"日常生活","en":"The neighbors are having a loud party tonight.","ja":"今夜、隣人たちがうるさいパーティーをしています。","modes":["choice","typing","speaking"]},
   {"key":"p663","kind":"phrase","difficulty":"mid","category":"日常生活","group":"日常生活","en":"I need to unpack these boxes from the move.","ja":"引っ越しのこれらの箱を開ける必要があります。","modes":["choice","typing","speaking"]},
   {"key":"p664","kind":"phrase","difficulty":"mid","category":"日常生活","group":"日常生活","en":"He always double-locks the front door.","ja":"彼はいつも玄関を二重に施錠します。","modes":["choice","typing","speaking"]},
   {"key":"p665","kind":"phrase","difficulty":"mid","category":"日常生活","group":"日常生活","en":"She's planning a surprise party for her friend.","ja":"彼女は友達のためにサプライズパーティーを計画しています。","modes":["choice","typing","speaking"]},

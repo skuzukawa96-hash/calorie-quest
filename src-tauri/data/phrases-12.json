@@ -114,7 +114,7 @@
   {"key":"p3514","kind":"phrase","difficulty":"mid","category":"時間・数","group":"時間・数","en":"We compared last week's numbers with this week's totals.","ja":"私たちは先週の数字を今週の合計と比較しました。","modes":["choice","typing","speaking"]},
   {"key":"p3515","kind":"phrase","difficulty":"mid","category":"時間・数","group":"時間・数","en":"He estimated the number of guests attending the event.","ja":"彼はそのイベントに出席するゲストの数を見積もりました。","modes":["choice","typing","speaking"]},
   {"key":"p3516","kind":"phrase","difficulty":"mid","category":"時間・数","group":"時間・数","en":"She recorded the exact time each task was finished.","ja":"彼女は各作業が終わった正確な時間を記録しました。","modes":["choice","typing","speaking"]},
-  {"key":"p3517","kind":"phrase","difficulty":"mid","category":"動物","group":"動物","en":"She fed the horses fresh hay every morning.","ja":"彼女は毎朝馬に新鮮な干し草をあげました。","modes":["choice","typing","speaking"]},
+  {"key":"p3517","kind":"phrase","difficulty":"mid","category":"動物","group":"動物","en":"She fed the horses fresh hay every morning.","ja":"彼女は毎朝、馬たちに新鮮な干し草をあげました。","modes":["choice","typing","speaking"]},
   {"key":"p3518","kind":"phrase","difficulty":"mid","category":"動物","group":"動物","en":"He noticed the birds gathering near the feeder.","ja":"彼は鳥たちがその餌台の近くに集まっているのに気づきました。","modes":["choice","typing","speaking"]},
   {"key":"p3519","kind":"phrase","difficulty":"mid","category":"動物","group":"動物","en":"We watched the cat stretch lazily in the sun.","ja":"私たちは猫が日光の中でのんびり伸びをするのを見ました。","modes":["choice","typing","speaking"]},
   {"key":"p3520","kind":"phrase","difficulty":"mid","category":"動物","group":"動物","en":"She trained her puppy to walk beside her.","ja":"彼女は自分の子犬に隣を歩くよう訓練しました。","modes":["choice","typing","speaking"]},

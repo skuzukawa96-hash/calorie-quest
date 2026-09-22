@@ -1,5 +1,5 @@
 [
-  {"key":"p4419","kind":"phrase","difficulty":"mid","category":"自然・天気","group":"自然・天気","en":"He noticed the crickets had gone quiet before the rain.","ja":"彼は雨の前にコオロギが静かになったことに気づきました。","modes":["choice","typing","speaking"]},
+  {"key":"p4419","kind":"phrase","difficulty":"mid","category":"自然・天気","group":"自然・天気","en":"He noticed the crickets had gone quiet before the rain.","ja":"彼は雨の前にコオロギたちが静かになったことに気づきました。","modes":["choice","typing","speaking"]},
   {"key":"p4420","kind":"phrase","difficulty":"mid","category":"自然・天気","group":"自然・天気","en":"We measured the depth of the fresh snow on the porch.","ja":"私たちはポーチの新雪の深さを測りました。","modes":["choice","typing","speaking"]},
   {"key":"p4421","kind":"phrase","difficulty":"mid","category":"からだ・健康","group":"からだ・健康","en":"She winced when the nurse drew her blood.","ja":"彼女はその看護師が採血したとき顔をしかめました。","modes":["choice","typing","speaking"]},
   {"key":"p4422","kind":"phrase","difficulty":"mid","category":"からだ・健康","group":"からだ・健康","en":"He propped his leg up on a pillow after the surgery.","ja":"彼はその手術の後、枕の上に足を乗せました。","modes":["choice","typing","speaking"]},
@@ -118,7 +118,7 @@
   {"key":"p4535","kind":"phrase","difficulty":"mid","category":"動物","group":"動物","en":"He watched the spider spin its web between the branches.","ja":"彼はクモが枝の間に巣を張るのを見ました。","modes":["choice","typing","speaking"]},
   {"key":"p4536","kind":"phrase","difficulty":"mid","category":"動物","group":"動物","en":"We spotted an owl perched silently on the fence post.","ja":"私たちは静かにフェンスの柱に止まっているフクロウを見つけました。","modes":["choice","typing","speaking"]},
   {"key":"p4537","kind":"phrase","difficulty":"mid","category":"動物","group":"動物","en":"She wiped down the hamster cage every weekend.","ja":"彼女は毎週末、ハムスターのケージを拭きました。","modes":["choice","typing","speaking"]},
-  {"key":"p4538","kind":"phrase","difficulty":"mid","category":"動物","group":"動物","en":"He tossed hay into the stable for the horses.","ja":"彼は馬のために馬小屋に干し草を投げ入れました。","modes":["choice","typing","speaking"]},
+  {"key":"p4538","kind":"phrase","difficulty":"mid","category":"動物","group":"動物","en":"He tossed hay into the stable for the horses.","ja":"彼は馬たちのために馬小屋に干し草を投げ入れました。","modes":["choice","typing","speaking"]},
   {"key":"p4539","kind":"phrase","difficulty":"mid","category":"動物","group":"動物","en":"We watched a school of fish dart beneath the boat.","ja":"私たちはボートの下を魚の群れが素早く泳ぐのを見ました。","modes":["choice","typing","speaking"]},
   {"key":"p4540","kind":"phrase","difficulty":"mid","category":"趣味・スポーツ","group":"趣味・スポーツ","en":"She dusted off her old guitar and started practicing again.","ja":"彼女は古いギターの埃を払い、再び練習を始めました。","modes":["choice","typing","speaking"]},
   {"key":"p4541","kind":"phrase","difficulty":"mid","category":"趣味・スポーツ","group":"趣味・スポーツ","en":"He signed up for a weekend cooking class on a whim.","ja":"彼は思いつきで週末の料理教室に申し込みました。","modes":["choice","typing","speaking"]},

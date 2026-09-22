@@ -457,6 +457,6 @@
   {"key":"p2479","kind":"phrase","difficulty":"mid","category":"動物","group":"動物","en":"The rabbit hopped quickly across the garden.","ja":"そのウサギは庭を速く跳んで横切りました。","modes":["choice","typing","speaking"]},
   {"key":"p2480","kind":"phrase","difficulty":"mid","category":"動物","group":"動物","en":"She took her dog to the vet for a checkup.","ja":"彼女は健康診断のために犬を獣医に連れて行きました。","modes":["choice","typing","speaking"]},
   {"key":"p2481","kind":"phrase","difficulty":"mid","category":"動物","group":"動物","en":"We spotted an eagle circling above the cliff.","ja":"私たちは崖の上を旋回するワシを見つけました。","modes":["choice","typing","speaking"]},
-  {"key":"p2482","kind":"phrase","difficulty":"mid","category":"動物","group":"動物","en":"He built a small house for the stray cats.","ja":"彼は野良猫のために小さな家を作りました。","modes":["choice","typing","speaking"]},
+  {"key":"p2482","kind":"phrase","difficulty":"mid","category":"動物","group":"動物","en":"He built a small house for the stray cats.","ja":"彼は野良猫たちのために小さな家を作りました。","modes":["choice","typing","speaking"]},
   {"key":"p2483","kind":"phrase","difficulty":"mid","category":"動物","group":"動物","en":"The bear searched for food near the river.","ja":"そのクマは川の近くで食べ物を探しました。","modes":["choice","typing","speaking"]}
 ]

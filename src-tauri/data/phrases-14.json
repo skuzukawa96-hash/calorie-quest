@@ -44,7 +44,7 @@
   {"key":"p3684","kind":"phrase","difficulty":"mid","category":"からだ・健康","group":"からだ・健康","en":"He stretched his legs after the long drive.","ja":"彼はその長いドライブの後、足を伸ばしました。","modes":["choice","typing","speaking"]},
   {"key":"p3685","kind":"phrase","difficulty":"mid","category":"気持ち・性格","group":"気持ち・性格","en":"She felt grateful for her supportive coworkers.","ja":"彼女は自分を支えてくれる同僚たちに感謝を感じました。","modes":["choice","typing","speaking"]},
   {"key":"p3686","kind":"phrase","difficulty":"mid","category":"時間・数","group":"時間・数","en":"He tracked his spending using a simple app.","ja":"彼は簡単なアプリを使って自分の支出を記録しました。","modes":["choice","typing","speaking"]},
-  {"key":"p3687","kind":"phrase","difficulty":"mid","category":"動物","group":"動物","en":"She noticed the cat watching the birds outside.","ja":"彼女は猫が外の鳥を見ているのに気づきました。","modes":["choice","typing","speaking"]},
+  {"key":"p3687","kind":"phrase","difficulty":"mid","category":"動物","group":"動物","en":"She noticed the cat watching the birds outside.","ja":"彼女は猫が外の鳥たちを見ているのに気づきました。","modes":["choice","typing","speaking"]},
   {"key":"p3688","kind":"phrase","difficulty":"mid","category":"趣味・スポーツ","group":"趣味・スポーツ","en":"He joined a local soccer league this spring.","ja":"彼はこの春、地元のサッカーリーグに参加しました。","modes":["choice","typing","speaking"]},
   {"key":"p3689","kind":"phrase","difficulty":"mid","category":"色・かたち","group":"色・かたち","en":"She picked a soft yellow for the nursery walls.","ja":"彼女はその子供部屋の壁のために柔らかい黄色を選びました。","modes":["choice","typing","speaking"]},
   {"key":"p3690","kind":"phrase","difficulty":"mid","category":"人・職業","group":"人・職業","en":"He works as a translator for a small publishing house.","ja":"彼は小さな出版社の翻訳者として働いています。","modes":["choice","typing","speaking"]},
