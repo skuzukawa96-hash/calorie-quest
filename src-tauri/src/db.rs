@@ -509,7 +509,7 @@ mod tests {
                     // The answer goes into the blank, so a prompt that also spells it out on the
                     // other side produces "getting over over her cold" — spoken aloud and, since
                     // the explanation panel landed, shown to the learner as the completed sentence.
-                    let filled = prompt.replace("___", &q.en).to_lowercase();
+                    let filled = crate::util::fill_blank(prompt, &q.en).to_lowercase();
                     let words: Vec<&str> = filled.split_whitespace().collect();
                     for pair in words.windows(2) {
                         assert_ne!(
@@ -520,6 +520,9 @@ mod tests {
                         );
                     }
                     assert_conditional_has_one_answer(&q.key, prompt, &q.en, choices);
+                    if point == "time-clause" {
+                        assert_time_clause_answer_is_the_present(&q.key, prompt, &q.en, choices);
+                    }
                 } else {
                     assert!(!prompt.trim().is_empty(), "{} prompt is empty", q.key);
                 }
@@ -635,6 +638,26 @@ mod tests {
             twin.is_none(),
             "{key}: \"{answer}\" and \"{}\" are both correct in \"{prompt}\"",
             twin.unwrap_or_default()
+        );
+    }
+
+    /// The time-clause explanation says "future inside when / as soon as / until, but present tense,
+    /// not will". A question filed under it must therefore offer the will form and want the present
+    /// one. "The moment I ___ the news, I called you." wanted "heard" — a past story, whose rule is
+    /// the tense agreement in `time-clause-tense` — and the panel under it explained something else.
+    fn assert_time_clause_answer_is_the_present(key: &str, prompt: &str, answer: &str, choices: &[String]) {
+        let base = choices
+            .iter()
+            .find_map(|c| c.strip_prefix("will "))
+            .unwrap_or_else(|| panic!("{key}: a time-clause question needs a will form to rule out: {prompt}"));
+        let present: Vec<String> = match base {
+            "be" => vec!["am".into(), "is".into(), "are".into()],
+            _ => vec![base.to_string(), format!("{base}s"), format!("{base}es")],
+        };
+        assert!(
+            present.iter().any(|p| p == answer),
+            "{key}: \"{answer}\" is not the present tense of \"will {base}\", so the future-in-a-time-clause \
+             explanation does not fit \"{prompt}\"; past stories belong to time-clause-tense"
         );
     }
 

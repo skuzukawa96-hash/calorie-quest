@@ -1,5 +1,5 @@
 {
-  "version": 13,
+  "version": 14,
   "questions": [
     {"key":"w001","kind":"word","difficulty":"low","category":"食べ物","group":"果物","en":"apple","ja":"りんご","modes":["choice","typing","speaking"]},
     {"key":"w002","kind":"word","difficulty":"low","category":"食べ物","group":"飲み物","en":"water","ja":"水","modes":["choice","typing","speaking"]},
@@ -263,7 +263,7 @@
     {"key":"g022","kind":"grammar","difficulty":"mid","category":"文法","group":"文法","en":"in","ja":"彼は日本の歴史に興味がある。","prompt":"He is interested ___ Japanese history.","choices":["in","at","on","of"],"modes":["choice"],"point":"adjective-preposition"},
     {"key":"g023","kind":"grammar","difficulty":"mid","category":"文法","group":"文法","en":"gave","ja":"父は誕生日に私に時計をくれた。","prompt":"My father ___ me a watch for my birthday.","choices":["give","gave","given","giving"],"modes":["choice"],"point":"past-simple"},
     {"key":"g024","kind":"grammar","difficulty":"mid","category":"文法","group":"文法","en":"who","ja":"ケンと話している男性は私のおじです。","prompt":"The man ___ is talking to Ken is my uncle.","choices":["who","which","whose","what"],"modes":["choice"],"point":"relative-pronoun"},
-    {"key":"g025","kind":"grammar","difficulty":"mid","category":"文法","group":"文法","en":"eaten","ja":"私は寿司を食べたことがない。","prompt":"I have never ___ sushi.","choices":["eat","ate","eaten","eating"],"modes":["choice"],"point":"past-simple"},
+    {"key":"g025","kind":"grammar","difficulty":"mid","category":"文法","group":"文法","en":"eaten","ja":"私は寿司を食べたことがない。","prompt":"I have never ___ sushi.","choices":["eat","ate","eaten","eating"],"modes":["choice"],"point":"present-perfect"},
     {"key":"g026","kind":"grammar","difficulty":"mid","category":"文法","group":"文法","en":"might","ja":"今日の午後は雨が降るかもしれない。","prompt":"It ___ rain this afternoon.","choices":["might","must","has","is"],"modes":["choice"],"point":"modal"},
     {"key":"g027","kind":"grammar","difficulty":"mid","category":"文法","group":"文法","en":"much","ja":"1日にどれくらい水を飲みますか？","prompt":"How ___ water do you drink a day?","choices":["many","much","often","long"],"modes":["choice"],"point":"wh-question"},
     {"key":"g028","kind":"grammar","difficulty":"mid","category":"文法","group":"文法","en":"little","ja":"冷蔵庫に牛乳がほとんどない。","prompt":"There is ___ milk in the fridge.","choices":["few","little","many","a few"],"modes":["choice"],"point":"quantifier"},

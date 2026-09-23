@@ -244,7 +244,7 @@ fn audio_text_for(q: &Question) -> String {
         "grammar" => q
             .prompt
             .as_ref()
-            .map(|p| p.replace("___", &q.en))
+            .map(|p| util::fill_blank(p, &q.en))
             .unwrap_or_else(|| q.en.clone()),
         "dialogue" => q.prompt.clone().unwrap_or_else(|| q.en.clone()),
         _ => q.en.clone(),
@@ -1311,6 +1311,15 @@ mod tests {
             .query_row(&format!("SELECT {Q_COLS} FROM questions q WHERE q.id = ?1"), params![qid], db::row_to_question)
             .unwrap();
         assert_eq!(audio_text_for(&q), "She plays tennis every Sunday.");
+
+        // Choosing "no article" leaves the gap empty rather than reading out the choice's label.
+        let qid = question_id(&c, "g1188");
+        let q = c
+            .query_row(&format!("SELECT {Q_COLS} FROM questions q WHERE q.id = ?1"), params![qid], db::row_to_question)
+            .unwrap();
+        assert_eq!(q.en, util::NO_WORD);
+        assert_eq!(audio_text_for(&q), "She goes to school by bus every day.");
+        assert_eq!(util::fill_blank("___ is the best policy.", util::NO_WORD), "is the best policy.");
     }
 
     #[test]

@@ -420,8 +420,14 @@ function englishDistractors(q: Question): string[] {
   return out;
 }
 
+/** Mirrors util.rs `fill_blank`: the "no article" choice leaves the gap empty. */
+function fillBlank(prompt: string, answer: string): string {
+  if (answer !== "(none)") return prompt.replace(/_{2,}/g, () => answer);
+  return prompt.replace(/ ?_{2,} ?/g, (gap) => (gap.startsWith(" ") && gap.endsWith(" ") ? " " : ""));
+}
+
 function audioTextFor(q: Question): string {
-  if (q.kind === "grammar") return (q.prompt ?? q.en).replace(/_{2,}/g, q.en);
+  if (q.kind === "grammar") return fillBlank(q.prompt ?? q.en, q.en);
   if (q.kind === "dialogue") return q.prompt ?? q.en;
   return q.en;
 }

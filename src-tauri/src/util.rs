@@ -137,6 +137,19 @@ pub fn lemmas(word: &str) -> Vec<String> {
     out
 }
 
+/// The choice that means "no article here" in a grammar question ("She goes to ___ school").
+pub const NO_WORD: &str = "(none)";
+
+/// A grammar prompt with its blank filled in. Picking "no article" leaves nothing in the gap, so
+/// the blank goes together with one of the spaces around it: the completed sentence is shown and
+/// read aloud, and "She goes to (none) school" is neither.
+pub fn fill_blank(prompt: &str, answer: &str) -> String {
+    if answer != NO_WORD {
+        return prompt.replace("___", answer);
+    }
+    prompt.replace(" ___ ", " ").replace("___ ", "").replace(" ___", "").replace("___", "")
+}
+
 /// Tiny xorshift shuffle so we don't need the `rand` crate for a 4-option quiz.
 pub fn shuffle<T>(v: &mut [T]) {
     let nanos = SystemTime::now()
