@@ -180,6 +180,117 @@ mod tests {
     }
 }
 
+/* ---------- multi-word expressions ---------- */
+
+const POSSESSIVES: &[&str] = &["my", "your", "his", "her", "its", "our", "their"];
+const OBJECTS: &[&str] = &["me", "you", "him", "her", "it", "us", "them"];
+const REFLEXIVES: &[&str] = &[
+    "myself", "yourself", "himself", "herself", "itself", "ourselves", "yourselves", "themselves",
+    "oneself",
+];
+
+/// Idioms are written with a stand-in pronoun ("keep your fingers crossed", "under someone's
+/// nose") that the sentence fills with a real one ("kept my fingers crossed", "under her nose").
+fn placeholder_matches(pattern: &str, word: &str) -> bool {
+    match pattern {
+        "your" | "my" | "his" | "her" | "their" | "our" | "its" => POSSESSIVES.contains(&word),
+        // "someone's" loses its 's in tokens(), so it arrives here as "someone".
+        "someone" | "somebody" | "one" => POSSESSIVES.contains(&word) || OBJECTS.contains(&word),
+        "yourself" | "oneself" => REFLEXIVES.contains(&word),
+        _ => false,
+    }
+}
+
+/// Whether a word in a sentence can fill one slot of a phrase: the same word, an inflection of it
+/// ("kept" for "keep", "bags" for "bag"), or a pronoun standing in for the idiom's placeholder.
+pub fn phrase_token_matches(pattern: &str, word: &str) -> bool {
+    pattern == word || placeholder_matches(pattern, word) || lemmas(word).iter().any(|l| l == pattern)
+}
+
+/// Every phrase in the dictionary, filed under the word it starts with so a sentence only tries the
+/// handful that could begin at each position.
+pub struct PhraseIndex {
+    by_first: std::collections::HashMap<String, Vec<(Vec<String>, String)>>,
+}
+
+/// A run of words in a sentence that together form a dictionary phrase: `start..end` over the
+/// sentence's words, and the phrase's dictionary form.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PhraseSpan {
+    pub start: usize,
+    pub end: usize,
+    pub key: String,
+}
+
+impl PhraseIndex {
+    /// Builds the index from dictionary keys; single words are skipped, since a phrase needs two.
+    pub fn new<'a>(keys: impl IntoIterator<Item = &'a String>) -> Self {
+        let mut by_first: std::collections::HashMap<String, Vec<(Vec<String>, String)>> =
+            std::collections::HashMap::new();
+        for key in keys {
+            let words = tokens(key);
+            if words.len() < 2 {
+                continue;
+            }
+            by_first.entry(words[0].clone()).or_default().push((words, key.clone()));
+        }
+        // Longest first, so "real estate agent" wins over a shorter phrase at the same spot.
+        for list in by_first.values_mut() {
+            list.sort_by(|a, b| b.0.len().cmp(&a.0.len()).then_with(|| a.1.cmp(&b.1)));
+        }
+        PhraseIndex { by_first }
+    }
+
+    /// The first-word keys a sentence word could be standing in for.
+    fn candidates(&self, word: &str) -> Vec<String> {
+        let mut out = lemmas(word);
+        if POSSESSIVES.contains(&word) {
+            out.extend(["your", "my", "his", "her", "their", "our", "its", "someone", "somebody", "one"].map(String::from));
+        }
+        if OBJECTS.contains(&word) {
+            out.extend(["someone", "somebody", "one"].map(String::from));
+        }
+        if REFLEXIVES.contains(&word) {
+            out.extend(["yourself", "oneself"].map(String::from));
+        }
+        out.sort();
+        out.dedup();
+        out
+    }
+
+    /// Left to right, longest match first; words covered by one phrase never start another.
+    pub fn spans(&self, words: &[String]) -> Vec<PhraseSpan> {
+        let mut out = Vec::new();
+        let mut i = 0;
+        while i < words.len() {
+            let mut best: Option<(usize, &str)> = None;
+            for first in self.candidates(&words[i]) {
+                let Some(list) = self.by_first.get(&first) else { continue };
+                for (pattern, key) in list {
+                    if i + pattern.len() > words.len() || best.is_some_and(|(n, _)| n >= pattern.len()) {
+                        continue;
+                    }
+                    let hit = pattern
+                        .iter()
+                        .zip(&words[i..])
+                        .all(|(p, w)| phrase_token_matches(p, w));
+                    if hit {
+                        best = Some((pattern.len(), key.as_str()));
+                    }
+                }
+            }
+            match best {
+                Some((n, key)) => {
+                    out.push(PhraseSpan { start: i, end: i + n, key: key.to_string() });
+                    i += n;
+                }
+                None => i += 1,
+            }
+        }
+        out
+    }
+}
+
 /// Determiners that read the same with a singular or a plural noun, so swapping the noun's number
 /// leaves the phrase grammatical. "a" and "these" are deliberately absent: they pin the number.
 const TWO_WAY_DETERMINERS: &[&str] = &["the", "his", "her", "my", "your", "our", "their", "its"];

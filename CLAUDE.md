@@ -29,11 +29,11 @@ npm run tauri build        # 配布ビルド
 | `src-tauri/src/commands.rs` | Tauri コマンド。コアロジックは `session_questions` / `record_answer` / `redeem_ticket` に分離され、`Connection` だけでテストできる |
 | `src-tauri/src/db.rs` | スキーマ、`ensure_column` によるマイグレーション、`questions.json` / お菓子の初期投入 |
 | `src-tauri/src/speech.rs` | SAPI5 で英語 TTS → WAV（フロントで再生）、WinRT `SpeechRecognizer` のリスト文法で発音判定 |
-| `src-tauri/data/*.json` | 問題データ（20,167問・20ジャンル・442意味グループ）、`glossary.json`（補助語彙4,440語）、`grammar-notes.json`（文法解説82件）。`questions.json` が `version` を持ち、追加パック（`words-2a.json` など120ファイル）は `build.rs` と `mockBackend.ts` の `import.meta.glob` が**このディレクトリから自動で拾う**（`questions.json` / `glossary.json` / `grammar-notes.json` は除外）。`version` を上げると起動時に key 単位で upsert される |
+| `src-tauri/data/*.json` | 問題データ（20,167問・20ジャンル・442意味グループ）、`glossary.json`（補助語彙5,379語）、`grammar-notes.json`（文法解説82件）。`questions.json` が `version` を持ち、追加パック（`words-2a.json` など120ファイル）は `build.rs` と `mockBackend.ts` の `import.meta.glob` が**このディレクトリから自動で拾う**（`questions.json` / `glossary.json` / `grammar-notes.json` は除外）。`version` を上げると起動時に key 単位で upsert される |
 | `src/lib/speech.ts` | TTS/STT の切り替え（Tauri=native、ブラウザ=web）、`INSTALL_STT_GUIDE` |
 | `src/lib/scoring.ts` | 一致度・流暢さ・発音のコツ検出（`detectTrickySounds`） |
-| `src/lib/dictionary.ts` | 単語ポップアップの辞書引き。`tokenize` / `lemmas` は `util.rs` の同名関数と挙動を合わせる |
-| `src/components/GlossedText.tsx` | 英文の各単語にホバーで意味を出し、クリックでその単語を読み上げる（読み上げは「単語の意味」トグルとは独立で、辞書にない語でも鳴る） |
+| `src/lib/dictionary.ts` | 単語ポップアップの辞書引き。`tokenize` / `lemmas` は `util.rs` の同名関数と、`buildPhraseIndex` / `phraseSpans` は `util.rs` の `PhraseIndex` と挙動を合わせる |
+| `src/components/GlossedText.tsx` | 英文の各単語にホバーで意味を出し、クリックでその単語を読み上げる（読み上げは「単語の意味」トグルとは独立で、辞書にない語でも鳴る）。熟語・慣用句の範囲は一続きの実線で示し、熟語の意味と語自体の意味を2行で出す。選択問題の回答前は `withhold` で正解と同じ訳を伏せる |
 | `src/screens/` | Home（ジャンル・難易度選択）、Study（4モード＋回答後の自動読み上げ＋単語の意味）、Snacks、Stats |
 
 ## データの約束
@@ -52,7 +52,8 @@ npm run tauri build        # 配布ビルド
 - それでも届かない文（"fed the horses fresh hay" のように名詞の後ろが形容詞）は、**日本語側に「馬たち」のように複数を書く**。ただし総称の文（「サメが人間を襲う」）に「たち」を付けると日本語が壊れるので、特定の群れを指す文だけ
 - ヒアリングは `modes` に `listening` か `speaking` を含む問題が対象。単語・フレーズ・慣用句・長文は「聞いて意味を選ぶ」、会話は「聞いて英語で応答を選ぶ」
 - 慣用句（`kind: "idiom"`）は `example`（その慣用句を使った英文）と `exampleJa`（訳）が必須。テストが例文中に慣用句の主要語が出ているかまで検査する
-- 英文に出てくる単語はすべて辞書に載っている必要がある（単語問題 or `glossary.json`）。`dictionary_covers_words_used_in_sentences` が未収録語を列挙する。不規則動詞は `util.rs` の `IRREGULAR` と `dictionary.ts` の同名テーブルで解決する（両方を更新すること）
+- **辞書の熟語**: 複数語の単語問題（"doggy bag"）と慣用句は、`db::dictionary` が英文まるごとをキーに入れる。**構成語に熟語の意味を配ってはいけない**（"doggy" が 持ち帰り用の袋 になる。`phrase_meanings_stay_with_the_phrase` が検査する）。構成語の意味は `glossary.json` に語単体で書く。慣用句は辞書形（"keep your fingers crossed"）で書けば、文中の活用（kept）と代名詞（my / him）は `PhraseIndex` が吸収する
+- 英文に出てくる単語はすべて辞書に載っている必要がある（単語問題 or `glossary.json`、または文中で熟語の一部として検出される）。`dictionary_covers_words_used_in_sentences` が未収録語を列挙する。不規則動詞は `util.rs` の `IRREGULAR` と `dictionary.ts` の同名テーブルで解決する（両方を更新すること）
 - 新しいデータファイルは `src-tauri/data/` に置くだけでよい（`build.rs` が Rust 側の一覧を生成し、`mockBackend.ts` は `import.meta.glob` で拾う）。登録漏れで片方のプラットフォームだけ問題数が変わる事故を防ぐため、手書きの一覧は持たない。問題以外のデータファイルを足すときは `build.rs` の `is_pack` と `mockBackend.ts` の除外リストの両方に名前を足すこと
 - スキーマ変更は `SCHEMA` に列を足すだけでなく `ensure_column` で既存 DB にも追加する（`group` は SQL 予約語なので列名は `word_group`）
 

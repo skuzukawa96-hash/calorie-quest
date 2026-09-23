@@ -400,14 +400,15 @@ pub fn dictionary(conn: &Connection) -> rusqlite::Result<HashMap<String, String>
         serde_json::from_str(GLOSSARY_JSON).expect("data/glossary.json must be a valid JSON object");
 
     {
-        let mut stmt = conn.prepare("SELECT en, ja FROM questions WHERE kind = 'word'")?;
+        // Vocabulary and idioms both go in under their whole English. A multi-word entry stays a
+        // phrase: "doggy bag" means 持ち帰り用の袋, but "doggy" on its own does not, so the words
+        // inside it are never given the phrase's meaning. The frontend finds phrases in a sentence
+        // and shows their meaning alongside each word's own.
+        let mut stmt = conn.prepare("SELECT en, ja FROM questions WHERE kind IN ('word', 'idiom')")?;
         let rows = stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?;
         for row in rows {
             let (en, ja) = row?;
             // Question data wins over the glossary: it is the vocabulary being studied.
-            for word in crate::util::tokens(&en) {
-                map.entry(word).or_insert_with(|| ja.clone());
-            }
             map.insert(en.to_lowercase(), ja);
         }
     }
@@ -671,11 +672,93 @@ mod tests {
     }
 
     /// The hover dictionary must cover the vocabulary used inside multi-word questions.
+    /// "doggy bag" is 持ち帰り用の袋; "doggy" is not. The builder used to hand every word of a
+    /// multi-word entry the whole entry's meaning, so hovering "doggy" said 持ち帰り用の袋 and
+    /// "register" (from "cash register") said レジ.
+    #[test]
+    fn phrase_meanings_stay_with_the_phrase() {
+        let conn = init_in_memory().unwrap();
+        let dict = dictionary(&conn).unwrap();
+        assert_eq!(dict.get("doggy bag").map(String::as_str), Some("持ち帰り用の袋"));
+        assert_ne!(dict.get("doggy").map(String::as_str), Some("持ち帰り用の袋"));
+
+        let mut stmt = conn
+            .prepare("SELECT en, ja FROM questions WHERE kind IN ('word', 'idiom')")
+            .unwrap();
+        let entries: Vec<(String, String)> = stmt
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        // What a word means on its own: the glossary, or a one-word vocabulary item for it or
+        // one of its lemmas ("semester" is 学期 in its own right, not because of "academic semester").
+        let mut own: HashMap<String, String> = serde_json::from_str(GLOSSARY_JSON).unwrap();
+        for (en, ja) in &entries {
+            if crate::util::tokens(en).len() == 1 {
+                own.entry(en.to_lowercase()).or_insert_with(|| ja.clone());
+            }
+        }
+        let means_on_its_own = |w: &str, ja: &str| {
+            crate::util::lemmas(w).iter().any(|l| own.get(l).map(String::as_str) == Some(ja))
+        };
+        let mut leaked = Vec::new();
+        for (en, ja) in &entries {
+            let words = crate::util::tokens(en);
+            if words.len() < 2 {
+                continue;
+            }
+            for w in &words {
+                if dict.get(w) == Some(ja) && !means_on_its_own(w, ja) {
+                    leaked.push(format!("{w} <- {en}"));
+                }
+            }
+        }
+        leaked.sort();
+        leaked.dedup();
+        assert!(leaked.is_empty(), "words carrying their phrase's meaning: {}", leaked.join(", "));
+    }
+
+    #[test]
+    fn phrases_are_found_in_running_text() {
+        let conn = init_in_memory().unwrap();
+        let dict = dictionary(&conn).unwrap();
+        let phrases = crate::util::PhraseIndex::new(dict.keys());
+        let find = |text: &str| -> Vec<String> {
+            phrases.spans(&crate::util::tokens(text)).into_iter().map(|s| s.key).collect()
+        };
+
+        assert!(find("He always requests a doggy bag for leftovers.").contains(&"doggy bag".to_string()));
+        // An idiom is written in its dictionary form; the sentence conjugates the verb and swaps in
+        // a real pronoun, and it is still the same idiom.
+        assert!(
+            find("I'm keeping my fingers crossed for you.").contains(&"keep your fingers crossed".to_string()),
+            "got {:?}",
+            find("I'm keeping my fingers crossed for you.")
+        );
+
+        // Most idioms should light up inside their own example sentence.
+        let mut stmt = conn
+            .prepare("SELECT en, example FROM questions WHERE kind = 'idiom' AND example IS NOT NULL")
+            .unwrap();
+        let rows: Vec<(String, String)> = stmt
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        let found = rows
+            .iter()
+            .filter(|(en, example)| find(example).contains(&en.to_lowercase()))
+            .count();
+        println!("idioms found in their own example: {found} / {}", rows.len());
+        assert!(found * 10 >= rows.len() * 8, "only {found} of {} idioms were recognised", rows.len());
+    }
+
     #[test]
     fn dictionary_covers_words_used_in_sentences() {
         let conn = init_in_memory().unwrap();
         let dict = dictionary(&conn).unwrap();
         assert!(dict.len() > 1000, "dictionary too small: {}", dict.len());
+        let phrases = crate::util::PhraseIndex::new(dict.keys());
 
         let mut uncovered: Vec<String> = Vec::new();
         for q in load_seed().questions.iter().filter(|q| q.kind != "word") {
@@ -686,8 +769,15 @@ mod tests {
             texts.extend(q.choices.clone().unwrap_or_default());
             texts.extend(q.example.clone());
             for text in texts {
-                for word in crate::util::tokens(&text) {
-                    if !dict.contains_key(&word) {
+                let words = crate::util::tokens(&text);
+                // A word inside a recognised phrase is covered by the phrase: hovering "dash" in
+                // "dash cam" shows ドライブレコーダー even if "dash" alone has no entry.
+                let mut in_phrase = vec![false; words.len()];
+                for span in phrases.spans(&words) {
+                    in_phrase[span.start..span.end].iter_mut().for_each(|b| *b = true);
+                }
+                for (word, covered) in words.iter().zip(in_phrase) {
+                    if !covered && !dict.contains_key(word) {
                         uncovered.push(format!("{} ({})", word, q.key));
                     }
                 }

@@ -442,7 +442,8 @@ function ChoiceCard({
     <>
       <div className="prompt-label">{isGrammar ? "空欄に入る語を選ぼう" : "この英語の意味は？"}</div>
       <div className={"prompt " + (isGrammar ? "prompt-sentence" : "")}>
-        <GlossedText text={q.display} dict={dict} enabled={glossOn} />
+        {/* The question asks for this meaning, so no phrase may give it away before the answer. */}
+        <GlossedText text={q.display} dict={dict} enabled={glossOn} withhold={chosen ? null : q.answer} />
       </div>
       <div className="options">
         {q.options.map((opt, i) => {

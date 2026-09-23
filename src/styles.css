@@ -357,6 +357,24 @@ main {
   color: var(--caramel-light);
   margin-right: 8px;
 }
+/* A phrase shows its own meaning first, then the hovered word's. */
+.gloss-line {
+  display: block;
+}
+.gloss-line.sub {
+  margin-top: 3px;
+  font-size: 12.5px;
+  opacity: 0.78;
+}
+/* Words that belong together get one solid underline, gaps included. */
+.glossed.phrase,
+.phrase-gap {
+  border-bottom: 2px solid var(--caramel);
+  border-radius: 0;
+}
+.phrase-gap.active {
+  background: #fde7b8;
+}
 
 /* ---------- listening ---------- */
 .listen-stage {

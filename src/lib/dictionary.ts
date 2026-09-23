@@ -122,6 +122,92 @@ export function expandDictionary(base: Dictionary, texts: string[]): Dictionary 
   return out;
 }
 
+/* ---------- multi-word expressions (mirrors PhraseIndex in util.rs) ---------- */
+
+const POSSESSIVES = new Set(["my", "your", "his", "her", "its", "our", "their"]);
+const OBJECTS = new Set(["me", "you", "him", "her", "it", "us", "them"]);
+const REFLEXIVES = new Set([
+  "myself", "yourself", "himself", "herself", "itself", "ourselves", "yourselves", "themselves", "oneself",
+]);
+
+/** Idioms use a stand-in pronoun ("keep your fingers crossed") that the sentence fills in. */
+function placeholderMatches(pattern: string, word: string): boolean {
+  switch (pattern) {
+    case "your": case "my": case "his": case "her": case "their": case "our": case "its":
+      return POSSESSIVES.has(word);
+    case "someone": case "somebody": case "one":
+      return POSSESSIVES.has(word) || OBJECTS.has(word);
+    case "yourself": case "oneself":
+      return REFLEXIVES.has(word);
+    default:
+      return false;
+  }
+}
+
+function phraseTokenMatches(pattern: string, word: string): boolean {
+  return pattern === word || placeholderMatches(pattern, word) || lemmas(word).includes(pattern);
+}
+
+export interface PhraseSpan {
+  /** first word, inclusive, over the sentence's words */
+  start: number;
+  /** last word, exclusive */
+  end: number;
+  /** the phrase's dictionary form, which is also its key in the dictionary */
+  key: string;
+}
+
+export interface PhraseIndex {
+  byFirst: Map<string, { words: string[]; key: string }[]>;
+}
+
+/** Every multi-word key of the dictionary, filed under the word it starts with. */
+export function buildPhraseIndex(dict: Dictionary): PhraseIndex {
+  const byFirst = new Map<string, { words: string[]; key: string }[]>();
+  for (const key of Object.keys(dict)) {
+    const words = tokenize(key);
+    if (words.length < 2) continue;
+    const list = byFirst.get(words[0]) ?? [];
+    list.push({ words, key });
+    byFirst.set(words[0], list);
+  }
+  // Longest first, so "real estate agent" wins over a shorter phrase at the same spot.
+  for (const list of byFirst.values()) {
+    list.sort((a, b) => b.words.length - a.words.length || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
+  }
+  return { byFirst };
+}
+
+function firstWordCandidates(word: string): string[] {
+  const out = lemmas(word);
+  if (POSSESSIVES.has(word)) out.push("your", "my", "his", "her", "their", "our", "its", "someone", "somebody", "one");
+  if (OBJECTS.has(word)) out.push("someone", "somebody", "one");
+  if (REFLEXIVES.has(word)) out.push("yourself", "oneself");
+  return [...new Set(out)].sort();
+}
+
+/** Left to right, longest match first; words covered by one phrase never start another. */
+export function phraseSpans(words: string[], index: PhraseIndex): PhraseSpan[] {
+  const out: PhraseSpan[] = [];
+  let i = 0;
+  while (i < words.length) {
+    let best: { n: number; key: string } | null = null;
+    for (const first of firstWordCandidates(words[i])) {
+      for (const p of index.byFirst.get(first) ?? []) {
+        if (i + p.words.length > words.length || (best && best.n >= p.words.length)) continue;
+        if (p.words.every((w, k) => phraseTokenMatches(w, words[i + k]))) best = { n: p.words.length, key: p.key };
+      }
+    }
+    if (best) {
+      out.push({ start: i, end: i + best.n, key: best.key });
+      i += best.n;
+    } else {
+      i += 1;
+    }
+  }
+  return out;
+}
+
 let cached: Promise<Dictionary> | null = null;
 
 export function loadDictionary(): Promise<Dictionary> {

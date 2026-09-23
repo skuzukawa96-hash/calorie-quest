@@ -645,8 +645,9 @@ let dictionaryCache: Dictionary | null = null;
 function mockDictionary(): Dictionary {
   if (dictionaryCache) return dictionaryCache;
   const base: Dictionary = { ...(glossary as unknown as Dictionary) };
+  // Multi-word vocabulary and idioms go in whole, as phrases; mirrors db::dictionary.
   for (const q of questions) {
-    if (q.kind === "word") base[q.en.toLowerCase()] = q.ja;
+    if (q.kind === "word" || q.kind === "idiom") base[q.en.toLowerCase()] = q.ja;
   }
   const texts = questions.flatMap((q) => [q.en, q.prompt ?? "", q.example ?? "", ...(q.choices ?? [])]);
   dictionaryCache = expandDictionary(base, texts);
