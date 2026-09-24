@@ -108,6 +108,18 @@ CREATE TABLE IF NOT EXISTS cheat_tickets (
   issued_for_streak INTEGER NOT NULL,
   used_at TEXT
 );
+CREATE TABLE IF NOT EXISTS recipe_words (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  word TEXT NOT NULL UNIQUE COLLATE NOCASE,
+  meaning TEXT NOT NULL DEFAULT '',
+  form TEXT NOT NULL DEFAULT '',
+  example TEXT NOT NULL DEFAULT '',
+  example_ja TEXT NOT NULL DEFAULT '',
+  added_at TEXT NOT NULL,
+  reviews INTEGER NOT NULL DEFAULT 0,
+  last_reviewed_at TEXT,
+  mastered_at TEXT
+);
 CREATE INDEX IF NOT EXISTS idx_history_due ON learning_history (user_id, needs_review, next_due_at);
 CREATE INDEX IF NOT EXISTS idx_log_date ON answer_log (user_id, answered_at);
 ";

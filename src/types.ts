@@ -203,6 +203,34 @@ export interface Stats {
   reviewPending: number;
 }
 
+/** One entry of お菓子作りレシピ, the learner's own word list. */
+export interface RecipeWord {
+  id: number;
+  /** dictionary form ("hear"), or the whole expression for a phrase ("doggy bag") */
+  word: string;
+  meaning: string;
+  /** the form that was right-clicked ("heard"), marked in the example */
+  form: string;
+  /** the sentence the word was found in, empty when it was a lone headword */
+  example: string;
+  exampleJa: string;
+  addedAt: string;
+  reviews: number;
+  lastReviewedAt?: string | null;
+  /** set once the word is marked learned; learned words can be cleared out */
+  masteredAt?: string | null;
+}
+
+export type RecipeWordInput = Pick<RecipeWord, "word" | "meaning" | "form" | "example" | "exampleJa">;
+
+/** added: new entry / exists: already listed / restored: was learned, now back in review */
+export type RecipeAddStatus = "added" | "exists" | "restored";
+
+export interface RecipeAddResult {
+  status: RecipeAddStatus;
+  entry: RecipeWord;
+}
+
 export interface SpeechCapabilities {
   nativeTts: boolean;
   ttsVoices: string[];

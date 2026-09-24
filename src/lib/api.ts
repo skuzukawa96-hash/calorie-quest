@@ -8,6 +8,9 @@ import type {
   Difficulty,
   Mode,
   NativeRecognition,
+  RecipeAddResult,
+  RecipeWord,
+  RecipeWordInput,
   RedeemResult,
   SessionQuestion,
   Snack,
@@ -50,6 +53,13 @@ export const api = {
   getStats: () => call<Stats>("get_stats"),
   getDictionary: () => call<Record<string, string>>("get_dictionary"),
   resetProgress: () => call<void>("reset_progress"),
+
+  // お菓子作りレシピ (the learner's word list)
+  listRecipeWords: () => call<RecipeWord[]>("list_recipe_words"),
+  addRecipeWord: (entry: RecipeWordInput) => call<RecipeAddResult>("add_recipe_word", { entry }),
+  reviewRecipeWord: (id: number, remembered: boolean) => call<RecipeWord>("review_recipe_word", { id, remembered }),
+  setRecipeMastered: (id: number, mastered: boolean) => call<RecipeWord>("set_recipe_mastered", { id, mastered }),
+  deleteRecipeWords: (ids: number[]) => call<number>("delete_recipe_words", { ids }),
   logDebug: (message: string) => call<void>("log_debug", { message }).catch(() => undefined),
 
   // Native speech (Tauri only; the mock backend reports "unavailable").

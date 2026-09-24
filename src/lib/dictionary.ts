@@ -105,6 +105,23 @@ export function lookup(dict: Dictionary | null, rawWord: string): string | undef
   return undefined;
 }
 
+/**
+ * The dictionary form of a word in running text, with its meaning: "heard" → hear 聞く.
+ * The backend files every inflected form it has seen under its own key, so "heard" is a key too;
+ * the headword is the lemma carrying the same meaning. A form whose lemma means something else
+ * stays as it is ("glasses" メガネ is not "glass" ガラス).
+ */
+export function headword(dict: Dictionary | null, rawWord: string): { word: string; meaning: string } {
+  const form = normalizeWord(rawWord);
+  const meaning = lookup(dict, rawWord);
+  if (!dict || !meaning) {
+    // Unknown words keep their spelling, so a name like "Kyoto" is not saved as "kyoto".
+    return { word: rawWord.replace(/[’']s$/, "").replace(/^['.]+|['.]+$/g, ""), meaning: "" };
+  }
+  const lemma = lemmas(form).find((l) => l !== form && dict[l] === meaning);
+  return { word: lemma ?? form, meaning };
+}
+
 /** Expands a base dictionary so every word used in `texts` is a key of its own. */
 export function expandDictionary(base: Dictionary, texts: string[]): Dictionary {
   const out: Dictionary = { ...base };

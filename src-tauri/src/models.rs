@@ -196,6 +196,58 @@ pub struct WeakQuestion {
     pub srs_level: i64,
 }
 
+/// One entry of お菓子作りレシピ, the learner's own word list.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RecipeWord {
+    pub id: i64,
+    /// Dictionary form ("hear"), or the whole expression for a phrase ("doggy bag").
+    pub word: String,
+    pub meaning: String,
+    /// The form the learner right-clicked ("heard"), so the example can mark it.
+    pub form: String,
+    /// The sentence the word was found in, with its translation when the question had one.
+    pub example: String,
+    pub example_ja: String,
+    pub added_at: String,
+    pub reviews: i64,
+    pub last_reviewed_at: Option<String>,
+    /// Set once the learner has marked the word as learned; such words may be cleared out.
+    pub mastered_at: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RecipeWordInput {
+    pub word: String,
+    #[serde(default)]
+    pub meaning: String,
+    #[serde(default)]
+    pub form: String,
+    #[serde(default)]
+    pub example: String,
+    #[serde(default)]
+    pub example_ja: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum RecipeAddStatus {
+    /// A new entry.
+    Added,
+    /// Already on the list and still being learned: nothing changes.
+    Exists,
+    /// Was marked learned, and the learner reached for it again, so it is back in review.
+    Restored,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RecipeAddResult {
+    pub status: RecipeAddStatus,
+    pub entry: RecipeWord,
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Stats {

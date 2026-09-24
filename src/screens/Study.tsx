@@ -74,6 +74,20 @@ function saveFlag(key: string, on: boolean) {
   }
 }
 
+/**
+ * The sentence a word right-clicked in `text` is saved to the recipe with. A grammar prompt still
+ * has its blank, so the completed sentence stands in; an idiom's own example beats the bare idiom.
+ */
+function recipeContext(q: SessionQuestion, text: string): { context: string; contextJa?: string | null } {
+  const { kind, ja, example, exampleJa } = q.question;
+  if (kind === "grammar") return { context: q.audioText, contextJa: ja };
+  if (kind === "idiom" && example) return { context: example, contextJa: exampleJa };
+  // A phrase or sentence is its own example, and a dialogue's heard line is what `ja` translates.
+  if (text === q.question.en && (kind === "phrase" || kind === "sentence")) return { context: text, contextJa: ja };
+  if (kind === "dialogue" && text === q.audioText) return { context: text, contextJa: ja };
+  return { context: text };
+}
+
 /** Single vocabulary items need no hover dictionary; full lines do. */
 function isMultiWord(q: SessionQuestion): boolean {
   return q.audioText.trim().includes(" ");
@@ -331,7 +345,7 @@ export default function Study({ mode, difficulty, category, rates, onExit, onPro
                 <div className="heard-line">
                   <span className="label">聞こえた英語</span>{" "}
                   <strong>
-                    <GlossedText text={current.audioText} dict={dict} enabled={glossOn} />
+                    <GlossedText text={current.audioText} dict={dict} enabled={glossOn} {...recipeContext(current, current.audioText)} />
                   </strong>
                   {current.subDisplay && <span className="muted">　{current.subDisplay}</span>}
                 </div>
@@ -340,7 +354,7 @@ export default function Study({ mode, difficulty, category, rates, onExit, onPro
                 <span className="label">正解</span>{" "}
                 <strong>
                   {/^[\x20-\x7e]+$/.test(current.answer) ? (
-                    <GlossedText text={current.answer} dict={dict} enabled={showGloss} />
+                    <GlossedText text={current.answer} dict={dict} enabled={showGloss} {...recipeContext(current, current.answer)} />
                   ) : (
                     current.answer
                   )}
@@ -355,13 +369,15 @@ export default function Study({ mode, difficulty, category, rates, onExit, onPro
               {current.question.kind === "grammar" && (
                 <div className="filled-line">
                   <span className="label">完成した文</span>{" "}
-                  <GlossedText text={current.audioText} dict={dict} enabled={showGloss} />
+                  <GlossedText text={current.audioText} dict={dict} enabled={showGloss} {...recipeContext(current, current.audioText)} />
                 </div>
               )}
               {current.grammarNote && (
                 <div className="grammar-note">
                   <div className="grammar-note-title">📘 {current.grammarNote.title}</div>
-                  <div>{current.grammarNote.body}</div>
+                  <div>
+                    <GlossedText text={current.grammarNote.body} dict={dict} enabled={showGloss} />
+                  </div>
                   <div className="grammar-note-example">
                     <GlossedText text={current.grammarNote.example} dict={dict} enabled={showGloss} />
                   </div>
@@ -371,7 +387,12 @@ export default function Study({ mode, difficulty, category, rates, onExit, onPro
                 <div className="example-line">
                   <span className="label">例文</span>
                   <div className="example-en">
-                    <GlossedText text={current.question.example} dict={dict} enabled={showGloss} />
+                    <GlossedText
+                      text={current.question.example}
+                      dict={dict}
+                      enabled={showGloss}
+                      contextJa={current.question.exampleJa}
+                    />
                     <button
                       className="btn-link"
                       onClick={() => speak(current.question.example!).catch(() => undefined)}
@@ -443,7 +464,13 @@ function ChoiceCard({
       <div className="prompt-label">{isGrammar ? "空欄に入る語を選ぼう" : "この英語の意味は？"}</div>
       <div className={"prompt " + (isGrammar ? "prompt-sentence" : "")}>
         {/* The question asks for this meaning, so no phrase may give it away before the answer. */}
-        <GlossedText text={q.display} dict={dict} enabled={glossOn} withhold={chosen ? null : q.answer} />
+        <GlossedText
+          text={q.display}
+          dict={dict}
+          enabled={glossOn}
+          withhold={chosen ? null : q.answer}
+          {...recipeContext(q, q.display)}
+        />
       </div>
       <div className="options">
         {q.options.map((opt, i) => {
@@ -594,7 +621,7 @@ function ListeningCard({
         </button>
         {answered ? (
           <div className="listen-revealed">
-            <GlossedText text={q.audioText} dict={dict} enabled={glossOn} />
+            <GlossedText text={q.audioText} dict={dict} enabled={glossOn} {...recipeContext(q, q.audioText)} />
           </div>
         ) : (
           <div className="listen-hidden" aria-hidden="true">

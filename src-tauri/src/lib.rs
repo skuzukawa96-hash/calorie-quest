@@ -1,6 +1,7 @@
 mod commands;
 mod db;
 mod models;
+mod recipe;
 mod speech;
 mod srs;
 mod util;
@@ -37,6 +38,11 @@ pub fn run() {
             commands::get_dictionary,
             commands::reset_progress,
             commands::log_debug,
+            recipe::list_recipe_words,
+            recipe::add_recipe_word,
+            recipe::review_recipe_word,
+            recipe::set_recipe_mastered,
+            recipe::delete_recipe_words,
             speech::speech_capabilities,
             speech::native_synthesize,
             speech::native_recognize,

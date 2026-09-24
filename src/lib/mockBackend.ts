@@ -16,6 +16,9 @@ import type {
   Level,
   Mode,
   Question,
+  RecipeAddResult,
+  RecipeWord,
+  RecipeWordInput,
   SessionQuestion,
   Snack,
   Stats,
@@ -67,6 +70,8 @@ interface MockState {
   snacks: Snack[];
   consumption: StoredConsumption[];
   tickets: Ticket[];
+  /** お菓子作りレシピ; absent in state saved before the list existed */
+  recipe: RecipeWord[];
   nextId: number;
 }
 
@@ -186,6 +191,7 @@ function freshState(): MockState {
     snacks: BUILTIN.map(([name, calories, icon], i) => ({ id: i + 1, name, calories, icon, isBuiltin: true })),
     consumption: [],
     tickets: [],
+    recipe: [],
     nextId: 100,
   };
 }
@@ -195,7 +201,11 @@ let state: MockState = load();
 function load(): MockState {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) return JSON.parse(raw) as MockState;
+    if (raw) {
+      // State saved before the word list existed has no `recipe`.
+      const saved = JSON.parse(raw) as Partial<MockState> & Omit<MockState, "recipe">;
+      return { ...saved, recipe: saved.recipe ?? [] };
+    }
   } catch {
     /* ignore */
   }
@@ -660,6 +670,48 @@ function mockDictionary(): Dictionary {
   return dictionaryCache;
 }
 
+/* ---------- お菓子作りレシピ (mirrors recipe.rs) ---------- */
+
+function recipeWord(id: number): RecipeWord {
+  const w = state.recipe.find((x) => x.id === id);
+  if (!w) throw new Error("その単語はレシピにありません");
+  return w;
+}
+
+function addRecipeWord(input: RecipeWordInput): RecipeAddResult {
+  const word = input.word.trim();
+  if (!/\p{L}/u.test(word)) throw new Error("レシピに入れる英単語がありません");
+  if ([...word].length > 60) throw new Error("長すぎてレシピに入れられません");
+  const example = input.example.trim();
+  const found = state.recipe.find((w) => w.word.toLowerCase() === word.toLowerCase());
+  if (found) {
+    const status = found.masteredAt ? "restored" : "exists";
+    found.masteredAt = null;
+    if (!found.example && example) {
+      found.example = example;
+      found.exampleJa = input.exampleJa.trim();
+      found.form = input.form.trim();
+    }
+    save();
+    return { status, entry: { ...found } };
+  }
+  const entry: RecipeWord = {
+    id: state.nextId++,
+    word,
+    meaning: input.meaning.trim(),
+    form: input.form.trim(),
+    example,
+    exampleJa: input.exampleJa.trim(),
+    addedAt: nowTs(),
+    reviews: 0,
+    lastReviewedAt: null,
+    masteredAt: null,
+  };
+  state.recipe.push(entry);
+  save();
+  return { status: "added", entry: { ...entry } };
+}
+
 export async function mockInvoke<T>(cmd: string, args: Record<string, unknown>): Promise<T> {
   await new Promise((r) => setTimeout(r, 30));
   const t = today();
@@ -750,9 +802,11 @@ export async function mockInvoke<T>(cmd: string, args: Record<string, unknown>):
     case "get_stats":
       return getStats() as T;
     case "reset_progress": {
-      const snacks = state.snacks;
+      // Like the snacks, the word list is the learner's own, not learning history.
+      const { snacks, recipe } = state;
       state = freshState();
       state.snacks = snacks;
+      state.recipe = recipe;
       save();
       return undefined as T;
     }
@@ -763,6 +817,35 @@ export async function mockInvoke<T>(cmd: string, args: Record<string, unknown>):
       return { nativeTts: false, ttsVoices: [], nativeStt: false, sttLanguages: [], sttError: "browser preview" } as T;
     case "get_dictionary":
       return mockDictionary() as T;
+    case "list_recipe_words":
+      return state.recipe
+        .slice()
+        .sort((a, b) => b.addedAt.localeCompare(a.addedAt) || b.id - a.id)
+        .map((w) => ({ ...w })) as T;
+    case "add_recipe_word":
+      return addRecipeWord(args.entry as RecipeWordInput) as T;
+    case "review_recipe_word": {
+      const w = recipeWord(Number(args.id));
+      const now = nowTs();
+      w.reviews += 1;
+      w.lastReviewedAt = now;
+      w.masteredAt = args.remembered ? now : null;
+      save();
+      return { ...w } as T;
+    }
+    case "set_recipe_mastered": {
+      const w = recipeWord(Number(args.id));
+      w.masteredAt = args.mastered ? (w.masteredAt ?? nowTs()) : null;
+      save();
+      return { ...w } as T;
+    }
+    case "delete_recipe_words": {
+      const ids = new Set((args.ids as number[]).map(Number));
+      const before = state.recipe.length;
+      state.recipe = state.recipe.filter((w) => !ids.has(w.id));
+      save();
+      return (before - state.recipe.length) as T;
+    }
     default:
       throw new Error(`mock backend: unknown command ${cmd}`);
   }
