@@ -763,7 +763,12 @@ pub fn redeem_cheat_ticket(state: State<'_, AppState>) -> CmdResult<RedeemResult
 #[tauri::command]
 pub fn get_stats(state: State<'_, AppState>) -> CmdResult<Stats> {
     let conn = state.db.lock().map_err(err)?;
-    let user = load_user(&conn).map_err(err)?;
+    load_stats(&conn)
+}
+
+/// Everything on the 記録 screen: totals, the last two weeks, the weakest questions and tickets.
+pub fn load_stats(conn: &Connection) -> CmdResult<Stats> {
+    let user = load_user(conn).map_err(err)?;
     let (total_kcal, total_answered, total_correct): (i64, i64, i64) = conn
         .query_row(
             "SELECT COALESCE(SUM(kcal_earned), 0), COALESCE(SUM(answered), 0), COALESCE(SUM(correct), 0) FROM daily_stats WHERE user_id = ?1",
@@ -814,12 +819,14 @@ pub fn get_stats(state: State<'_, AppState>) -> CmdResult<Stats> {
         let mut stmt = conn.prepare(&sql).map_err(err)?;
         let rows = stmt
             .query_map(params![USER_ID], |r| {
+                // The history columns come right after the question's own.
+                let h = db::Q_COL_COUNT;
                 Ok(WeakQuestion {
                     question: db::row_to_question(r)?,
-                    wrong_count: r.get(15)?,
-                    last_score: r.get(16)?,
-                    next_due: r.get(17)?,
-                    srs_level: r.get(18)?,
+                    wrong_count: r.get(h)?,
+                    last_score: r.get(h + 1)?,
+                    next_due: r.get(h + 2)?,
+                    srs_level: r.get(h + 3)?,
                 })
             })
             .map_err(err)?;
@@ -862,7 +869,7 @@ pub fn get_stats(state: State<'_, AppState>) -> CmdResult<Stats> {
         last_14_days,
         weak_questions,
         tickets,
-        review_due: due_review_count(&conn).map_err(err)?,
+        review_due: due_review_count(conn).map_err(err)?,
         review_pending,
     })
 }
@@ -944,6 +951,37 @@ mod tests {
         assert!(!r.needs_review);
         let d = load_daily(&c, &today()).unwrap();
         assert_eq!((d.answered, d.correct), (1, 1));
+    }
+
+    /// The 記録 screen stayed on "集計しています…" once any question had been missed: the weak-question
+    /// query reads the history columns after `Q_COLS`, and `point` joined `Q_COLS` without the
+    /// indices moving along, so every row failed to load and so did the whole screen.
+    #[test]
+    fn stats_list_the_questions_that_were_missed() {
+        let mut c = conn();
+        let empty = load_stats(&c).unwrap();
+        assert!(empty.weak_questions.is_empty());
+
+        let word = question_id(&c, "w002");
+        let grammar = question_id(&c, "g1682");
+        let known = question_id(&c, "w001");
+        answer(&mut c, word, "typing", false, None);
+        answer(&mut c, grammar, "choice", false, None);
+        answer(&mut c, known, "choice", true, None);
+
+        let s = load_stats(&c).unwrap();
+        assert_eq!((s.total_answered, s.total_correct), (3, 1));
+        assert_eq!(s.review_pending, 2);
+        assert_eq!(s.weak_questions.len(), 2);
+        for w in &s.weak_questions {
+            assert!([word, grammar].contains(&w.question.id));
+            assert_eq!(w.wrong_count, 1);
+            assert_eq!(w.srs_level, 0);
+            assert_eq!(w.next_due.as_deref(), Some(date_plus(1).as_str()));
+            assert!(w.last_score.is_none());
+        }
+        let g = s.weak_questions.iter().find(|w| w.question.id == grammar).unwrap();
+        assert_eq!(g.question.point.as_deref(), Some("time-clause-tense"));
     }
 
     #[test]

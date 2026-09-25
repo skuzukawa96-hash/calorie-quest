@@ -9,14 +9,33 @@ interface Props {
 
 export default function Stats({ onChanged, toast }: Props) {
   const [stats, setStats] = useState<StatsData | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [confirmReset, setConfirmReset] = useState(false);
 
   const load = useCallback(() => {
-    api.getStats().then(setStats).catch((e) => toast(String(e)));
-  }, [toast]);
+    setLoadError(null);
+    api
+      .getStats()
+      .then(setStats)
+      .catch((e) => setLoadError(String(e)));
+  }, []);
 
   useEffect(load, [load]);
 
+  // A failed load used to leave "集計しています…" on screen for good, with the reason gone
+  // after a three-second toast.
+  if (loadError && !stats) {
+    return (
+      <div className="screen">
+        <div className="card">
+          <p>記録を読み込めませんでした: {loadError}</p>
+          <button className="btn" onClick={load}>
+            再試行
+          </button>
+        </div>
+      </div>
+    );
+  }
   if (!stats) {
     return (
       <div className="screen">
