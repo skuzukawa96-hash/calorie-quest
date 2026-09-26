@@ -2,7 +2,8 @@
 name = "calorie-quest"
 version = "0.1.0"
 description = "English learning game that rewards you with snack calories"
-authors = ["s-kuz"]
+authors = ["skuzukawa96-hash"]
+license = "MIT"
 edition = "2021"
 
 [lib]

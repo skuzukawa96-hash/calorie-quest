@@ -130,3 +130,7 @@ src-tauri/
   src/speech.rs      SAPI5 読み上げ / WinRT 音声認識
   data/*.json        問題データ・会話データ・語彙集・文法解説（key で管理、追記可能）
 ```
+
+## ライセンス
+
+[MIT License](LICENSE)
