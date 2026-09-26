@@ -423,6 +423,20 @@ pub fn grammar_notes() -> &'static HashMap<String, GrammarNoteSeed> {
 /// Built from the word questions plus the glossary of supporting vocabulary, then expanded so that
 /// every inflected form appearing in a question ("studies", "running") is a key in its own right.
 /// That keeps the frontend to a plain lookup.
+/// Dictionary keys that are idioms, so the hover can say "慣用句なら" before their meaning. An idiom
+/// can also be read word for word: "The cat is under the table" is about a cat, not about
+/// something done secretly. A compound in the vocabulary ("doggy bag", "job security") has no
+/// such second reading and is left out, even when an idiom question happens to share it.
+pub fn idiom_keys(conn: &Connection) -> rusqlite::Result<Vec<String>> {
+    let mut stmt = conn.prepare(
+        "SELECT DISTINCT lower(en) FROM questions WHERE kind = 'idiom'
+           AND lower(en) NOT IN (SELECT lower(en) FROM questions WHERE kind = 'word')
+         ORDER BY 1",
+    )?;
+    let rows = stmt.query_map([], |r| r.get(0))?;
+    rows.collect()
+}
+
 pub fn dictionary(conn: &Connection) -> rusqlite::Result<HashMap<String, String>> {
     let mut map: HashMap<String, String> =
         serde_json::from_str(GLOSSARY_JSON).expect("data/glossary.json must be a valid JSON object");
@@ -720,6 +734,24 @@ mod tests {
         let conn = init_in_memory().unwrap();
         let rows: i64 = conn.query_row("SELECT COUNT(*) FROM questions", [], |r| r.get(0)).unwrap();
         assert_eq!(rows as usize, load_seed().questions.len());
+    }
+
+    /// "The cat is under the table" matched the idiom "under the table" and the hover said こっそりと,
+    /// as if the cat were up to something. Idioms are now named so the hover can hedge them.
+    #[test]
+    fn idioms_are_told_apart_from_compounds() {
+        let conn = init_in_memory().unwrap();
+        let idioms = idiom_keys(&conn).unwrap();
+        let dict = dictionary(&conn).unwrap();
+        assert!(idioms.contains(&"under the table".to_string()));
+        assert!(idioms.contains(&"keep your fingers crossed".to_string()));
+        // Vocabulary compounds have one reading only, even one an idiom question also uses.
+        assert!(!idioms.contains(&"doggy bag".to_string()));
+        assert!(!idioms.contains(&"job security".to_string()));
+        for key in &idioms {
+            assert!(dict.contains_key(key), "{key} is not a dictionary key, so the hover cannot find it");
+        }
+        assert!(idioms.len() > 1500, "only {} idioms", idioms.len());
     }
 
     /// The hover dictionary must cover the vocabulary used inside multi-word questions.

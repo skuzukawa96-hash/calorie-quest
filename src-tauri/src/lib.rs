@@ -36,6 +36,7 @@ pub fn run() {
             commands::redeem_cheat_ticket,
             commands::get_stats,
             commands::get_dictionary,
+            commands::get_idioms,
             commands::reset_progress,
             commands::log_debug,
             recipe::list_recipe_words,

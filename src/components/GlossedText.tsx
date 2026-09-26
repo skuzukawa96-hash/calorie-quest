@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   buildPhraseIndex,
   headword,
+  isIdiom,
   lemmas,
   lookup,
   normalizeWord,
@@ -41,7 +42,7 @@ interface Tip {
   word: string;
   gloss?: string;
   /** the phrase the word sits in, when it is part of one */
-  phrase?: { key: string; gloss: string };
+  phrase?: Span;
   /** what to highlight: a whole phrase, or just the one word */
   span: number | null;
   piece: number;
@@ -52,6 +53,8 @@ interface Span {
   gloss: string;
   /** its meaning is the answer being asked for, so it is not shown yet */
   hidden: boolean;
+  /** an idiom, whose words may just as well be meant literally */
+  idiom: boolean;
 }
 
 /**
@@ -122,7 +125,7 @@ export default function GlossedText({ text, dict, enabled, className, withhold, 
       for (const s of phraseSpans(words, phraseIndexFor(dict))) {
         const gloss = dict[s.key];
         if (!gloss) continue;
-        const k = spans.push({ key: s.key, gloss, hidden: gloss === withhold }) - 1;
+        const k = spans.push({ key: s.key, gloss, hidden: gloss === withhold, idiom: isIdiom(dict, s.key) }) - 1;
         for (let i = wordPiece[s.start]; i <= wordPiece[s.end - 1]; i++) spanOf[i] = k;
       }
     }
@@ -248,6 +251,9 @@ export default function GlossedText({ text, dict, enabled, className, withhold, 
           {tip.phrase && (
             <span className="gloss-line">
               <b>{tip.phrase.key}</b>
+              {/* The same words can be meant literally ("The cat is under the table"), so an idiom's
+                  meaning is offered as a reading, not asserted. */}
+              {tip.phrase.idiom && <span className="gloss-tag">慣用句なら</span>}
               {tip.phrase.gloss}
             </span>
           )}

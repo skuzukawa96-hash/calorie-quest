@@ -634,6 +634,13 @@ pub fn get_dictionary(state: State<'_, AppState>) -> CmdResult<HashMap<String, S
     db::dictionary(&conn).map_err(err)
 }
 
+/// The dictionary keys that are idioms (see `db::idiom_keys`).
+#[tauri::command]
+pub fn get_idioms(state: State<'_, AppState>) -> CmdResult<Vec<String>> {
+    let conn = state.db.lock().map_err(err)?;
+    db::idiom_keys(&conn).map_err(err)
+}
+
 #[tauri::command]
 pub fn submit_answer(state: State<'_, AppState>, payload: AnswerPayload) -> CmdResult<AnswerResult> {
     let mut conn = state.db.lock().map_err(err)?;

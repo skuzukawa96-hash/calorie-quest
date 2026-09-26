@@ -817,6 +817,12 @@ export async function mockInvoke<T>(cmd: string, args: Record<string, unknown>):
       return { nativeTts: false, ttsVoices: [], nativeStt: false, sttLanguages: [], sttError: "browser preview" } as T;
     case "get_dictionary":
       return mockDictionary() as T;
+    case "get_idioms": {
+      // Mirrors db::idiom_keys: idioms, minus any English that is also a vocabulary item.
+      const words = new Set(questions.filter((q) => q.kind === "word").map((q) => q.en.toLowerCase()));
+      const idioms = questions.filter((q) => q.kind === "idiom").map((q) => q.en.toLowerCase());
+      return [...new Set(idioms)].filter((k) => !words.has(k)).sort() as T;
+    }
     case "list_recipe_words":
       return state.recipe
         .slice()

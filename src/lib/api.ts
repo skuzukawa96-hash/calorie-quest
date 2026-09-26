@@ -52,6 +52,7 @@ export const api = {
   redeemCheatTicket: () => call<RedeemResult>("redeem_cheat_ticket"),
   getStats: () => call<Stats>("get_stats"),
   getDictionary: () => call<Record<string, string>>("get_dictionary"),
+  getIdioms: () => call<string[]>("get_idioms"),
   resetProgress: () => call<void>("reset_progress"),
 
   // お菓子作りレシピ (the learner's word list)

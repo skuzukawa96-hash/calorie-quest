@@ -225,11 +225,29 @@ export function phraseSpans(words: string[], index: PhraseIndex): PhraseSpan[] {
   return out;
 }
 
+/** Which of a dictionary's phrases are idioms, recorded when the dictionary is loaded. */
+const idiomKeys = new WeakMap<Dictionary, Set<string>>();
+
+/**
+ * Whether a phrase key is an idiom, which the words may also spell out literally: "The cat is
+ * under the table" is about where the cat is, not about something done secretly. Compounds such
+ * as "doggy bag" have only the one reading.
+ */
+export function isIdiom(dict: Dictionary | null, key: string): boolean {
+  return !!dict && (idiomKeys.get(dict)?.has(key) ?? false);
+}
+
 let cached: Promise<Dictionary> | null = null;
 
 export function loadDictionary(): Promise<Dictionary> {
   if (!cached) {
-    cached = api.getDictionary().catch(() => ({}) as Dictionary);
+    cached = Promise.all([
+      api.getDictionary().catch(() => ({}) as Dictionary),
+      api.getIdioms().catch(() => [] as string[]),
+    ]).then(([dict, idioms]) => {
+      idiomKeys.set(dict, new Set(idioms));
+      return dict;
+    });
   }
   return cached;
 }
