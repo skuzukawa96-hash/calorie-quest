@@ -3,6 +3,16 @@
 英語の問題を解くと「今日食べていいお菓子のカロリー」が貯まる、軽量な英語学習ゲームです。
 仕様は [docs/spec.md](docs/spec.md) を参照してください。
 
+![ホーム画面: 今日のおやつ予算、目標のお菓子まであと何問か、学習の開始](docs/screenshots/home.png)
+
+| 文法問題の解説と単語の意味 | お菓子作りレシピ（単語帳） |
+| --- | --- |
+| ![文法問題に正解したところ。完成した文、文法ポイントの解説、単語にカーソルを合わせた意味の表示](docs/screenshots/study.png) | ![右クリックで集めた単語の一覧。例文と訳、習得済みの印](docs/screenshots/recipe.png) |
+
+![記録画面: 累計学習日数・連続学習・正答率と、この2週間の獲得カロリー](docs/screenshots/stats.png)
+
+<sub>画面はブラウザプレビュー（`npm run dev`、モックデータ）で撮影したものです。数値はデモ用です。</sub>
+
 - バックエンド / コアロジック: **Rust**（Tauri 2, rusqlite）
 - フロントエンド: **React + TypeScript**（Vite）
 - 音声: Windows 標準の音声機能を Rust から利用（SAPI5 読み上げ、WinRT `SpeechRecognizer`）。モデルは同梱しません。
