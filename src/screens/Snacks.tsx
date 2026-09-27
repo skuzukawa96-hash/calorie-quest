@@ -29,7 +29,7 @@ export default function Snacks({ dash, onChanged, toast }: Props) {
     reload().catch((e) => toast(String(e)));
   }, [reload, toast]);
 
-  const goalId = dash.goalSnack?.id ?? null;
+  const goalIds = new Set(dash.goalSnacks.map((g) => g.id));
   const { today, savings } = dash;
   const budget = today.kcalEarned - today.kcalConsumed;
   const tickets = savings.snackTickets;
@@ -71,7 +71,7 @@ export default function Snacks({ dash, onChanged, toast }: Props) {
             </span>
           </div>
         </div>
-        <div className="savings">
+        <div className="savings-box">
           <div className="savings-head">
             <span>
               🐷 貯蓄 <b>{savings.balance.toLocaleString()}</b> / {savings.perTicket.toLocaleString()} kcal
@@ -108,11 +108,11 @@ export default function Snacks({ dash, onChanged, toast }: Props) {
       <section className="card">
         <div className="section-head">
           <h2>お菓子図鑑</h2>
-          <div className="muted">目標にすると「あと何問で食べられるか」がホームに表示されます</div>
+          <div className="muted">目標にすると「あと何問で食べられるか」がホームに表示されます（いくつでも登録できます）</div>
         </div>
         <div className="snack-grid">
           {snacks.map((s) => {
-            const isGoal = s.id === goalId;
+            const isGoal = goalIds.has(s.id);
             const affordable = budget >= s.calories;
             return (
               <div key={s.id} className={"snack-card " + (isGoal ? "goal" : "")}>
@@ -123,7 +123,8 @@ export default function Snacks({ dash, onChanged, toast }: Props) {
                   <button
                     className={"btn-small " + (isGoal ? "active" : "")}
                     disabled={busy}
-                    onClick={() => run(async () => { await api.setGoalSnack(isGoal ? null : s.id); })}
+                    title={isGoal ? "目標から外します" : "目標に加えます（いくつでも登録できます）"}
+                    onClick={() => run(async () => { await api.setGoalSnack(s.id, !isGoal); })}
                   >
                     {isGoal ? "★ 目標中" : "目標にする"}
                   </button>

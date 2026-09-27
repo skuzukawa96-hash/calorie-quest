@@ -57,7 +57,6 @@ export interface UserInfo {
   currentStreak: number;
   longestStreak: number;
   lastStudyDate?: string | null;
-  goalSnackId?: number | null;
 }
 
 export interface DailyStats {
@@ -124,7 +123,10 @@ export function categoryIcon(name: string): string {
 export interface Dashboard {
   user: UserInfo;
   today: DailyStats;
-  goalSnack?: Snack | null;
+  /** 目標のお菓子（カロリーの少ない順） */
+  goalSnacks: Snack[];
+  /** 今日食べたお菓子の id。目標やバーのアイコンに「食べた」を付ける */
+  eatenToday: number[];
   snacks: Snack[];
   categories: CategoryInfo[];
   dueReviewCount: number;

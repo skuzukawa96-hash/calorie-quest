@@ -667,6 +667,10 @@ main {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  /* div and button badges sit in one row: same font box, no wrapping */
+  font-size: 15px;
+  line-height: 1.5;
+  white-space: nowrap;
   background: #fff;
   border: 1px solid var(--line);
   border-radius: 999px;
@@ -690,7 +694,7 @@ main {
 }
 
 /* ---------- savings: yesterday's leftover kcal, toward a snack ticket ---------- */
-.savings {
+.savings-box {
   margin: 4px 0 16px;
   padding: 12px 14px;
   background: #fdf6f8;
@@ -792,9 +796,39 @@ main {
   color: var(--muted);
   opacity: 0.55;
   pointer-events: auto;
+  /* a button: clicking the icon records that snack as eaten */
+  border: 0;
+  background: none;
+  padding: 0;
+  font-family: inherit;
+}
+.milestone:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+.milestone:not(:disabled):hover .milestone-icon {
+  transform: scale(1.12);
+  border-color: var(--caramel-dark);
+}
+.milestone-check {
+  position: absolute;
+  top: -4px;
+  right: -6px;
+  width: 17px;
+  height: 17px;
+  border-radius: 50%;
+  background: var(--mint);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 17px;
+  text-align: center;
 }
 .milestone.reached,
-.milestone.goal {
+.milestone.goal,
+.milestone.eaten,
+.milestone.reached:disabled,
+.milestone.goal:disabled {
   opacity: 1;
 }
 .milestone.goal .milestone-icon {
@@ -807,6 +841,7 @@ main {
   border-radius: 50%;
   padding: 5px;
   border: 2px solid var(--line);
+  transition: transform 0.12s ease;
 }
 .milestone.reached .milestone-icon {
   border-color: var(--caramel);
@@ -831,6 +866,65 @@ main {
   padding: 12px 16px;
   border-radius: 12px;
   font-weight: 700;
+}
+/* Several goals, one row each: what is left, and eat or drop it right here. */
+.goal-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+.goal-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 14px;
+  background: var(--cream);
+  border-radius: 14px;
+}
+.goal-row.eaten {
+  background: var(--mint-bg);
+}
+.goal-row .goal-icon {
+  font-size: 34px;
+}
+.goal-main {
+  flex: 1;
+  min-width: 0;
+}
+.goal-row .goal-name {
+  font-size: 17px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.goal-row .goal-reached {
+  margin-top: 4px;
+  padding: 4px 10px;
+  display: inline-block;
+  font-size: 14px;
+}
+.goal-need {
+  margin-top: 2px;
+  font-size: 13.5px;
+  color: var(--muted);
+}
+.goal-need b {
+  color: var(--caramel-dark);
+  font-size: 16px;
+}
+.goal-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.pill.eaten {
+  background: #fff;
+  color: var(--mint);
+  border: 1px solid #c6e3cf;
 }
 .goal-empty {
   display: flex;

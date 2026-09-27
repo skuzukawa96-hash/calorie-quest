@@ -3,32 +3,41 @@ import type { Snack } from "../types";
 interface Props {
   earned: number;
   consumed: number;
-  goal: Snack | null | undefined;
+  /** goal snacks; the bar runs up to the dearest of them */
+  goals: Snack[];
   snacks: Snack[];
+  /** ids of snacks eaten today, marked with a check */
+  eatenToday: number[];
+  /** clicking an icon records that snack as eaten */
+  onEat?: (snack: Snack) => void;
 }
 
-/** Today's calorie progress with snack icons as milestones along the bar. */
-export default function CalorieBar({ earned, consumed, goal, snacks }: Props) {
-  const max = goal ? goal.calories : Math.max(250, Math.ceil((earned + 1) / 100) * 100);
-  const pct = Math.min(100, (earned / max) * 100);
+/** Keep icons at least this far apart (% of the bar) so neighbours such as 230 and 250 kcal don't overlap. */
+const MIN_GAP = 9;
 
-  // Unique-calorie built-in snacks that fit on the bar, at most 5 so the icons don't overlap.
-  const seen = new Set<number>();
-  const milestones = snacks
-    .filter((s) => s.isBuiltin && s.calories <= max && s.calories > 0)
+/**
+ * Today's calorie progress with snack icons as milestones along the bar. Every goal snack sits at
+ * its own calorie mark, and a few built-in snacks fill the gaps. Clicking an icon eats that snack.
+ */
+export default function CalorieBar({ earned, consumed, goals, snacks, eatenToday, onEat }: Props) {
+  const max = goals.length > 0 ? Math.max(...goals.map((g) => g.calories)) : Math.max(250, Math.ceil((earned + 1) / 100) * 100);
+  const pct = Math.min(100, (earned / max) * 100);
+  const at = (s: Snack) => Math.min(100, (s.calories / max) * 100);
+
+  // Goals always show; then unique-calorie built-in snacks wherever there is room.
+  const placed: Array<{ snack: Snack; goal: boolean }> = goals.map((snack) => ({ snack, goal: true }));
+  const goalIds = new Set(goals.map((g) => g.id));
+  const seen = new Set<number>(goals.map((g) => g.calories));
+  const candidates = snacks
+    .filter((s) => s.isBuiltin && s.calories > 0 && s.calories <= max && !goalIds.has(s.id))
     .filter((s) => (seen.has(s.calories) ? false : (seen.add(s.calories), true)))
     .sort((a, b) => a.calories - b.calories);
-  // Keep icons at least 9% of the bar apart so neighbours (e.g. 230 and 250 kcal) don't overlap.
-  const shown: Snack[] = [];
-  let lastPct = -100;
-  for (const s of milestones) {
-    const pct = (s.calories / max) * 100;
-    if (pct - lastPct >= 9 && (!goal || pct <= 91)) {
-      shown.push(s);
-      lastPct = pct;
-    }
+  for (const s of candidates) {
+    if (placed.every((p) => Math.abs(at(p.snack) - at(s)) >= MIN_GAP)) placed.push({ snack: s, goal: false });
   }
+  placed.sort((a, b) => a.snack.calories - b.snack.calories);
 
+  const eaten = new Set(eatenToday);
   const representative = snacks
     .filter((s) => s.calories <= earned)
     .sort((a, b) => b.calories - a.calories)[0];
@@ -58,27 +67,28 @@ export default function CalorieBar({ earned, consumed, goal, snacks }: Props) {
       </div>
       <div className="bar-track" role="progressbar" aria-valuenow={earned} aria-valuemin={0} aria-valuemax={max}>
         <div className="bar-fill" style={{ width: `${pct}%` }} />
-        {shown.map((s) => {
-          const left = Math.min(98, (s.calories / max) * 100);
-          const reached = earned >= s.calories;
+        {placed.map(({ snack: s, goal }) => {
+          const ate = eaten.has(s.id);
+          const cls = ["milestone", earned >= s.calories ? "reached" : "", goal ? "goal" : "", ate ? "eaten" : ""]
+            .filter(Boolean)
+            .join(" ");
+          const over = budget < s.calories ? "（今日の残りを超えます）" : "";
           return (
-            <div
+            <button
               key={s.id}
-              className={"milestone " + (reached ? "reached" : "")}
-              style={{ left: `${left}%` }}
-              title={`${s.name} ${s.calories} kcal`}
+              type="button"
+              className={cls}
+              style={{ left: `${goal ? at(s) : Math.min(98, at(s))}%` }}
+              disabled={!onEat}
+              title={`${goal ? "目標: " : ""}${s.name} ${s.calories} kcal${ate ? "（今日食べた）" : ""}\nクリックで「食べた」を記録${over}`}
+              onClick={() => onEat?.(s)}
             >
               <span className="milestone-icon">{s.icon}</span>
+              {ate && <span className="milestone-check">✓</span>}
               <span className="milestone-kcal">{s.calories}</span>
-            </div>
+            </button>
           );
         })}
-        {goal && (
-          <div className="milestone goal" style={{ left: "100%" }} title={`目標: ${goal.name}`}>
-            <span className="milestone-icon">{goal.icon}</span>
-            <span className="milestone-kcal">{goal.calories}</span>
-          </div>
-        )}
       </div>
     </div>
   );

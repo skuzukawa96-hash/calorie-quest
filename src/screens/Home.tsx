@@ -1,7 +1,7 @@
 import { useState } from "react";
 import CalorieBar from "../components/CalorieBar";
 import { api } from "../lib/api";
-import { playFanfare } from "../lib/sfx";
+import { playCrunch, playFanfare } from "../lib/sfx";
 import {
   ALL_CATEGORIES,
   categoryIcon,
@@ -9,6 +9,7 @@ import {
   type Dashboard,
   type Difficulty,
   type Mode,
+  type Snack,
 } from "../types";
 
 interface Props {
@@ -30,10 +31,35 @@ export default function Home({ dash, onStart, onChanged, goToSnacks, toast }: Pr
   const [difficulty, setDifficulty] = useState<Difficulty>("low");
   const [category, setCategory] = useState<string>(ALL_CATEGORIES);
   const [redeeming, setRedeeming] = useState(false);
-  const { today, user, goalSnack, kcalRates, savings } = dash;
+  const [busy, setBusy] = useState(false);
+  const { today, user, goalSnacks, eatenToday, kcalRates, savings } = dash;
 
-  const remaining = goalSnack ? Math.max(0, goalSnack.calories - today.kcalEarned) : 0;
-  const need = (rate: number) => Math.ceil(remaining / rate);
+  // What is still left to spend today; a goal is within reach once it fits in there.
+  const budget = today.kcalEarned - today.kcalConsumed;
+  const need = (remaining: number, rate: number) => Math.ceil(remaining / rate);
+
+  const act = async (fn: () => Promise<void>) => {
+    setBusy(true);
+    try {
+      await fn();
+      onChanged();
+    } catch (e) {
+      toast(String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const eat = (s: Snack) =>
+    act(async () => {
+      await api.logSnackEaten(s.id);
+      playCrunch();
+      toast(`${s.icon} ${s.name}（${s.calories} kcal）を食べました。取り消しはお菓子図鑑から`);
+    });
+  const dropGoal = (s: Snack) =>
+    act(async () => {
+      await api.setGoalSnack(s.id, false);
+      toast(`${s.icon} ${s.name} を目標から外しました（お菓子図鑑には残っています）`);
+    });
 
   const countFor = (c: { total: number; low: number; mid: number; high: number }) =>
     difficulty === "mixed" ? c.total : c[difficulty];
@@ -92,48 +118,69 @@ export default function Home({ dash, onStart, onChanged, goToSnacks, toast }: Pr
             )}
           </div>
         </div>
-        <CalorieBar earned={today.kcalEarned} consumed={today.kcalConsumed} goal={goalSnack} snacks={dash.snacks} />
+        <CalorieBar
+          earned={today.kcalEarned}
+          consumed={today.kcalConsumed}
+          goals={goalSnacks}
+          snacks={dash.snacks}
+          eatenToday={eatenToday}
+          onEat={busy ? undefined : (s) => void eat(s)}
+        />
       </section>
 
       <section className="card goal">
-        {goalSnack ? (
+        {goalSnacks.length > 0 ? (
           <>
-            <div className="goal-head">
-              <span className="goal-icon">{goalSnack.icon}</span>
-              <div>
-                <div className="label">目標のお菓子</div>
-                <div className="goal-name">
-                  {goalSnack.name} <span className="muted">{goalSnack.calories} kcal</span>
-                </div>
-              </div>
+            <div className="section-head">
+              <h2>目標のお菓子</h2>
               <button className="btn-link" onClick={goToSnacks}>
-                変更
+                ＋ 図鑑から追加
               </button>
             </div>
-            {remaining === 0 ? (
-              <div className="goal-reached">🎉 もう食べられます！お疲れさま！</div>
-            ) : (
-              <div className="need-grid">
-                <div className="need">
-                  <div className="need-num">あと {need(kcalRates.low)} 問</div>
-                  <div className="muted">英単語（{kcalRates.low} kcal/問）</div>
-                </div>
-                <div className="need">
-                  <div className="need-num">あと {need(kcalRates.mid)} 問</div>
-                  <div className="muted">フレーズ・文法（{kcalRates.mid} kcal/問）</div>
-                </div>
-                <div className="need">
-                  <div className="need-num">あと {need(kcalRates.high)} 問</div>
-                  <div className="muted">慣用句・長文（{kcalRates.high} kcal/問）</div>
-                </div>
-              </div>
-            )}
+            <ul className="goal-list">
+              {goalSnacks.map((g) => {
+                const remaining = Math.max(0, g.calories - budget);
+                const ate = eatenToday.includes(g.id);
+                return (
+                  <li key={g.id} className={"goal-row" + (ate ? " eaten" : "")}>
+                    <span className="goal-icon">{g.icon}</span>
+                    <div className="goal-main">
+                      <div className="goal-name">
+                        {g.name} <span className="muted">{g.calories} kcal</span>
+                        {ate && <span className="pill eaten">✓ 今日食べた</span>}
+                      </div>
+                      {remaining === 0 ? (
+                        <div className="goal-reached">🎉 もう食べられます！</div>
+                      ) : (
+                        <div className="goal-need">
+                          あと <b>{need(remaining, kcalRates.low)}</b> 問（英単語）・<b>{need(remaining, kcalRates.mid)}</b> 問（フレーズ・文法）・
+                          <b>{need(remaining, kcalRates.high)}</b> 問（慣用句・長文）
+                        </div>
+                      )}
+                    </div>
+                    <div className="goal-actions">
+                      <button
+                        className={"btn-small eat " + (remaining === 0 ? "" : "over")}
+                        disabled={busy}
+                        title={remaining === 0 ? "今日の残りカロリーで食べられます" : "今日の残りを超えます（記録は可能）"}
+                        onClick={() => void eat(g)}
+                      >
+                        食べた！
+                      </button>
+                      <button className="btn-link danger" disabled={busy} title="目標から外します（お菓子図鑑には残ります）" onClick={() => void dropGoal(g)}>
+                        削除
+                      </button>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
           </>
         ) : (
           <div className="goal-empty">
             <div>
               <div className="goal-name">目標のお菓子を決めよう</div>
-              <div className="muted">「あと何問で食べられるか」が表示されるようになります。</div>
+              <div className="muted">「あと何問で食べられるか」が表示されるようになります。いくつでも登録できます。</div>
             </div>
             <button className="btn btn-primary" onClick={goToSnacks}>
               お菓子図鑑を開く

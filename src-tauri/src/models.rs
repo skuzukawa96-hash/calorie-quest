@@ -70,7 +70,6 @@ pub struct UserInfo {
     pub current_streak: i64,
     pub longest_streak: i64,
     pub last_study_date: Option<String>,
-    pub goal_snack_id: Option<i64>,
 }
 
 #[derive(Debug, Clone, Default, Serialize)]
@@ -118,7 +117,10 @@ pub struct CategoryInfo {
 pub struct Dashboard {
     pub user: UserInfo,
     pub today: DailyStats,
-    pub goal_snack: Option<Snack>,
+    /// 目標のお菓子（カロリーの少ない順）
+    pub goal_snacks: Vec<Snack>,
+    /// 今日食べたお菓子の id（重複なし）。目標やバーのアイコンに「食べた」を付ける
+    pub eaten_today: Vec<i64>,
     pub snacks: Vec<Snack>,
     pub categories: Vec<CategoryInfo>,
     pub due_review_count: i64,

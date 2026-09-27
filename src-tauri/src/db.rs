@@ -127,6 +127,10 @@ CREATE TABLE IF NOT EXISTS cheat_tickets (
   issued_for_streak INTEGER NOT NULL,
   used_at TEXT
 );
+CREATE TABLE IF NOT EXISTS goal_snacks (
+  snack_id INTEGER PRIMARY KEY,
+  added_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS snack_tickets (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   user_id INTEGER NOT NULL,
@@ -245,6 +249,14 @@ fn setup(conn: Connection) -> rusqlite::Result<Connection> {
         "INSERT OR IGNORE INTO users (id, name, created_at) VALUES (1, 'Player', ?1)",
         params![now_ts()],
     )?;
+    // One goal snack used to live in users.goal_snack_id; goals are now a list. Move it over
+    // once and clear the old column, which nothing reads any more.
+    conn.execute(
+        "INSERT OR IGNORE INTO goal_snacks (snack_id, added_at)
+         SELECT goal_snack_id, ?1 FROM users WHERE goal_snack_id IS NOT NULL",
+        params![now_ts()],
+    )?;
+    conn.execute("UPDATE users SET goal_snack_id = NULL WHERE goal_snack_id IS NOT NULL", [])?;
     seed_questions(&conn)?;
     seed_snacks(&conn)?;
     Ok(conn)
@@ -782,6 +794,29 @@ mod tests {
         assert_eq!(saved(&today), None);
         let balance: i64 = conn.query_row("SELECT savings_kcal FROM users WHERE id = 1", [], |r| r.get(0)).unwrap();
         assert_eq!(balance, 0);
+    }
+
+    /// The single goal of earlier versions becomes the first entry of the goal list.
+    #[test]
+    fn the_old_single_goal_moves_into_the_goal_list() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(SCHEMA).unwrap();
+        conn.execute(
+            "INSERT INTO snacks (id, name, calories, icon, is_builtin, created_at) VALUES (77, 'たい焼き', 220, '🐟', 0, 'x')",
+            [],
+        )
+        .unwrap();
+        conn.execute("INSERT INTO users (id, name, created_at, goal_snack_id) VALUES (1, 'Player', 'x', 77)", [])
+            .unwrap();
+        let conn = setup(conn).unwrap();
+        let goals: Vec<i64> = {
+            let mut stmt = conn.prepare("SELECT snack_id FROM goal_snacks").unwrap();
+            let rows = stmt.query_map([], |r| r.get(0)).unwrap();
+            rows.map(Result::unwrap).collect()
+        };
+        assert_eq!(goals, vec![77]);
+        let old: Option<i64> = conn.query_row("SELECT goal_snack_id FROM users WHERE id = 1", [], |r| r.get(0)).unwrap();
+        assert_eq!(old, None);
     }
 
     #[test]

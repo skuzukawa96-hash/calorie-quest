@@ -20,7 +20,7 @@ fn err<E: std::fmt::Display>(e: E) -> String {
 
 fn load_user(conn: &Connection) -> rusqlite::Result<UserInfo> {
     conn.query_row(
-        "SELECT id, name, total_study_days, current_streak, longest_streak, last_study_date, goal_snack_id
+        "SELECT id, name, total_study_days, current_streak, longest_streak, last_study_date
          FROM users WHERE id = ?1",
         params![USER_ID],
         |r| {
@@ -31,7 +31,6 @@ fn load_user(conn: &Connection) -> rusqlite::Result<UserInfo> {
                 current_streak: r.get(3)?,
                 longest_streak: r.get(4)?,
                 last_study_date: r.get(5)?,
-                goal_snack_id: r.get(6)?,
             })
         },
     )
@@ -70,6 +69,39 @@ fn list_snacks_inner(conn: &Connection) -> rusqlite::Result<Vec<Snack>> {
         conn.prepare("SELECT id, name, calories, icon, is_builtin FROM snacks ORDER BY calories ASC, id ASC")?;
     let rows = stmt.query_map([], db::row_to_snack)?;
     rows.collect()
+}
+
+/// The snacks set as goals, cheapest first: the next one within reach leads the list.
+pub fn goal_snacks_inner(conn: &Connection) -> rusqlite::Result<Vec<Snack>> {
+    let mut stmt = conn.prepare(
+        "SELECT s.id, s.name, s.calories, s.icon, s.is_builtin FROM goal_snacks g JOIN snacks s ON s.id = g.snack_id
+         ORDER BY s.calories ASC, g.added_at ASC, s.id ASC",
+    )?;
+    let rows = stmt.query_map([], db::row_to_snack)?;
+    rows.collect()
+}
+
+/// Snacks eaten today, whether paid in kcal or with a ticket.
+fn eaten_today(conn: &Connection) -> rusqlite::Result<Vec<i64>> {
+    let mut stmt = conn.prepare(
+        "SELECT DISTINCT snack_id FROM consumption_log WHERE user_id = ?1 AND date = ?2 AND snack_id IS NOT NULL ORDER BY snack_id",
+    )?;
+    let rows = stmt.query_map(params![USER_ID, today()], |r| r.get(0))?;
+    rows.collect()
+}
+
+pub fn set_goal(conn: &Connection, snack_id: i64, goal: bool) -> CmdResult<Vec<Snack>> {
+    if goal {
+        load_snack(conn, snack_id).map_err(err)?.ok_or_else(|| "snack not found".to_string())?;
+        conn.execute(
+            "INSERT OR IGNORE INTO goal_snacks (snack_id, added_at) VALUES (?1, ?2)",
+            params![snack_id, now_ts()],
+        )
+        .map_err(err)?;
+    } else {
+        conn.execute("DELETE FROM goal_snacks WHERE snack_id = ?1", params![snack_id]).map_err(err)?;
+    }
+    goal_snacks_inner(conn).map_err(err)
 }
 
 fn due_review_count(conn: &Connection) -> rusqlite::Result<i64> {
@@ -733,13 +765,10 @@ pub fn load_dashboard(conn: &Connection) -> CmdResult<Dashboard> {
     let (just_saved, just_issued) = settle_savings(conn).map_err(err)?;
     let user = load_user(conn).map_err(err)?;
     let today_stats = load_daily(conn, &today()).map_err(err)?;
-    let goal_snack = match user.goal_snack_id {
-        Some(id) => load_snack(conn, id).map_err(err)?,
-        None => None,
-    };
     Ok(Dashboard {
         today: today_stats,
-        goal_snack,
+        goal_snacks: goal_snacks_inner(conn).map_err(err)?,
+        eaten_today: eaten_today(conn).map_err(err)?,
         snacks: list_snacks_inner(conn).map_err(err)?,
         categories: category_infos(conn).map_err(err)?,
         due_review_count: due_review_count(conn).map_err(err)?,
@@ -817,30 +846,27 @@ pub fn add_snack(state: State<'_, AppState>, name: String, calories: i64, icon: 
 #[tauri::command]
 pub fn delete_snack(state: State<'_, AppState>, id: i64) -> CmdResult<()> {
     let conn = state.db.lock().map_err(err)?;
-    conn.execute(
-        "UPDATE users SET goal_snack_id = NULL WHERE id = ?1 AND goal_snack_id = ?2",
-        params![USER_ID, id],
-    )
-    .map_err(err)?;
+    conn.execute("DELETE FROM goal_snacks WHERE snack_id = ?1", params![id]).map_err(err)?;
     conn.execute("DELETE FROM snacks WHERE id = ?1", params![id]).map_err(err)?;
     Ok(())
 }
 
+/// Adds a snack to the goals (`goal: true`) or takes it off; the snack stays in the book.
 #[tauri::command]
-pub fn set_goal_snack(state: State<'_, AppState>, id: Option<i64>) -> CmdResult<Option<Snack>> {
+pub fn set_goal_snack(state: State<'_, AppState>, id: i64, goal: bool) -> CmdResult<Vec<Snack>> {
     let conn = state.db.lock().map_err(err)?;
-    conn.execute("UPDATE users SET goal_snack_id = ?1 WHERE id = ?2", params![id, USER_ID])
-        .map_err(err)?;
-    match id {
-        Some(id) => load_snack(&conn, id).map_err(err),
-        None => Ok(None),
-    }
+    set_goal(&conn, id, goal)
 }
 
 #[tauri::command]
 pub fn log_snack_eaten(state: State<'_, AppState>, snack_id: i64) -> CmdResult<DailyStats> {
     let conn = state.db.lock().map_err(err)?;
-    let snack = load_snack(&conn, snack_id)
+    log_eaten(&conn, snack_id)
+}
+
+/// Records a snack eaten today and spends its kcal from today's budget.
+pub fn log_eaten(conn: &Connection, snack_id: i64) -> CmdResult<DailyStats> {
+    let snack = load_snack(conn, snack_id)
         .map_err(err)?
         .ok_or_else(|| "snack not found".to_string())?;
     let today = today();
@@ -855,7 +881,7 @@ pub fn log_snack_eaten(state: State<'_, AppState>, snack_id: i64) -> CmdResult<D
         params![USER_ID, today, snack.calories],
     )
     .map_err(err)?;
-    load_daily(&conn, &today).map_err(err)
+    load_daily(conn, &today).map_err(err)
 }
 
 #[tauri::command]
@@ -1269,6 +1295,33 @@ mod tests {
         assert_eq!((d.savings.just_saved, d.savings.just_issued), (2250, 2));
         assert_eq!(d.savings.balance, 150);
         assert_eq!(d.savings.snack_tickets, 2);
+    }
+
+    fn snack_id(conn: &Connection, name: &str) -> i64 {
+        conn.query_row("SELECT id FROM snacks WHERE name = ?1", params![name], |r| r.get(0)).unwrap()
+    }
+
+    #[test]
+    fn several_snacks_can_be_goals_and_eating_one_shows_on_the_dashboard() {
+        let c = conn();
+        let cake = snack_id(&c, "ショートケーキ");
+        let pudding = snack_id(&c, "プリン");
+        set_goal(&c, cake, true).unwrap();
+        let goals = set_goal(&c, pudding, true).unwrap();
+        assert_eq!(goals.iter().map(|s| s.id).collect::<Vec<_>>(), vec![pudding, cake], "cheapest first");
+        assert_eq!(set_goal(&c, cake, true).unwrap().len(), 2, "adding twice keeps one entry");
+
+        let d = log_eaten(&c, pudding).unwrap();
+        assert_eq!(d.kcal_consumed, 150);
+        let dash = load_dashboard(&c).unwrap();
+        assert_eq!(dash.eaten_today, vec![pudding]);
+        assert_eq!(dash.goal_snacks.len(), 2, "eating a goal does not remove it");
+
+        // Taking it off the goals leaves the snack in the book.
+        let goals = set_goal(&c, pudding, false).unwrap();
+        assert_eq!(goals.iter().map(|s| s.id).collect::<Vec<_>>(), vec![cake]);
+        assert!(load_snack(&c, pudding).unwrap().is_some());
+        assert!(set_goal(&c, 999_999, true).is_err(), "no goal for a snack that does not exist");
     }
 
     #[test]
