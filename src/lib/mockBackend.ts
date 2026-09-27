@@ -910,11 +910,13 @@ export async function mockInvoke<T>(cmd: string, args: Record<string, unknown>):
     case "get_stats":
       return getStats() as T;
     case "reset_progress": {
-      // Like the snacks, the word list is the learner's own, not learning history.
-      const { snacks, recipe } = state;
+      // Like the snacks, the word list and the goals are the learner's own, not learning history
+      // (reset_progress in Rust leaves recipe_words and goal_snacks alone too).
+      const { snacks, recipe, goals } = state;
       state = freshState();
       state.snacks = snacks;
       state.recipe = recipe;
+      state.goals = goals;
       save();
       return undefined as T;
     }
