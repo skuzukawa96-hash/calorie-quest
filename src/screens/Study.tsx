@@ -3,7 +3,16 @@ import GlossedText from "../components/GlossedText";
 import PronunciationTips, { HighlightedText } from "../components/PronunciationTips";
 import { api, runningInTauri } from "../lib/api";
 import { loadDictionary, type Dictionary } from "../lib/dictionary";
-import { checkTyping, maskWord, PASS_SCORE, scorePronunciation, type PronunciationScore, type TipKey } from "../lib/scoring";
+import {
+  answerWordCount,
+  checkTyping,
+  maskWord,
+  PASS_SCORE,
+  scorePronunciation,
+  scoresPerWord,
+  type PronunciationScore,
+  type TipKey,
+} from "../lib/scoring";
 import { playCrunch, playFanfare, playPop, playWrong } from "../lib/sfx";
 import {
   describeRecognitionError,
@@ -504,6 +513,9 @@ function TypingCard({ q, disabled, onAnswer }: { q: SessionQuestion; disabled: b
   }, []);
 
   const hintWords = q.answer.split(" ");
+  // フレーズの記入問題は1語 1 kcal、開示した語1つにつき −1 kcal。ほかは開示1語ごとに半分。
+  const perWord = scoresPerWord(q.question.difficulty, q.mode);
+  const worth = answerWordCount(q.answer);
 
   return (
     <form
@@ -537,7 +549,7 @@ function TypingCard({ q, disabled, onAnswer }: { q: SessionQuestion; disabled: b
         {showHint && (
           <code className="hint">
             {hintWords.map((word, i) => {
-              const masked = maskWord(word);
+              const masked = maskWord(word, perWord);
               if (revealed.includes(i)) return <span key={i} className="hint-word revealed">{word}</span>;
               if (masked === word) return <span key={i}>{word}</span>;
               return (
@@ -546,7 +558,7 @@ function TypingCard({ q, disabled, onAnswer }: { q: SessionQuestion; disabled: b
                   type="button"
                   className="hint-word"
                   disabled={disabled}
-                  title="タップでこの単語を表示（獲得カロリーが半分になります）"
+                  title={perWord ? "タップでこの単語を表示（1 kcal 減点）" : "タップでこの単語を表示（獲得カロリーが半分になります）"}
                   onClick={() => setRevealed((r) => [...r, i])}
                 >
                   {masked}
@@ -555,7 +567,13 @@ function TypingCard({ q, disabled, onAnswer }: { q: SessionQuestion; disabled: b
             })}
           </code>
         )}
-        {revealed.length > 0 && <span className="muted small">獲得カロリー ×1/{2 ** revealed.length}</span>}
+        {perWord ? (
+          <span className="muted small">
+            1語 1 kcal：{revealed.length > 0 ? `${worth} − ${revealed.length} = ${Math.max(0, worth - revealed.length)}` : worth} kcal
+          </span>
+        ) : (
+          revealed.length > 0 && <span className="muted small">獲得カロリー ×1/{2 ** revealed.length}</span>
+        )}
       </div>
     </form>
   );

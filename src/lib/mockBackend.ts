@@ -4,6 +4,7 @@ import seedJson from "../../src-tauri/data/questions.json";
 import glossary from "../../src-tauri/data/glossary.json";
 import grammarNotes from "../../src-tauri/data/grammar-notes.json";
 import { expandDictionary, type Dictionary } from "./dictionary";
+import { answerWordCount, scoresPerWord } from "./scoring";
 import type {
   AnswerPayload,
   AnswerResult,
@@ -557,13 +558,16 @@ function submitAnswer(p: AnswerPayload): AnswerResult {
   const isDueReview = h.needsReview && h.nextDue !== null && h.nextDue <= t;
   const lowScore = p.mode === "speaking" && (p.score ?? 100) < 70;
   const base = RATES[q.difficulty];
+  const hints = Math.max(0, p.hintsUsed ?? 0);
+  // srs.rs と同じ: フレーズの記入問題は1語 1 kcal、開示1語ごとに −1。ほかは開示1語ごとに半分。
+  const perWord = scoresPerWord(q.difficulty, p.mode);
   let kcal = 0;
   if (p.correct) {
-    kcal = p.mode === "speaking" ? Math.round((base * Math.min(100, Math.max(0, p.score ?? 100))) / 100) : base;
+    if (perWord) kcal = Math.max(0, answerWordCount(q.en) - hints);
+    else kcal = p.mode === "speaking" ? Math.round((base * Math.min(100, Math.max(0, p.score ?? 100))) / 100) : base;
     if (isDueReview) kcal = Math.round(kcal * RATES.reviewMultiplier);
   }
-  // ヒントで1語開示するごとに半分（srs.rs の apply_hint_penalty と同じ計算）
-  kcal = Math.round(kcal / 2 ** Math.min(30, Math.max(0, p.hintsUsed ?? 0)));
+  if (!perWord) kcal = Math.round(kcal / 2 ** Math.min(30, hints));
   let level = h.level;
   let needsReview = false;
   let nextDue: string | null = null;

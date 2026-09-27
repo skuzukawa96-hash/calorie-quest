@@ -128,9 +128,24 @@ export function detectTrickySounds(text: string): TipKey[] {
   return keys;
 }
 
-/** ヒント1語分。"Nice" -> "N___"（記号はそのまま、2文字目以降の英字だけ伏せる） */
-export function maskWord(word: string): string {
+/**
+ * ヒント1語分。"Nice" -> "N___"（記号はそのまま、2文字目以降の英字だけ伏せる）。
+ * `everyWord` のときは、そのままだと丸見えになる語（"I"・"a"・"3D"）も "_" で伏せる。
+ * 1語ごとに配点する問題では、どの語も開示できないと「全部開示したら 0 kcal」にならないため。
+ */
+export function maskWord(word: string, everyWord = false): string {
   const m = word.match(/^([a-zA-Z])(.*)$/);
-  if (!m) return word;
-  return m[1] + m[2].replace(/[a-zA-Z]/g, "_");
+  const masked = m ? m[1] + m[2].replace(/[a-zA-Z]/g, "_") : word;
+  if (everyWord && masked === word && /[\p{L}\p{N}]/u.test(word)) return word.replace(/[\p{L}\p{N}]/gu, "_");
+  return masked;
+}
+
+/** 答えの単語数。`srs::answer_word_count` と同じく、英字か数字を含む語を数える。 */
+export function answerWordCount(answer: string): number {
+  return answer.split(/\s+/).filter((w) => /[\p{L}\p{N}]/u.test(w)).length;
+}
+
+/** 中難易度の記入問題は1語 1 kcal、ヒント1語ごとに −1 kcal（`srs::scores_per_word`）。 */
+export function scoresPerWord(difficulty: string, mode: string): boolean {
+  return difficulty === "mid" && mode === "typing";
 }

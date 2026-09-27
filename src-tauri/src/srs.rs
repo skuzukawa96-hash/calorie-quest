@@ -40,7 +40,30 @@ pub fn apply_review_bonus(kcal: i64) -> i64 {
     ((kcal as f64) * REVIEW_MULTIPLIER).round() as i64
 }
 
-/// ヒントで1語開示するごとに獲得カロリーを半分にする。
+/// 中難易度の記入問題（フレーズ）は答えの長さで配点する: 1語につき 1 kcal。
+/// 一律 4 kcal だと、3語のフレーズも10語のフレーズも同じ価値になってしまうため。
+pub fn scores_per_word(difficulty: &str, mode: &str) -> bool {
+    difficulty == "mid" && mode == "typing"
+}
+
+/// 答えの単語数。空白で区切った語のうち、英字か数字を含むものを数える（"I" も "a" も1語、
+/// "Let's" は1語、単独の記号は数えない）。フロントのヒント表示も同じ区切り方をする。
+pub fn answer_word_count(answer: &str) -> i64 {
+    answer
+        .split_whitespace()
+        .filter(|w| w.chars().any(char::is_alphanumeric))
+        .count() as i64
+}
+
+/// 1語 1 kcal で、ヒントで開示した語1つにつき 1 kcal 減点する。0 未満にはならない。
+pub fn per_word_kcal(answer: &str, correct: bool, hints_used: i64) -> i64 {
+    if !correct {
+        return 0;
+    }
+    (answer_word_count(answer) - hints_used.max(0)).max(0)
+}
+
+/// ヒントで1語開示するごとに獲得カロリーを半分にする（中難易度の記入問題以外）。
 /// 回数は 0..=30 に丸める（`2f64.powi` が無限大になって i64 変換が飽和するのを防ぐ）。
 pub fn apply_hint_penalty(kcal: i64, hints_used: i64) -> i64 {
     let halvings = hints_used.clamp(0, 30) as i32;
@@ -91,6 +114,25 @@ mod tests {
             apply_hint_penalty(i64::MAX, i64::MAX) < i64::MAX,
             "huge counts must not overflow the exponent and saturate back up"
         );
+    }
+
+    #[test]
+    fn mid_typing_pays_a_calorie_per_word_less_one_per_hint() {
+        assert!(scores_per_word("mid", "typing"));
+        assert!(!scores_per_word("mid", "choice"));
+        assert!(!scores_per_word("low", "typing"));
+        assert!(!scores_per_word("high", "typing"));
+
+        let answer = "She kept the leftovers in the fridge.";
+        assert_eq!(answer_word_count(answer), 7);
+        assert_eq!(per_word_kcal(answer, true, 0), 7);
+        assert_eq!(per_word_kcal(answer, true, 2), 5);
+        assert_eq!(per_word_kcal(answer, true, 7), 0);
+        assert_eq!(per_word_kcal(answer, true, 99), 0, "never below zero");
+        assert_eq!(per_word_kcal(answer, true, -3), 7, "negative counts never add kcal");
+        assert_eq!(per_word_kcal(answer, false, 0), 0);
+        // Contractions are one word; a lone dash is not a word at all.
+        assert_eq!(answer_word_count("Let's go - I think it's time."), 6);
     }
 
     #[test]

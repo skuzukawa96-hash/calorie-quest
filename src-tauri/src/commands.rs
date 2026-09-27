@@ -423,11 +423,11 @@ pub fn record_answer(conn: &mut Connection, payload: &AnswerPayload) -> Result<A
     let today = today();
     let now = now_ts();
 
-    let difficulty: String = tx
+    let (difficulty, answer): (String, String) = tx
         .query_row(
-            "SELECT difficulty FROM questions WHERE id = ?1",
+            "SELECT difficulty, en FROM questions WHERE id = ?1",
             params![payload.question_id],
-            |r| r.get(0),
+            |r| Ok((r.get(0)?, r.get(1)?)),
         )
         .map_err(|_| format!("question {} not found", payload.question_id))?;
 
@@ -452,11 +452,20 @@ pub fn record_answer(conn: &mut Connection, payload: &AnswerPayload) -> Result<A
             .score
             .map(|s| s < srs::SPEAKING_REVIEW_THRESHOLD)
             .unwrap_or(false);
-    let mut kcal = srs::kcal_for(&difficulty, &payload.mode, payload.correct, payload.score);
+    let hints_used = payload.hints_used.unwrap_or(0);
+    let per_word = srs::scores_per_word(&difficulty, &payload.mode);
+    let mut kcal = if per_word {
+        // 1語 1 kcal、ヒント1語ごとに −1 kcal。復習の ×1.5 はその結果に掛ける。
+        srs::per_word_kcal(&answer, payload.correct, hints_used)
+    } else {
+        srs::kcal_for(&difficulty, &payload.mode, payload.correct, payload.score)
+    };
     if is_due_review && payload.correct {
         kcal = srs::apply_review_bonus(kcal);
     }
-    kcal = srs::apply_hint_penalty(kcal, payload.hints_used.unwrap_or(0));
+    if !per_word {
+        kcal = srs::apply_hint_penalty(kcal, hints_used);
+    }
     let (new_level, new_needs_review, new_next_due) =
         srs::next_state(level, in_review, payload.correct, low_score);
 
@@ -1050,6 +1059,30 @@ mod tests {
         let r = answer_with_hints(&mut c, qid, "typing", true, None, Some(2));
         assert_eq!(r.kcal_earned, 3, "10 kcal halved twice, 2.5 rounds up");
         assert_eq!(r.today_kcal, 3, "the daily total only counts what was earned");
+    }
+
+    #[test]
+    fn mid_typing_pays_per_word_and_loses_one_per_revealed_word() {
+        let mut c = conn();
+        // "Could you say that again?" is five words.
+        let qid = question_id(&c, "p003");
+        let r = answer_with_hints(&mut c, qid, "typing", true, None, Some(2));
+        assert_eq!(r.kcal_earned, 3, "5 words, 2 revealed");
+
+        let full = question_id(&c, "p001"); // "Nice to meet you." — four words
+        assert_eq!(answer(&mut c, full, "typing", true, None).kcal_earned, 4);
+
+        // The same phrase in the choice mode keeps the flat mid rate.
+        let other = question_id(&c, "p002");
+        assert_eq!(answer(&mut c, other, "choice", true, None).kcal_earned, srs::KCAL_MID);
+
+        // A review pays ×1.5 on what the words earned: (5 − 1) × 1.5 = 6.
+        let missed = question_id(&c, "p003");
+        answer(&mut c, missed, "typing", false, None);
+        c.execute("UPDATE learning_history SET next_due_at = ?1 WHERE question_id = ?2", params![today(), missed]).unwrap();
+        let r = answer_with_hints(&mut c, missed, "typing", true, None, Some(1));
+        assert!(r.is_review);
+        assert_eq!(r.kcal_earned, 6);
     }
 
     #[test]
