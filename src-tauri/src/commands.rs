@@ -456,7 +456,7 @@ pub fn record_answer(conn: &mut Connection, payload: &AnswerPayload) -> Result<A
     let per_word = srs::scores_per_word(&difficulty, &payload.mode);
     let mut kcal = if per_word {
         // 1語 1 kcal、ヒント1語ごとに −1 kcal。復習の ×1.5 はその結果に掛ける。
-        srs::per_word_kcal(&answer, payload.correct, hints_used)
+        srs::per_word_kcal(&answer, payload.correct, hints_used, payload.mistakes)
     } else {
         srs::kcal_for(&difficulty, &payload.mode, payload.correct, payload.score)
     };
@@ -942,8 +942,11 @@ mod tests {
         score: Option<f64>,
         hints_used: Option<i64>,
     ) -> AnswerResult {
-        record_answer(conn, &AnswerPayload { question_id: qid, mode: mode.into(), correct, score, hints_used })
-            .expect("record")
+        record_answer(
+            conn,
+            &AnswerPayload { question_id: qid, mode: mode.into(), correct, score, hints_used, mistakes: None },
+        )
+        .expect("record")
     }
 
     #[test]
@@ -1075,6 +1078,25 @@ mod tests {
         // The same phrase in the choice mode keeps the flat mid rate.
         let other = question_id(&c, "p002");
         assert_eq!(answer(&mut c, other, "choice", true, None).kcal_earned, srs::KCAL_MID);
+
+        // A slip in one word costs that word only, and the question still comes back tomorrow.
+        let slip = question_id(&c, "p004");
+        let words = srs::answer_word_count(&c.query_row("SELECT en FROM questions WHERE id = ?1", params![slip], |r| r.get::<_, String>(0)).unwrap());
+        let r = record_answer(
+            &mut c,
+            &AnswerPayload { question_id: slip, mode: "typing".into(), correct: false, score: None, hints_used: None, mistakes: Some(1) },
+        )
+        .unwrap();
+        assert_eq!(r.kcal_earned, words - 1);
+        assert!(r.needs_review);
+        // Partial credit is for mid typing only: a slip in a low-level word still earns nothing.
+        let word = question_id(&c, "w010");
+        let r = record_answer(
+            &mut c,
+            &AnswerPayload { question_id: word, mode: "typing".into(), correct: false, score: None, hints_used: None, mistakes: Some(1) },
+        )
+        .unwrap();
+        assert_eq!(r.kcal_earned, 0);
 
         // A review pays ×1.5 on what the words earned: (5 − 1) × 1.5 = 6.
         let missed = question_id(&c, "p003");

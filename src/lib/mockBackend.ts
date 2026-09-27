@@ -566,6 +566,9 @@ function submitAnswer(p: AnswerPayload): AnswerResult {
     if (perWord) kcal = Math.max(0, answerWordCount(q.en) - hints);
     else kcal = p.mode === "speaking" ? Math.round((base * Math.min(100, Math.max(0, p.score ?? 100))) / 100) : base;
     if (isDueReview) kcal = Math.round(kcal * RATES.reviewMultiplier);
+  } else if (perWord && p.mistakes !== undefined) {
+    // srs::per_word_kcal: a slip costs the word it was in, not the whole answer.
+    kcal = Math.max(0, answerWordCount(q.en) - hints - Math.max(1, p.mistakes));
   }
   if (!perWord) kcal = Math.round(kcal / 2 ** Math.min(30, hints));
   let level = h.level;

@@ -55,12 +55,17 @@ pub fn answer_word_count(answer: &str) -> i64 {
         .count() as i64
 }
 
-/// 1語 1 kcal で、ヒントで開示した語1つにつき 1 kcal 減点する。0 未満にはならない。
-pub fn per_word_kcal(answer: &str, correct: bool, hints_used: i64) -> i64 {
-    if !correct {
-        return 0;
-    }
-    (answer_word_count(answer) - hints_used.max(0)).max(0)
+/// 1語 1 kcal で、ヒントで開示した語1つにつき 1 kcal、打ち間違えた語1つにつき 1 kcal 減点する。
+/// "He likes cooking." を "He like cooking." と答えたら 3 − 1 = 2 kcal。0 未満にはならない。
+/// 不正解でも間違えた語の数が分からなければ（`mistakes` が無い）0 kcal のまま。
+pub fn per_word_kcal(answer: &str, correct: bool, hints_used: i64, mistakes: Option<i64>) -> i64 {
+    let missed = match (correct, mistakes) {
+        (true, _) => 0,
+        // 不正解なら少なくとも1語は違っている。
+        (false, Some(m)) => m.max(1),
+        (false, None) => return 0,
+    };
+    (answer_word_count(answer) - hints_used.max(0) - missed).max(0)
 }
 
 /// ヒントで1語開示するごとに獲得カロリーを半分にする（中難易度の記入問題以外）。
@@ -125,12 +130,19 @@ mod tests {
 
         let answer = "She kept the leftovers in the fridge.";
         assert_eq!(answer_word_count(answer), 7);
-        assert_eq!(per_word_kcal(answer, true, 0), 7);
-        assert_eq!(per_word_kcal(answer, true, 2), 5);
-        assert_eq!(per_word_kcal(answer, true, 7), 0);
-        assert_eq!(per_word_kcal(answer, true, 99), 0, "never below zero");
-        assert_eq!(per_word_kcal(answer, true, -3), 7, "negative counts never add kcal");
-        assert_eq!(per_word_kcal(answer, false, 0), 0);
+        assert_eq!(per_word_kcal(answer, true, 0, None), 7);
+        assert_eq!(per_word_kcal(answer, true, 2, None), 5);
+        assert_eq!(per_word_kcal(answer, true, 7, None), 0);
+        assert_eq!(per_word_kcal(answer, true, 99, None), 0, "never below zero");
+        assert_eq!(per_word_kcal(answer, true, -3, None), 7, "negative counts never add kcal");
+        assert_eq!(per_word_kcal(answer, true, 0, Some(3)), 7, "a correct answer has no mistakes to charge");
+
+        // A slip costs the word it was in, not the whole answer.
+        assert_eq!(per_word_kcal("He likes cooking.", false, 0, Some(1)), 2);
+        assert_eq!(per_word_kcal("He likes cooking.", false, 1, Some(1)), 1, "hint and slip both count");
+        assert_eq!(per_word_kcal("He likes cooking.", false, 0, Some(5)), 0);
+        assert_eq!(per_word_kcal("He likes cooking.", false, 0, Some(0)), 2, "wrong means at least one word off");
+        assert_eq!(per_word_kcal(answer, false, 0, None), 0, "no count, no partial credit");
         // Contractions are one word; a lone dash is not a word at all.
         assert_eq!(answer_word_count("Let's go - I think it's time."), 6);
     }

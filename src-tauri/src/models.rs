@@ -135,6 +135,10 @@ pub struct AnswerPayload {
     pub score: Option<f64>,
     /// 記入問題でヒントの単語を開示した数。1語ごとに獲得カロリーが半分になる。
     pub hints_used: Option<i64>,
+    /// 記入問題で正解と食い違った語の数（違う語・抜けた語・余分な語）。中難易度の記入問題では
+    /// 1語ごとに 1 kcal 減点し、残りを不正解でも支払う。
+    #[serde(default)]
+    pub mistakes: Option<i64>,
 }
 
 #[derive(Debug, Serialize)]

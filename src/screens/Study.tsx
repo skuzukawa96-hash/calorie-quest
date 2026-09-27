@@ -5,13 +5,14 @@ import { api, runningInTauri } from "../lib/api";
 import { loadDictionary, type Dictionary } from "../lib/dictionary";
 import {
   answerWordCount,
-  checkTyping,
+  gradeTyping,
   maskWord,
   PASS_SCORE,
   scorePronunciation,
   scoresPerWord,
   type PronunciationScore,
   type TipKey,
+  type TypingGrade,
 } from "../lib/scoring";
 import { playCrunch, playFanfare, playPop, playWrong } from "../lib/sfx";
 import {
@@ -58,6 +59,8 @@ interface Feedback {
   result: AnswerResult;
   given?: string;
   score?: PronunciationScore | null;
+  /** typing: which words of the answer were off */
+  typing?: TypingGrade;
 }
 
 interface Tally {
@@ -154,11 +157,25 @@ export default function Study({ mode, difficulty, category, rates, onExit, onPro
   const finished = questions !== null && idx >= questions.length;
 
   const submit = useCallback(
-    async (correct: boolean, score: number | null, given?: string, ps?: PronunciationScore | null, hintsUsed = 0) => {
+    async (
+      correct: boolean,
+      score: number | null,
+      given?: string,
+      ps?: PronunciationScore | null,
+      hintsUsed = 0,
+      typing?: TypingGrade,
+    ) => {
       if (!current || submitting || feedback) return;
       setSubmitting(true);
       try {
-        const result = await api.submitAnswer({ questionId: current.question.id, mode, correct, score, hintsUsed });
+        const result = await api.submitAnswer({
+          questionId: current.question.id,
+          mode,
+          correct,
+          score,
+          hintsUsed,
+          mistakes: typing?.mistakes,
+        });
         setTally((t) => ({
           correct: t.correct + (correct ? 1 : 0),
           kcal: t.kcal + result.kcalEarned,
@@ -170,7 +187,7 @@ export default function Study({ mode, difficulty, category, rates, onExit, onPro
           window.setTimeout(playFanfare, 350);
           toast("🎫 7日連続達成！チートデイチケット（+300 kcal）を獲得しました");
         }
-        setFeedback({ correct, result, given, score: ps });
+        setFeedback({ correct, result, given, score: ps, typing });
         onProgress();
         // Read the English aloud after the answer sound so the learner hears the pronunciation.
         // Listening mode has just played it, so it only repeats when the answer was wrong.
@@ -312,9 +329,10 @@ export default function Study({ mode, difficulty, category, rates, onExit, onPro
           <TypingCard
             q={current}
             disabled={!!feedback || submitting}
-            onAnswer={(input, hintsUsed) =>
-              submit(checkTyping(current.accepted ?? current.answer, input), null, input, null, hintsUsed)
-            }
+            onAnswer={(input, hintsUsed) => {
+              const grade = gradeTyping(current.accepted ?? current.answer, input);
+              void submit(grade.correct, null, input, null, hintsUsed, grade);
+            }}
           />
         )}
         {mode === "listening" && (
@@ -343,7 +361,13 @@ export default function Study({ mode, difficulty, category, rates, onExit, onPro
         {feedback && (
           <div className={"feedback " + (feedback.correct ? "ok" : "ng")}>
             <div className="feedback-main">
-              <div className="feedback-title">{feedback.correct ? "正解！ サクサク🍪" : "ざんねん…"}</div>
+              <div className="feedback-title">
+                {feedback.correct
+                  ? "正解！ サクサク🍪"
+                  : feedback.typing && feedback.result.kcalEarned > 0
+                    ? `惜しい！ ${feedback.typing.mistakes}語ちがい🍪`
+                    : "ざんねん…"}
+              </div>
               <div className="feedback-kcal">
                 {feedback.result.kcalEarned > 0 ? `+${feedback.result.kcalEarned} kcal` : "+0 kcal"}
                 {feedback.result.isReview && feedback.correct && <span className="bonus"> 復習ボーナス ×{rates.reviewMultiplier}</span>}
@@ -357,6 +381,25 @@ export default function Study({ mode, difficulty, category, rates, onExit, onPro
                     <GlossedText text={current.audioText} dict={dict} enabled={glossOn} {...recipeContext(current, current.audioText)} />
                   </strong>
                   {current.subDisplay && <span className="muted">　{current.subDisplay}</span>}
+                </div>
+              )}
+              {feedback.typing && !feedback.correct && (
+                <div className="typed-line">
+                  <span className="label">あなたの答え</span>{" "}
+                  {feedback.typing.marks.map((m, i) => (
+                    <span key={i}>
+                      {i > 0 && " "}
+                      {m.status === "missing" ? (
+                        <span className="typed-missing" title={`「${m.word}」が抜けています`}>
+                          ＿
+                        </span>
+                      ) : (
+                        <span className={"typed-" + m.status} title={m.status === "extra" ? "余分な語" : m.status === "wrong" ? "ちがう語" : undefined}>
+                          {m.word}
+                        </span>
+                      )}
+                    </span>
+                  ))}
                 </div>
               )}
               <div>

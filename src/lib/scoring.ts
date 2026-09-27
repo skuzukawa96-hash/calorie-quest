@@ -54,6 +54,80 @@ export function checkTyping(accepted: string | string[], input: string): boolean
   return (Array.isArray(accepted) ? accepted : [accepted]).some((a) => strip(a) === stripped);
 }
 
+/** One word of a typed answer, lined up against the expected answer. */
+export interface WordMark {
+  /** the learner's word, or for a missing word the one that was expected */
+  word: string;
+  status: "ok" | "wrong" | "extra" | "missing";
+}
+
+export interface TypingGrade {
+  correct: boolean;
+  /** words that differ from the closest accepted answer: wrong, missing or extra (0 when correct) */
+  mistakes: number;
+  marks: WordMark[];
+}
+
+/** A word as the grader compares it: case, punctuation and apostrophes ignored, like checkTyping. */
+function wordKey(w: string): string {
+  return normalizeText(w).replace(/['\s]/g, "");
+}
+
+function words(s: string): string[] {
+  return s.split(/\s+/).filter((w) => /[\p{L}\p{N}]/u.test(w));
+}
+
+/** Word-level edit distance with the path, so each word can be marked. */
+function alignWords(input: string[], answer: string[]): { edits: number; marks: WordMark[] } {
+  const a = input.map(wordKey);
+  const b = answer.map(wordKey);
+  const d: number[][] = Array.from({ length: a.length + 1 }, (_, i) =>
+    Array.from({ length: b.length + 1 }, (_, j) => (i === 0 ? j : j === 0 ? i : 0)),
+  );
+  for (let i = 1; i <= a.length; i++) {
+    for (let j = 1; j <= b.length; j++) {
+      d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    }
+  }
+  const marks: WordMark[] = [];
+  let i = a.length;
+  let j = b.length;
+  while (i > 0 || j > 0) {
+    if (i > 0 && j > 0 && d[i][j] === d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1)) {
+      marks.push({ word: input[i - 1], status: a[i - 1] === b[j - 1] ? "ok" : "wrong" });
+      i--;
+      j--;
+    } else if (i > 0 && d[i][j] === d[i - 1][j] + 1) {
+      marks.push({ word: input[i - 1], status: "extra" });
+      i--;
+    } else {
+      marks.push({ word: answer[j - 1], status: "missing" });
+      j--;
+    }
+  }
+  return { edits: d[a.length][b.length], marks: marks.reverse() };
+}
+
+/**
+ * Grades a typed answer and says which words were off. Correctness is exactly `checkTyping`; the
+ * mistake count is the word-level distance to the closest accepted answer, so "He like cooking."
+ * for "He likes cooking." is one mistake (a wrong word), as is a word left out or one too many.
+ */
+export function gradeTyping(accepted: string | string[], input: string): TypingGrade {
+  const list = Array.isArray(accepted) ? accepted : [accepted];
+  const correct = checkTyping(list, input);
+  const typed = words(input);
+  let best: { edits: number; marks: WordMark[] } | null = null;
+  for (const a of list) {
+    const r = alignWords(typed, words(a));
+    if (!best || r.edits < best.edits) best = r;
+  }
+  const marks = best?.marks ?? [];
+  if (correct) return { correct, mistakes: 0, marks: marks.map((m) => ({ ...m, status: "ok" as const })) };
+  // A wrong answer is at least one mistake, even where word keys happen to agree ("well-known").
+  return { correct, mistakes: Math.max(1, best?.edits ?? 1), marks };
+}
+
 export interface PronunciationScore {
   score: number;
   similarity: number;

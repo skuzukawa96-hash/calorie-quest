@@ -139,6 +139,8 @@ export interface AnswerPayload {
   score?: number | null;
   /** 記入問題でヒントの単語を開示した数。1語ごとに獲得カロリーが半分になる。 */
   hintsUsed?: number;
+  /** 記入問題で正解と食い違った語の数（違う語・抜けた語・余分な語）。中難易度は1語ごとに −1 kcal。 */
+  mistakes?: number;
 }
 
 export interface AnswerResult {

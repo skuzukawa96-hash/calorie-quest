@@ -597,6 +597,24 @@ main {
 .heard-line {
   padding-bottom: 4px;
 }
+/* A typed answer with the words that were off marked, so the one slip is easy to spot. */
+.typed-line {
+  padding-bottom: 4px;
+}
+.typed-wrong,
+.typed-extra,
+.typed-missing {
+  color: var(--berry);
+  font-weight: 700;
+  text-decoration: underline wavy var(--berry);
+  text-underline-offset: 3px;
+}
+.typed-extra {
+  text-decoration: line-through;
+}
+.typed-missing {
+  text-decoration: none;
+}
 .example-line {
   margin-top: 6px;
   padding: 10px 14px;
