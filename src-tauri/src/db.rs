@@ -764,6 +764,38 @@ mod tests {
         }
     }
 
+    /// An explanation's example is a second sentence to learn from. Most of them had been lifted
+    /// from the bank, so answering "Never ___ I seen such a beautiful sunset." showed the very same
+    /// sentence again underneath. Digits and punctuation are ignored, so "He was born in 1998." and
+    /// "He was born in 2001." count as the same sentence.
+    #[test]
+    fn grammar_note_examples_are_not_questions_of_the_bank() {
+        let bare = |s: &str| -> String {
+            s.to_lowercase()
+                .chars()
+                .filter(|c| c.is_ascii_lowercase() || *c == ' ')
+                .collect::<String>()
+                .split_whitespace()
+                .collect::<Vec<_>>()
+                .join(" ")
+        };
+        let questions: HashMap<String, String> = load_seed()
+            .questions
+            .into_iter()
+            .filter(|q| q.kind == "grammar")
+            .map(|q| (bare(&crate::util::fill_blank(q.prompt.as_deref().unwrap_or(""), &q.en)), q.key))
+            .collect();
+        let mut repeats = Vec::new();
+        for note in grammar_notes().values() {
+            for part in note.example.split(" / ") {
+                if let Some(key) = questions.get(&bare(part)) {
+                    repeats.push(format!("{}: \"{part}\" is question {key}", note.point));
+                }
+            }
+        }
+        assert!(repeats.is_empty(), "examples that repeat a question:\n{}", repeats.join("\n"));
+    }
+
     /// Savings start the day they arrive: an existing database gets its past days closed at 0
     /// rather than every old leftover paid out at once, while today still counts tomorrow.
     #[test]
@@ -953,6 +985,23 @@ mod tests {
                     if !covered && !dict.contains_key(word) {
                         uncovered.push(format!("{} ({})", word, q.key));
                     }
+                }
+            }
+        }
+        // The explanations' examples are hovered too. They are not part of the dictionary build,
+        // so their inflections are found the way the frontend finds them: through the lemma.
+        for note in grammar_notes().values() {
+            let words = crate::util::tokens(&note.example);
+            let mut in_phrase = vec![false; words.len()];
+            for span in phrases.spans(&words) {
+                in_phrase[span.start..span.end].iter_mut().for_each(|b| *b = true);
+            }
+            for (word, covered) in words.iter().zip(in_phrase) {
+                let known = dict.contains_key(word) || crate::util::lemmas(word).iter().any(|l| dict.contains_key(l));
+                // Only English is looked up; a Japanese aside such as （やめた） is left alone.
+                let english = word.starts_with(|c: char| c.is_ascii_alphabetic());
+                if english && !covered && !known {
+                    uncovered.push(format!("{} (note {})", word, note.point));
                 }
             }
         }

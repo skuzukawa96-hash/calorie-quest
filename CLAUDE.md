@@ -43,7 +43,7 @@ npm run tauri build        # 配布ビルド
 - 問題の `key` は不変（`w###` 単語 / `p###` フレーズ / `g###` 文法 / `i###` 慣用句 / `s###` 長文 / `d###` 会話）。学習履歴は id 経由で key に紐づくので、既存 key の意味を変えない。新規は末尾に追加
 - 必須フィールド: `kind` / `difficulty`（low|mid|high）/ `category`（ジャンル名。アイコンは `src/types.ts` の `CATEGORY_ICON`）/ `group`（意味グループ）/ `en` / `ja` / `modes`
 - 文法問題は `prompt`（`___` が空欄）と `choices`（正解 `en` を含む4つ）を持ち、`modes` は `["choice"]`。`en` は選択肢と**大文字小文字まで一致**させること（文頭に来る語は "The" のように書く）
-- 文法問題は `point`（`present-perfect` / `relative-pronoun` など84種）も必須。解説文そのものは問題に書かず、`grammar-notes.json` に**ポイントごとに1件だけ**置く（同じ論点が何十問も出るため）。回答後に `commands.rs` の `grammar_note_for` が引いて表示する。`cargo test` が「解説のないポイント」と「どの問題も使っていない解説」の両方を検査する
+- 文法問題は `point`（`present-perfect` / `relative-pronoun` など84種）も必須。解説文そのものは問題に書かず、`grammar-notes.json` に**ポイントごとに1件だけ**置く（同じ論点が何十問も出るため）。回答後に `commands.rs` の `grammar_note_for` が引いて表示する。`cargo test` が「解説のないポイント」と「どの問題も使っていない解説」の両方を検査する。解説の `example` は問題集の文と重ねない（その問題に答えた直後に同じ文がもう一度出るだけになる。`grammar_note_examples_are_not_questions_of_the_bank` が検査し、例文の英単語が辞書にあることも `dictionary_covers_words_used_in_sentences` が見る）
   - タグは**その問題の正解を説明できる解説**に付ける。空欄の位置や見た目の構文で選ばない。「The moment I ___ the news, I called you.」（heard）は when 節の形をしているが、問うているのは過去の話での時制の一致なので `time-clause`（未来でも現在形）ではなく `time-clause-tense`。`time-clause` の問題は will の形を選択肢に含み、正解がその現在形であることを `cargo test` が検査する
   - 誤答は**文法的に誤りで、問題文だけで正解が1つに決まる**ものにする。would / used to（過去の習慣の動作）、tried to open / tried opening、on / at the corner、different from / to のように、どちらも自然な英語になる組を同じ問題に並べない
   - 無冠詞の選択肢は `(none)`。完成文と読み上げでは `util::fill_blank` がこれを空欄ごと消す（`mockBackend.ts` の `fillBlank` も同じ）
