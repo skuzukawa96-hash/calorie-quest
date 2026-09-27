@@ -26,7 +26,7 @@ npm run tauri build        # 配布ビルド
 | 場所 | 役割 |
 | --- | --- |
 | `src-tauri/src/srs.rs` | kcal 換算（低2/中4/高10、発音はスコア按分）、復習倍率 1.5、ヒント開示1語ごとに半減、SRS 間隔 [1,3,7,14,30] 日。例外として中難易度の記入問題（フレーズ）は答えの1語 1 kcal・ヒント開示1語ごとに −1 kcal・打ち間違えた語1つごとに −1 kcal（`scores_per_word` / `per_word_kcal`）。間違えた語の数はフロントの `gradeTyping`（`scoring.ts`、最も近い正解との語単位の編集距離）が `mistakes` として送り、不正解でも残りの kcal を払う（正誤と復習の判定は従来どおり完全一致）。どの語も開示できるよう、この問題のヒントは "a" や "I" も伏せる（`scoring.ts` の `maskWord(word, true)`）。`mockBackend.ts` に同じ計算の写しがある |
-| `src-tauri/src/commands.rs` | Tauri コマンド。コアロジックは `session_questions` / `record_answer` / `redeem_ticket` に分離され、`Connection` だけでテストできる |
+| `src-tauri/src/commands.rs` | Tauri コマンド。コアロジックは `session_questions` / `record_answer` / `redeem_ticket` / `load_dashboard` などに分離され、`Connection` だけでテストできる。貯蓄は `settle_savings` が `load_dashboard` のたびに、終わった日（`daily_stats.saved_kcal` が NULL）の残りを `users.savings_kcal` へ移し、2,000 kcal ごとに `snack_tickets` を発行する。貯蓄を入れる前からあった過去の日は、移行時に 0 で締めてある（さかのぼって払わない） |
 | `src-tauri/src/db.rs` | スキーマ、`ensure_column` によるマイグレーション、`questions.json` / お菓子の初期投入 |
 | `src-tauri/src/recipe.rs` | お菓子作りレシピ（学習者の単語帳）。`recipe_words` テーブルへの追加・一覧・復習・習得済み・削除。同じ語の再追加はエラーにせず、習得済みなら復習に戻す |
 | `src-tauri/src/speech.rs` | SAPI5 で英語 TTS → WAV（フロントで再生）、WinRT `SpeechRecognizer` のリスト文法で発音判定 |

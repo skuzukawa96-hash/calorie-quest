@@ -88,6 +88,130 @@ fn tickets_available(conn: &Connection) -> rusqlite::Result<i64> {
     )
 }
 
+/* ---------- savings: yesterday's leftover kcal, and the snack tickets it becomes ---------- */
+
+/// Moves the leftover of every finished day into savings, once per day, and turns each full
+/// 2,000 kcal into an お菓子引換券. Runs lazily whenever the dashboard is loaded, so a day the
+/// app was not opened is still counted the next time it is. Returns (kcal saved, tickets issued)
+/// by this call; both are 0 once the past is settled.
+pub fn settle_savings(conn: &Connection) -> rusqlite::Result<(i64, i64)> {
+    let tx = conn.unchecked_transaction()?;
+    let days: Vec<(String, i64, i64)> = {
+        let mut stmt = tx.prepare(
+            "SELECT date, kcal_earned, kcal_consumed FROM daily_stats
+             WHERE user_id = ?1 AND date < ?2 AND saved_kcal IS NULL ORDER BY date",
+        )?;
+        let rows = stmt.query_map(params![USER_ID, today()], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
+        rows.collect::<Result<_, _>>()?
+    };
+    if days.is_empty() {
+        return Ok((0, 0));
+    }
+    let mut saved = 0;
+    for (date, earned, consumed) in &days {
+        let leftover = srs::leftover_kcal(*earned, *consumed);
+        tx.execute(
+            "UPDATE daily_stats SET saved_kcal = ?1 WHERE user_id = ?2 AND date = ?3",
+            params![leftover, USER_ID, date],
+        )?;
+        saved += leftover;
+    }
+    let balance: i64 =
+        tx.query_row("SELECT savings_kcal FROM users WHERE id = ?1", params![USER_ID], |r| r.get(0))?;
+    let (balance, issued) = srs::add_to_savings(balance, saved);
+    tx.execute("UPDATE users SET savings_kcal = ?1 WHERE id = ?2", params![balance, USER_ID])?;
+    let now = now_ts();
+    for _ in 0..issued {
+        tx.execute("INSERT INTO snack_tickets (user_id, issued_at) VALUES (?1, ?2)", params![USER_ID, now])?;
+    }
+    tx.commit()?;
+    Ok((saved, issued))
+}
+
+fn snack_tickets_available(conn: &Connection) -> rusqlite::Result<i64> {
+    conn.query_row(
+        "SELECT COUNT(*) FROM snack_tickets WHERE user_id = ?1 AND used_at IS NULL",
+        params![USER_ID],
+        |r| r.get(0),
+    )
+}
+
+fn savings_info(conn: &Connection, just_saved: i64, just_issued: i64) -> rusqlite::Result<SavingsInfo> {
+    Ok(SavingsInfo {
+        balance: conn.query_row("SELECT savings_kcal FROM users WHERE id = ?1", params![USER_ID], |r| r.get(0))?,
+        per_ticket: srs::SAVINGS_PER_TICKET,
+        snack_tickets: snack_tickets_available(conn)?,
+        just_saved,
+        just_issued,
+    })
+}
+
+/// Eats a snack with an お菓子引換券: it goes in today's log, but costs none of today's kcal.
+pub fn eat_with_ticket_inner(conn: &Connection, snack_id: i64) -> CmdResult<DailyStats> {
+    let snack = load_snack(conn, snack_id)
+        .map_err(err)?
+        .ok_or_else(|| "snack not found".to_string())?;
+    let tx = conn.unchecked_transaction().map_err(err)?;
+    let ticket: i64 = tx
+        .query_row(
+            "SELECT id FROM snack_tickets WHERE user_id = ?1 AND used_at IS NULL ORDER BY issued_at ASC, id ASC LIMIT 1",
+            params![USER_ID],
+            |r| r.get(0),
+        )
+        .optional()
+        .map_err(err)?
+        .ok_or_else(|| "使えるお菓子引換券がありません".to_string())?;
+    let today = today();
+    let now = now_ts();
+    tx.execute(
+        "INSERT INTO consumption_log (user_id, snack_id, snack_name, snack_icon, calories, date, eaten_at, ticket_id)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+        params![USER_ID, snack.id, snack.name, snack.icon, snack.calories, today, now, ticket],
+    )
+    .map_err(err)?;
+    let entry = tx.last_insert_rowid();
+    tx.execute(
+        "UPDATE snack_tickets SET used_at = ?1, consumption_id = ?2 WHERE id = ?3",
+        params![now, entry, ticket],
+    )
+    .map_err(err)?;
+    tx.commit().map_err(err)?;
+    load_daily(conn, &today).map_err(err)
+}
+
+/// Takes an entry out of the log. A snack eaten with a ticket gives the ticket back; one paid in
+/// kcal gives the kcal back to its day.
+pub fn delete_consumption_inner(conn: &Connection, id: i64) -> CmdResult<DailyStats> {
+    let entry: Option<(i64, String, Option<i64>)> = conn
+        .query_row(
+            "SELECT calories, date, ticket_id FROM consumption_log WHERE id = ?1 AND user_id = ?2",
+            params![id, USER_ID],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .optional()
+        .map_err(err)?;
+    if let Some((calories, date, ticket)) = entry {
+        conn.execute("DELETE FROM consumption_log WHERE id = ?1", params![id]).map_err(err)?;
+        match ticket {
+            Some(ticket) => {
+                conn.execute(
+                    "UPDATE snack_tickets SET used_at = NULL, consumption_id = NULL WHERE id = ?1",
+                    params![ticket],
+                )
+                .map_err(err)?;
+            }
+            None => {
+                conn.execute(
+                    "UPDATE daily_stats SET kcal_consumed = MAX(0, kcal_consumed - ?1) WHERE user_id = ?2 AND date = ?3",
+                    params![calories, USER_ID, date],
+                )
+                .map_err(err)?;
+            }
+        }
+    }
+    load_daily(conn, &today()).map_err(err)
+}
+
 /// Question counts per genre, in the order genres first appear in the seed data.
 fn category_infos(conn: &Connection) -> rusqlite::Result<Vec<CategoryInfo>> {
     let mut stmt = conn.prepare(
@@ -602,20 +726,26 @@ pub fn redeem_ticket(conn: &Connection) -> Result<RedeemResult, String> {
 #[tauri::command]
 pub fn get_dashboard(state: State<'_, AppState>) -> CmdResult<Dashboard> {
     let conn = state.db.lock().map_err(err)?;
-    let user = load_user(&conn).map_err(err)?;
-    let today_stats = load_daily(&conn, &today()).map_err(err)?;
+    load_dashboard(&conn)
+}
+
+pub fn load_dashboard(conn: &Connection) -> CmdResult<Dashboard> {
+    let (just_saved, just_issued) = settle_savings(conn).map_err(err)?;
+    let user = load_user(conn).map_err(err)?;
+    let today_stats = load_daily(conn, &today()).map_err(err)?;
     let goal_snack = match user.goal_snack_id {
-        Some(id) => load_snack(&conn, id).map_err(err)?,
+        Some(id) => load_snack(conn, id).map_err(err)?,
         None => None,
     };
     Ok(Dashboard {
         today: today_stats,
         goal_snack,
-        snacks: list_snacks_inner(&conn).map_err(err)?,
-        categories: category_infos(&conn).map_err(err)?,
-        due_review_count: due_review_count(&conn).map_err(err)?,
-        tickets_available: tickets_available(&conn).map_err(err)?,
+        snacks: list_snacks_inner(conn).map_err(err)?,
+        categories: category_infos(conn).map_err(err)?,
+        due_review_count: due_review_count(conn).map_err(err)?,
+        tickets_available: tickets_available(conn).map_err(err)?,
         kcal_rates: kcal_rates(),
+        savings: savings_info(conn, just_saved, just_issued).map_err(err)?,
         user,
     })
 }
@@ -732,7 +862,7 @@ pub fn log_snack_eaten(state: State<'_, AppState>, snack_id: i64) -> CmdResult<D
 pub fn get_today_consumption(state: State<'_, AppState>) -> CmdResult<Vec<ConsumptionEntry>> {
     let conn = state.db.lock().map_err(err)?;
     let mut stmt = conn
-        .prepare("SELECT id, snack_name, snack_icon, calories, eaten_at FROM consumption_log WHERE user_id = ?1 AND date = ?2 ORDER BY eaten_at DESC")
+        .prepare("SELECT id, snack_name, snack_icon, calories, eaten_at, ticket_id IS NOT NULL FROM consumption_log WHERE user_id = ?1 AND date = ?2 ORDER BY eaten_at DESC")
         .map_err(err)?;
     let rows = stmt
         .query_map(params![USER_ID, today()], |r| {
@@ -742,6 +872,7 @@ pub fn get_today_consumption(state: State<'_, AppState>) -> CmdResult<Vec<Consum
                 snack_icon: r.get(2)?,
                 calories: r.get(3)?,
                 eaten_at: r.get(4)?,
+                with_ticket: r.get(5)?,
             })
         })
         .map_err(err)?;
@@ -751,23 +882,13 @@ pub fn get_today_consumption(state: State<'_, AppState>) -> CmdResult<Vec<Consum
 #[tauri::command]
 pub fn delete_consumption(state: State<'_, AppState>, id: i64) -> CmdResult<DailyStats> {
     let conn = state.db.lock().map_err(err)?;
-    let entry: Option<(i64, String)> = conn
-        .query_row(
-            "SELECT calories, date FROM consumption_log WHERE id = ?1 AND user_id = ?2",
-            params![id, USER_ID],
-            |r| Ok((r.get(0)?, r.get(1)?)),
-        )
-        .optional()
-        .map_err(err)?;
-    if let Some((calories, date)) = entry {
-        conn.execute("DELETE FROM consumption_log WHERE id = ?1", params![id]).map_err(err)?;
-        conn.execute(
-            "UPDATE daily_stats SET kcal_consumed = MAX(0, kcal_consumed - ?1) WHERE user_id = ?2 AND date = ?3",
-            params![calories, USER_ID, date],
-        )
-        .map_err(err)?;
-    }
-    load_daily(&conn, &today()).map_err(err)
+    delete_consumption_inner(&conn, id)
+}
+
+#[tauri::command]
+pub fn eat_with_ticket(state: State<'_, AppState>, snack_id: i64) -> CmdResult<DailyStats> {
+    let conn = state.db.lock().map_err(err)?;
+    eat_with_ticket_inner(&conn, snack_id)
 }
 
 #[tauri::command]
@@ -895,8 +1016,9 @@ pub fn reset_progress(state: State<'_, AppState>) -> CmdResult<()> {
     let conn = state.db.lock().map_err(err)?;
     conn.execute_batch(
         "DELETE FROM learning_history; DELETE FROM answer_log; DELETE FROM daily_stats;
-         DELETE FROM consumption_log; DELETE FROM cheat_tickets;
-         UPDATE users SET total_study_days = 0, current_streak = 0, longest_streak = 0, last_study_date = NULL;",
+         DELETE FROM consumption_log; DELETE FROM cheat_tickets; DELETE FROM snack_tickets;
+         UPDATE users SET total_study_days = 0, current_streak = 0, longest_streak = 0, last_study_date = NULL,
+           savings_kcal = 0;",
     )
     .map_err(err)
 }
@@ -1105,6 +1227,69 @@ mod tests {
         let r = answer_with_hints(&mut c, missed, "typing", true, None, Some(1));
         assert!(r.is_review);
         assert_eq!(r.kcal_earned, 6);
+    }
+
+    fn day(conn: &Connection, date: &str, earned: i64, consumed: i64) {
+        conn.execute(
+            "INSERT INTO daily_stats (user_id, date, kcal_earned, kcal_consumed) VALUES (1, ?1, ?2, ?3)",
+            params![date, earned, consumed],
+        )
+        .unwrap();
+    }
+
+    fn saved_on(conn: &Connection, date: &str) -> Option<i64> {
+        conn.query_row("SELECT saved_kcal FROM daily_stats WHERE date = ?1", params![date], |r| r.get(0))
+            .unwrap()
+    }
+
+    #[test]
+    fn a_finished_days_leftover_goes_to_savings_once() {
+        let c = conn();
+        day(&c, &date_plus(-2), 600, 400); // 200 left over
+        day(&c, &date_plus(-1), 100, 300); // ate more than earned: nothing to save
+        day(&c, &today(), 500, 0); // today is not over yet
+
+        assert_eq!(settle_savings(&c).unwrap(), (200, 0));
+        assert_eq!(saved_on(&c, &date_plus(-2)), Some(200));
+        assert_eq!(saved_on(&c, &date_plus(-1)), Some(0));
+        assert_eq!(saved_on(&c, &today()), None);
+        let d = load_dashboard(&c).unwrap();
+        assert_eq!(d.savings.balance, 200);
+        assert_eq!((d.savings.just_saved, d.savings.just_issued), (0, 0), "already settled");
+        assert_eq!(d.savings.per_ticket, 2000);
+        assert_eq!(d.today.kcal_earned, 500, "savings are a separate pot: today's budget is untouched");
+    }
+
+    #[test]
+    fn every_2000_saved_becomes_a_snack_ticket() {
+        let c = conn();
+        c.execute("UPDATE users SET savings_kcal = 1900 WHERE id = 1", []).unwrap();
+        day(&c, &date_plus(-1), 2350, 100);
+        let d = load_dashboard(&c).unwrap();
+        assert_eq!((d.savings.just_saved, d.savings.just_issued), (2250, 2));
+        assert_eq!(d.savings.balance, 150);
+        assert_eq!(d.savings.snack_tickets, 2);
+    }
+
+    #[test]
+    fn a_snack_ticket_pays_for_a_snack_and_comes_back_if_undone() {
+        let c = conn();
+        let cake: i64 = c.query_row("SELECT id FROM snacks WHERE name = 'ショートケーキ'", [], |r| r.get(0)).unwrap();
+        assert!(eat_with_ticket_inner(&c, cake).is_err(), "no ticket yet");
+
+        c.execute("INSERT INTO snack_tickets (user_id, issued_at) VALUES (1, ?1)", params![now_ts()]).unwrap();
+        let d = eat_with_ticket_inner(&c, cake).unwrap();
+        assert_eq!(d.kcal_consumed, 0, "a ticket costs no kcal");
+        assert_eq!(snack_tickets_available(&c).unwrap(), 0);
+        let (id, with_ticket): (i64, bool) = c
+            .query_row("SELECT id, ticket_id IS NOT NULL FROM consumption_log", [], |r| Ok((r.get(0)?, r.get(1)?)))
+            .unwrap();
+        assert!(with_ticket);
+
+        // Undoing it gives the ticket back and leaves the day's kcal alone.
+        let d = delete_consumption_inner(&c, id).unwrap();
+        assert_eq!(d.kcal_consumed, 0);
+        assert_eq!(snack_tickets_available(&c).unwrap(), 1);
     }
 
     #[test]

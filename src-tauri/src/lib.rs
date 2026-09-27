@@ -33,6 +33,7 @@ pub fn run() {
             commands::log_snack_eaten,
             commands::get_today_consumption,
             commands::delete_consumption,
+            commands::eat_with_ticket,
             commands::redeem_cheat_ticket,
             commands::get_stats,
             commands::get_dictionary,

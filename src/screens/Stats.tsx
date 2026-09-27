@@ -138,7 +138,7 @@ export default function Stats({ onChanged, toast }: Props) {
           </button>
         ) : (
           <div className="row">
-            <span>学習履歴・カロリー・ストリーク・チケットを消去します（お菓子図鑑は残ります）。</span>
+            <span>学習履歴・カロリー・貯蓄・ストリーク・チケット・引換券を消去します（お菓子図鑑とレシピは残ります）。</span>
             <button
               className="btn btn-danger"
               onClick={() => {

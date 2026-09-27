@@ -10,6 +10,8 @@ pub const KCAL_MID: i64 = 4;
 pub const KCAL_HIGH: i64 = 10;
 pub const REVIEW_MULTIPLIER: f64 = 1.5;
 pub const CHEAT_DAY_BONUS: i64 = 300;
+/// 使わずに残ったカロリーの貯蓄が、この量に達するごとにお菓子引換券1枚になる。
+pub const SAVINGS_PER_TICKET: i64 = 2000;
 
 /// Pronunciation score below which the question is scheduled for review even if it "passed".
 pub const SPEAKING_REVIEW_THRESHOLD: f64 = 70.0;
@@ -73,6 +75,18 @@ pub fn per_word_kcal(answer: &str, correct: bool, hints_used: i64, mistakes: Opt
 pub fn apply_hint_penalty(kcal: i64, hints_used: i64) -> i64 {
     let halvings = hints_used.clamp(0, 30) as i32;
     ((kcal as f64) / 2f64.powi(halvings)).round() as i64
+}
+
+/// その日に使わずに残ったカロリー。食べすぎた日（マイナス）は貯蓄を減らさず 0 とする。
+pub fn leftover_kcal(earned: i64, consumed: i64) -> i64 {
+    (earned - consumed).max(0)
+}
+
+/// 貯蓄に `saved` kcal を足したあとの (残高, 新しく発行する引換券の枚数)。
+/// 2,000 kcal ごとに1枚になり、端数は残高として次に持ち越す。
+pub fn add_to_savings(balance: i64, saved: i64) -> (i64, i64) {
+    let total = balance.max(0) + saved.max(0);
+    (total % SAVINGS_PER_TICKET, total / SAVINGS_PER_TICKET)
 }
 
 /// Returns (new_level, needs_review, next_due_date).
@@ -145,6 +159,16 @@ mod tests {
         assert_eq!(per_word_kcal(answer, false, 0, None), 0, "no count, no partial credit");
         // Contractions are one word; a lone dash is not a word at all.
         assert_eq!(answer_word_count("Let's go - I think it's time."), 6);
+    }
+
+    #[test]
+    fn leftovers_fill_savings_and_every_2000_becomes_a_ticket() {
+        assert_eq!(leftover_kcal(600, 400), 200);
+        assert_eq!(leftover_kcal(100, 300), 0, "an over-eaten day takes nothing out of savings");
+        assert_eq!(add_to_savings(0, 200), (200, 0));
+        assert_eq!(add_to_savings(1900, 100), (0, 1));
+        assert_eq!(add_to_savings(1900, 2250), (150, 2));
+        assert_eq!(add_to_savings(500, -50), (500, 0), "nothing negative is ever saved");
     }
 
     #[test]

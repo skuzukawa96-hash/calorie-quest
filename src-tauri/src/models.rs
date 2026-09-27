@@ -124,6 +124,22 @@ pub struct Dashboard {
     pub due_review_count: i64,
     pub tickets_available: i64,
     pub kcal_rates: KcalRates,
+    pub savings: SavingsInfo,
+}
+
+/// 使わなかったカロリーの貯蓄と、それが変わったお菓子引換券。
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SavingsInfo {
+    pub balance: i64,
+    /// この量で引換券1枚（2,000 kcal）
+    pub per_ticket: i64,
+    /// まだ使っていないお菓子引換券
+    pub snack_tickets: i64,
+    /// この呼び出しで締めた前日までの残り。締めるのは日付が変わって最初の1回だけなので、
+    /// 0 でなければ画面で知らせる。
+    pub just_saved: i64,
+    pub just_issued: i64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -162,6 +178,8 @@ pub struct ConsumptionEntry {
     pub snack_icon: String,
     pub calories: i64,
     pub eaten_at: String,
+    /// お菓子引換券で食べた（カロリー予算を使っていない）
+    pub with_ticket: bool,
 }
 
 #[derive(Debug, Serialize)]

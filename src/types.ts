@@ -130,6 +130,19 @@ export interface Dashboard {
   dueReviewCount: number;
   ticketsAvailable: number;
   kcalRates: KcalRates;
+  savings: SavingsInfo;
+}
+
+/** 使わなかったカロリーの貯蓄と、それが変わったお菓子引換券。 */
+export interface SavingsInfo {
+  balance: number;
+  /** この量で引換券1枚 */
+  perTicket: number;
+  /** まだ使っていないお菓子引換券 */
+  snackTickets: number;
+  /** この読み込みで締めた前日までの残り（日付が変わって最初の1回だけ 0 以外） */
+  justSaved: number;
+  justIssued: number;
 }
 
 export interface AnswerPayload {
@@ -160,6 +173,8 @@ export interface ConsumptionEntry {
   snackIcon: string;
   calories: number;
   eatenAt: string;
+  /** お菓子引換券で食べた（カロリー予算を使っていない） */
+  withTicket: boolean;
 }
 
 export interface RedeemResult {

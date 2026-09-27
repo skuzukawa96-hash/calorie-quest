@@ -30,8 +30,9 @@ export default function Snacks({ dash, onChanged, toast }: Props) {
   }, [reload, toast]);
 
   const goalId = dash.goalSnack?.id ?? null;
-  const { today } = dash;
+  const { today, savings } = dash;
   const budget = today.kcalEarned - today.kcalConsumed;
+  const tickets = savings.snackTickets;
 
   const run = async (fn: () => Promise<void>) => {
     setBusy(true);
@@ -70,6 +71,21 @@ export default function Snacks({ dash, onChanged, toast }: Props) {
             </span>
           </div>
         </div>
+        <div className="savings">
+          <div className="savings-head">
+            <span>
+              🐷 貯蓄 <b>{savings.balance.toLocaleString()}</b> / {savings.perTicket.toLocaleString()} kcal
+            </span>
+            {tickets > 0 && <span className="badge ticket">🎟 お菓子引換券 ×{tickets}</span>}
+          </div>
+          <div className="savings-track">
+            <div style={{ width: `${Math.min(100, (savings.balance / savings.perTicket) * 100)}%` }} />
+          </div>
+          <div className="muted small">
+            今日使わなかったカロリー（今は {Math.max(0, budget)} kcal）は、明日になると貯蓄に入ります。
+            {savings.perTicket.toLocaleString()} kcal たまるごとに、好きなお菓子をカロリーを使わずに1つ食べられる引換券になります。
+          </div>
+        </div>
         {log.length === 0 ? (
           <div className="muted">まだ何も食べていません。食べたら図鑑の「食べた！」で記録しましょう。</div>
         ) : (
@@ -78,7 +94,7 @@ export default function Snacks({ dash, onChanged, toast }: Props) {
               <li key={e.id}>
                 <span className="log-icon">{e.snackIcon}</span>
                 <span className="log-name">{e.snackName}</span>
-                <span className="log-kcal">−{e.calories} kcal</span>
+                <span className="log-kcal">{e.withTicket ? "🎟 引換券" : `−${e.calories} kcal`}</span>
                 <span className="muted small">{e.eatenAt.slice(11, 16)}</span>
                 <button className="btn-link" disabled={busy} onClick={() => run(async () => { await api.deleteConsumption(e.id); })}>
                   取り消す
@@ -125,6 +141,22 @@ export default function Snacks({ dash, onChanged, toast }: Props) {
                   >
                     食べた！
                   </button>
+                  {tickets > 0 && (
+                    <button
+                      className="btn-small ticket"
+                      disabled={busy}
+                      title="お菓子引換券を1枚使って、カロリーを使わずに食べます"
+                      onClick={() =>
+                        run(async () => {
+                          await api.eatWithTicket(s.id);
+                          playCrunch();
+                          toast(`🎟 引換券で ${s.icon} ${s.name} を食べました（カロリーは使っていません）`);
+                        })
+                      }
+                    >
+                      🎟 引換券で食べる
+                    </button>
+                  )}
                   {!s.isBuiltin && (
                     <button className="btn-link danger" disabled={busy} onClick={() => run(async () => { await api.deleteSnack(s.id); })}>
                       削除

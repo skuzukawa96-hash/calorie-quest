@@ -30,7 +30,7 @@ export default function Home({ dash, onStart, onChanged, goToSnacks, toast }: Pr
   const [difficulty, setDifficulty] = useState<Difficulty>("low");
   const [category, setCategory] = useState<string>(ALL_CATEGORIES);
   const [redeeming, setRedeeming] = useState(false);
-  const { today, user, goalSnack, kcalRates } = dash;
+  const { today, user, goalSnack, kcalRates, savings } = dash;
 
   const remaining = goalSnack ? Math.max(0, goalSnack.calories - today.kcalEarned) : 0;
   const need = (rate: number) => Math.ceil(remaining / rate);
@@ -73,6 +73,18 @@ export default function Home({ dash, onStart, onChanged, goToSnacks, toast }: Pr
             <div className="badge" title="累計学習日数">
               📅 累計 {user.totalStudyDays} 日
             </div>
+            <button
+              className="badge savings"
+              onClick={goToSnacks}
+              title={`使わなかったカロリーは翌日に貯蓄され、${savings.perTicket.toLocaleString()} kcal でお菓子引換券1枚になります`}
+            >
+              🐷 貯蓄 {savings.balance.toLocaleString()} / {savings.perTicket.toLocaleString()} kcal
+            </button>
+            {savings.snackTickets > 0 && (
+              <button className="badge ticket" onClick={goToSnacks} title="お菓子図鑑で、好きなお菓子をカロリーを使わずに食べられます">
+                🎟 お菓子引換券 ×{savings.snackTickets}
+              </button>
+            )}
             {dash.ticketsAvailable > 0 && (
               <button className="badge ticket" onClick={redeem} disabled={redeeming}>
                 🎫 チートデイチケット ×{dash.ticketsAvailable}（+{kcalRates.cheatDayBonus} kcal で使う）

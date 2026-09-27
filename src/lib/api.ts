@@ -47,6 +47,7 @@ export const api = {
   deleteSnack: (id: number) => call<void>("delete_snack", { id }),
   setGoalSnack: (id: number | null) => call<Snack | null>("set_goal_snack", { id }),
   logSnackEaten: (snackId: number) => call<DailyStats>("log_snack_eaten", { snackId }),
+  eatWithTicket: (snackId: number) => call<DailyStats>("eat_with_ticket", { snackId }),
   getTodayConsumption: () => call<ConsumptionEntry[]>("get_today_consumption"),
   deleteConsumption: (id: number) => call<DailyStats>("delete_consumption", { id }),
   redeemCheatTicket: () => call<RedeemResult>("redeem_cheat_ticket"),

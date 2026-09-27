@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, runningInTauri } from "./lib/api";
 import RecipeProvider from "./components/RecipeProvider";
+import { playFanfare } from "./lib/sfx";
 import { loadSpeechCapabilities } from "./lib/speech";
 import Home from "./screens/Home";
 import Recipe from "./screens/Recipe";
@@ -32,14 +33,28 @@ export default function App() {
   const [session, setSession] = useState<SessionConfig | null>(null);
   const [toast, setToast] = useState<string | null>(null);
 
+  const showToast = useCallback((msg: string, ms = 3000) => {
+    setToast(msg);
+    window.setTimeout(() => setToast((cur) => (cur === msg ? null : cur)), ms);
+  }, []);
+
   const refresh = useCallback(async () => {
     try {
-      setDash(await api.getDashboard());
+      const d = await api.getDashboard();
+      setDash(d);
       setError(null);
+      // The first load after the date changes moves the earlier days' leftover into savings.
+      const { justSaved, justIssued, balance, perTicket } = d.savings;
+      if (justIssued > 0) {
+        playFanfare();
+        showToast(`🎟 貯蓄が ${perTicket.toLocaleString()} kcal に達しました！お菓子引換券を ${justIssued} 枚獲得`, 5000);
+      } else if (justSaved > 0) {
+        showToast(`🐷 前日の残り ${justSaved} kcal を貯蓄しました（${balance.toLocaleString()} / ${perTicket.toLocaleString()} kcal）`, 4000);
+      }
     } catch (e) {
       setError(String(e));
     }
-  }, []);
+  }, [showToast]);
 
   useEffect(() => {
     void refresh();
@@ -49,10 +64,6 @@ export default function App() {
     }
   }, [refresh]);
 
-  const showToast = useCallback((msg: string) => {
-    setToast(msg);
-    window.setTimeout(() => setToast((cur) => (cur === msg ? null : cur)), 3000);
-  }, []);
 
   const go = (t: Tab) => {
     setSession(null);

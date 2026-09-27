@@ -56,6 +56,7 @@ interface Hist {
 
 interface StoredConsumption extends ConsumptionEntry {
   date: string;
+  ticketId?: number | null;
 }
 
 interface MockState {
@@ -73,7 +74,20 @@ interface MockState {
   tickets: Ticket[];
   /** お菓子作りレシピ; absent in state saved before the list existed */
   recipe: RecipeWord[];
+  /** 貯蓄 (mirrors users.savings_kcal) */
+  savings: number;
+  /** leftover moved to savings per finished day (mirrors daily_stats.saved_kcal) */
+  saved: Record<string, number>;
+  /** お菓子引換券 */
+  snackTickets: SnackTicket[];
   nextId: number;
+}
+
+interface SnackTicket {
+  id: number;
+  issuedAt: string;
+  usedAt: string | null;
+  consumptionId: number | null;
 }
 
 const RATES = { low: 2, mid: 4, high: 10, reviewMultiplier: 1.5, cheatDayBonus: 300 };
@@ -193,6 +207,9 @@ function freshState(): MockState {
     consumption: [],
     tickets: [],
     recipe: [],
+    savings: 0,
+    saved: {},
+    snackTickets: [],
     nextId: 100,
   };
 }
@@ -203,9 +220,17 @@ function load(): MockState {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
-      // State saved before the word list existed has no `recipe`.
-      const saved = JSON.parse(raw) as Partial<MockState> & Omit<MockState, "recipe">;
-      return { ...saved, recipe: saved.recipe ?? [] };
+      // State saved before the word list or savings existed lacks them. Like the Rust migration,
+      // days already over are closed at 0 rather than paid into savings all at once.
+      const stored = JSON.parse(raw) as Partial<MockState> & Omit<MockState, "recipe" | "savings" | "saved" | "snackTickets">;
+      const closed = Object.fromEntries(Object.keys(stored.daily).filter((d) => d < today()).map((d) => [d, 0]));
+      return {
+        ...stored,
+        recipe: stored.recipe ?? [],
+        savings: stored.savings ?? 0,
+        saved: stored.saved ?? closed,
+        snackTickets: stored.snackTickets ?? [],
+      };
     }
   } catch {
     /* ignore */
@@ -218,6 +243,25 @@ function save() {
   } catch {
     /* ignore */
   }
+}
+
+/** Mirrors commands::settle_savings: finished days' leftover → savings, every 2,000 → a ticket. */
+const SAVINGS_PER_TICKET = 2000;
+function settleSavings(): { saved: number; issued: number } {
+  const t = today();
+  let saved = 0;
+  for (const [date, d] of Object.entries(state.daily)) {
+    if (date >= t || state.saved[date] !== undefined) continue;
+    const leftover = Math.max(0, d.kcalEarned - d.kcalConsumed);
+    state.saved[date] = leftover;
+    saved += leftover;
+  }
+  const total = state.savings + saved;
+  const issued = Math.floor(total / SAVINGS_PER_TICKET);
+  state.savings = total % SAVINGS_PER_TICKET;
+  for (let i = 0; i < issued; i++) state.snackTickets.push({ id: state.nextId++, issuedAt: nowTs(), usedAt: null, consumptionId: null });
+  if (saved > 0 || issued > 0) save();
+  return { saved, issued };
 }
 
 function daily(date: string): DailyStats {
@@ -724,6 +768,7 @@ export async function mockInvoke<T>(cmd: string, args: Record<string, unknown>):
   const t = today();
   switch (cmd) {
     case "get_dashboard": {
+      const settled = settleSavings();
       const goal = state.snacks.find((s) => s.id === state.user.goalSnackId) ?? null;
       const categories: CategoryInfo[] = [];
       for (const q of questions) {
@@ -745,6 +790,13 @@ export async function mockInvoke<T>(cmd: string, args: Record<string, unknown>):
         dueReviewCount: dueCount(),
         ticketsAvailable: ticketsAvailable(),
         kcalRates: { ...RATES },
+        savings: {
+          balance: state.savings,
+          perTicket: SAVINGS_PER_TICKET,
+          snackTickets: state.snackTickets.filter((x) => !x.usedAt).length,
+          justSaved: settled.saved,
+          justIssued: settled.issued,
+        },
       };
       return dash as T;
     }
@@ -780,20 +832,41 @@ export async function mockInvoke<T>(cmd: string, args: Record<string, unknown>):
     case "log_snack_eaten": {
       const snack = state.snacks.find((s) => s.id === Number(args.snackId));
       if (!snack) throw new Error("snack not found");
-      state.consumption.unshift({ id: state.nextId++, snackName: snack.name, snackIcon: snack.icon, calories: snack.calories, eatenAt: nowTs(), date: t });
+      state.consumption.unshift({ id: state.nextId++, snackName: snack.name, snackIcon: snack.icon, calories: snack.calories, eatenAt: nowTs(), date: t, withTicket: false });
       daily(t).kcalConsumed += snack.calories;
       save();
       return { ...daily(t) } as T;
     }
+    case "eat_with_ticket": {
+      const snack = state.snacks.find((s) => s.id === Number(args.snackId));
+      if (!snack) throw new Error("snack not found");
+      const ticket = state.snackTickets.find((x) => !x.usedAt);
+      if (!ticket) throw new Error("使えるお菓子引換券がありません");
+      const id = state.nextId++;
+      state.consumption.unshift({ id, snackName: snack.name, snackIcon: snack.icon, calories: snack.calories, eatenAt: nowTs(), date: t, withTicket: true, ticketId: ticket.id });
+      ticket.usedAt = nowTs();
+      ticket.consumptionId = id;
+      save();
+      return { ...daily(t) } as T;
+    }
     case "get_today_consumption":
-      return state.consumption.filter((c) => c.date === t).map(({ date: _d, ...rest }) => rest) as T;
+      return state.consumption
+        .filter((c) => c.date === t)
+        .map(({ date: _d, ticketId: _t, ...rest }) => ({ ...rest, withTicket: rest.withTicket ?? false })) as T;
     case "delete_consumption": {
       const id = Number(args.id);
       const entry = state.consumption.find((c) => c.id === id);
       if (entry) {
         state.consumption = state.consumption.filter((c) => c.id !== id);
-        const d = daily(entry.date);
-        d.kcalConsumed = Math.max(0, d.kcalConsumed - entry.calories);
+        const ticket = entry.ticketId ? state.snackTickets.find((x) => x.id === entry.ticketId) : undefined;
+        if (ticket) {
+          // Eaten with a ticket: the ticket comes back, the day's kcal were never touched.
+          ticket.usedAt = null;
+          ticket.consumptionId = null;
+        } else {
+          const d = daily(entry.date);
+          d.kcalConsumed = Math.max(0, d.kcalConsumed - entry.calories);
+        }
       }
       save();
       return { ...daily(t) } as T;

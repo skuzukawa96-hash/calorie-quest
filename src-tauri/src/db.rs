@@ -45,7 +45,8 @@ CREATE TABLE IF NOT EXISTS users (
   longest_streak INTEGER NOT NULL DEFAULT 0,
   last_study_date TEXT,
   goal_snack_id INTEGER,
-  created_at TEXT NOT NULL
+  created_at TEXT NOT NULL,
+  savings_kcal INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS questions (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -97,6 +98,7 @@ CREATE TABLE IF NOT EXISTS daily_stats (
   kcal_consumed INTEGER NOT NULL DEFAULT 0,
   answered INTEGER NOT NULL DEFAULT 0,
   correct INTEGER NOT NULL DEFAULT 0,
+  saved_kcal INTEGER,
   PRIMARY KEY (user_id, date)
 );
 CREATE TABLE IF NOT EXISTS snacks (
@@ -115,7 +117,8 @@ CREATE TABLE IF NOT EXISTS consumption_log (
   snack_icon TEXT NOT NULL,
   calories INTEGER NOT NULL,
   date TEXT NOT NULL,
-  eaten_at TEXT NOT NULL
+  eaten_at TEXT NOT NULL,
+  ticket_id INTEGER
 );
 CREATE TABLE IF NOT EXISTS cheat_tickets (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -123,6 +126,13 @@ CREATE TABLE IF NOT EXISTS cheat_tickets (
   issued_at TEXT NOT NULL,
   issued_for_streak INTEGER NOT NULL,
   used_at TEXT
+);
+CREATE TABLE IF NOT EXISTS snack_tickets (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL,
+  issued_at TEXT NOT NULL,
+  used_at TEXT,
+  consumption_id INTEGER
 );
 CREATE TABLE IF NOT EXISTS recipe_words (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -220,6 +230,17 @@ fn setup(conn: Connection) -> rusqlite::Result<Connection> {
     ensure_column(&conn, "questions", "example", "TEXT")?;
     ensure_column(&conn, "questions", "example_ja", "TEXT")?;
     ensure_column(&conn, "questions", "point", "TEXT")?;
+    ensure_column(&conn, "users", "savings_kcal", "INTEGER NOT NULL DEFAULT 0")?;
+    ensure_column(&conn, "consumption_log", "ticket_id", "INTEGER")?;
+    // A day's leftover kcal moves to savings once the day is over; `saved_kcal` records how much,
+    // and NULL means not yet. Days from before savings existed are closed at 0: the balance starts
+    // the day the feature arrives instead of paying out every old leftover at once.
+    if ensure_column(&conn, "daily_stats", "saved_kcal", "INTEGER")? {
+        conn.execute(
+            "UPDATE daily_stats SET saved_kcal = 0 WHERE date < ?1",
+            params![crate::util::today()],
+        )?;
+    }
     conn.execute(
         "INSERT OR IGNORE INTO users (id, name, created_at) VALUES (1, 'Player', ?1)",
         params![now_ts()],
@@ -230,7 +251,9 @@ fn setup(conn: Connection) -> rusqlite::Result<Connection> {
 }
 
 /// Adds a column to an existing table (databases created by older builds).
-fn ensure_column(conn: &Connection, table: &str, column: &str, ddl: &str) -> rusqlite::Result<()> {
+/// Adds a column to an existing database; returns whether it had to (a fresh database already has
+/// it from `SCHEMA`), so a migration can run once alongside it.
+fn ensure_column(conn: &Connection, table: &str, column: &str, ddl: &str) -> rusqlite::Result<bool> {
     let exists = {
         let mut stmt = conn.prepare(&format!("PRAGMA table_info({table})"))?;
         let names = stmt.query_map([], |r| r.get::<_, String>(1))?;
@@ -240,7 +263,7 @@ fn ensure_column(conn: &Connection, table: &str, column: &str, ddl: &str) -> rus
     if !exists {
         conn.execute_batch(&format!("ALTER TABLE {table} ADD COLUMN {column} {ddl}"))?;
     }
-    Ok(())
+    Ok(!exists)
 }
 
 pub fn meta_get(conn: &Connection, key: &str) -> rusqlite::Result<Option<String>> {
@@ -727,6 +750,38 @@ mod tests {
         for q in &seed.questions {
             assert!(q.kind == "grammar" || q.point.is_none(), "{} is not a grammar question", q.key);
         }
+    }
+
+    /// Savings start the day they arrive: an existing database gets its past days closed at 0
+    /// rather than every old leftover paid out at once, while today still counts tomorrow.
+    #[test]
+    fn upgrading_closes_past_days_but_not_today() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE daily_stats (user_id INTEGER NOT NULL, date TEXT NOT NULL,
+               kcal_earned INTEGER NOT NULL DEFAULT 0, kcal_consumed INTEGER NOT NULL DEFAULT 0,
+               answered INTEGER NOT NULL DEFAULT 0, correct INTEGER NOT NULL DEFAULT 0,
+               PRIMARY KEY (user_id, date));",
+        )
+        .unwrap();
+        let past = crate::util::date_plus(-3);
+        let today = crate::util::today();
+        for date in [&past, &today] {
+            conn.execute(
+                "INSERT INTO daily_stats (user_id, date, kcal_earned) VALUES (1, ?1, 800)",
+                params![date],
+            )
+            .unwrap();
+        }
+        let conn = setup(conn).unwrap();
+        let saved = |d: &str| -> Option<i64> {
+            conn.query_row("SELECT saved_kcal FROM daily_stats WHERE date = ?1", params![d], |r| r.get(0))
+                .unwrap()
+        };
+        assert_eq!(saved(&past), Some(0));
+        assert_eq!(saved(&today), None);
+        let balance: i64 = conn.query_row("SELECT savings_kcal FROM users WHERE id = 1", [], |r| r.get(0)).unwrap();
+        assert_eq!(balance, 0);
     }
 
     #[test]
