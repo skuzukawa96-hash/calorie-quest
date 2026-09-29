@@ -520,6 +520,22 @@ main {
 .flash-actions {
   justify-content: center;
 }
+.recipe-options {
+  width: 100%;
+  max-width: 680px;
+  margin: 4px 0 0;
+}
+.recipe-input {
+  max-width: 420px;
+  text-align: center;
+}
+.recipe-kcal {
+  color: var(--caramel-dark);
+}
+.recipe-review h2 .pill {
+  font-family: var(--font);
+  vertical-align: middle;
+}
 .recipe-toast {
   bottom: 82px;
   display: flex;

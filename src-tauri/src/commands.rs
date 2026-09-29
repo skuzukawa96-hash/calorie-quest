@@ -11,6 +11,8 @@ type CmdResult<T> = Result<T, String>;
 const USER_ID: i64 = 1;
 /// Study modes the frontend may ask for; anything else is rejected before it reaches SQL.
 pub const MODES: [&str; 4] = ["choice", "typing", "speaking", "listening"];
+/// ホームの「復習をはじめる」。期限の来た復習だけを、それぞれ間違えた形式で出す。
+pub const REVIEW_SESSION: &str = "review";
 
 fn err<E: std::fmt::Display>(e: E) -> String {
     e.to_string()
@@ -502,8 +504,24 @@ fn extend_unique(opts: &mut Vec<String>, more: Vec<String>, answer: &str) {
     }
 }
 
+/// Whether `q` can be asked in `mode`. Listening also plays anything recorded for speaking.
+fn offers_mode(q: &Question, mode: &str) -> bool {
+    q.modes.iter().any(|m| m == mode || (mode == "listening" && m == "speaking"))
+}
+
+/// The mode a due review is asked in: the one it was missed in. A question that went into review
+/// before that was recorded is asked by choice where it has one, else in the first mode it offers.
+fn review_mode_for(q: &Question, missed_in: Option<String>) -> String {
+    match missed_in {
+        Some(m) if MODES.contains(&m.as_str()) && offers_mode(q, &m) => m,
+        _ if offers_mode(q, "choice") => "choice".to_string(),
+        _ => q.modes.first().cloned().unwrap_or_else(|| "choice".to_string()),
+    }
+}
+
 /// Due reviews first (at most 60% of the session), then unseen/fresh questions; shuffled.
-/// `category` is a genre name or "all".
+/// A review joins only sessions of the mode it was missed in. `category` is a genre name or "all";
+/// `mode` may also be [`REVIEW_SESSION`].
 pub fn session_questions(
     conn: &Connection,
     mode: &str,
@@ -512,6 +530,9 @@ pub fn session_questions(
     count: u32,
 ) -> rusqlite::Result<Vec<SessionQuestion>> {
     let count = count.clamp(1, 50) as i64;
+    if mode == REVIEW_SESSION {
+        return review_session(conn, difficulty, category, count);
+    }
     let mode_like = format!("%\"{}\"%", mode);
     let today = today();
     let max_reviews = ((count as f64) * 0.6).ceil() as i64;
@@ -527,12 +548,13 @@ pub fn session_questions(
          JOIN learning_history h ON h.question_id = q.id
          WHERE h.user_id = ?1 AND h.needs_review = 1 AND h.next_due_at IS NOT NULL AND h.next_due_at <= ?2
            AND {mode_clause} AND (?4 = 'mixed' OR q.difficulty = ?4) AND (?5 = 'all' OR q.category = ?5)
+           AND (h.review_mode IS NULL OR h.review_mode = ?7)
          ORDER BY h.next_due_at ASC, RANDOM() LIMIT ?6"
     );
     let reviews: Vec<Question> = {
         let mut stmt = conn.prepare(&review_sql)?;
         let rows = stmt.query_map(
-            params![USER_ID, today, mode_like, difficulty, category, max_reviews],
+            params![USER_ID, today, mode_like, difficulty, category, max_reviews, mode],
             db::row_to_question,
         )?;
         rows.collect::<Result<_, _>>()?
@@ -568,6 +590,33 @@ pub fn session_questions(
     }
     for q in fresh {
         out.push(build_session_question(conn, q, mode, false)?);
+    }
+    shuffle(&mut out);
+    Ok(out)
+}
+
+/// ホームの「復習をはじめる」: every due review, whatever its mode, each asked in the mode it was
+/// missed in, so a phrase got wrong by typing is typed again rather than picked from four.
+/// Nothing fresh is mixed in.
+fn review_session(conn: &Connection, difficulty: &str, category: &str, count: i64) -> rusqlite::Result<Vec<SessionQuestion>> {
+    let sql = format!(
+        "SELECT {Q_COLS}, h.review_mode FROM questions q
+         JOIN learning_history h ON h.question_id = q.id
+         WHERE h.user_id = ?1 AND h.needs_review = 1 AND h.next_due_at IS NOT NULL AND h.next_due_at <= ?2
+           AND (?3 = 'mixed' OR q.difficulty = ?3) AND (?4 = 'all' OR q.category = ?4)
+         ORDER BY h.next_due_at ASC, RANDOM() LIMIT ?5"
+    );
+    let due: Vec<(Question, Option<String>)> = {
+        let mut stmt = conn.prepare(&sql)?;
+        let rows = stmt.query_map(params![USER_ID, today(), difficulty, category, count], |r| {
+            Ok((db::row_to_question(r)?, r.get(db::Q_COL_COUNT)?))
+        })?;
+        rows.collect::<Result<_, _>>()?
+    };
+    let mut out = Vec::with_capacity(due.len());
+    for (q, missed_in) in due {
+        let mode = review_mode_for(&q, missed_in);
+        out.push(build_session_question(conn, q, &mode, true)?);
     }
     shuffle(&mut out);
     Ok(out)
@@ -624,11 +673,13 @@ pub fn record_answer(conn: &mut Connection, payload: &AnswerPayload) -> Result<A
     }
     let (new_level, new_needs_review, new_next_due) =
         srs::next_state(level, in_review, payload.correct, low_score);
+    // A miss is reviewed in the mode it happened in; a correct answer leaves that as it was.
+    let missed_in = (!payload.correct || low_score).then(|| payload.mode.clone());
 
     tx.execute(
         "INSERT INTO learning_history
-           (user_id, question_id, correct_count, wrong_count, last_correct, last_score, srs_level, needs_review, last_studied_at, next_due_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+           (user_id, question_id, correct_count, wrong_count, last_correct, last_score, srs_level, needs_review, last_studied_at, next_due_at, review_mode)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
          ON CONFLICT(user_id, question_id) DO UPDATE SET
            correct_count = correct_count + excluded.correct_count,
            wrong_count = wrong_count + excluded.wrong_count,
@@ -637,7 +688,8 @@ pub fn record_answer(conn: &mut Connection, payload: &AnswerPayload) -> Result<A
            srs_level = excluded.srs_level,
            needs_review = excluded.needs_review,
            last_studied_at = excluded.last_studied_at,
-           next_due_at = excluded.next_due_at",
+           next_due_at = excluded.next_due_at,
+           review_mode = COALESCE(excluded.review_mode, review_mode)",
         params![
             USER_ID,
             payload.question_id,
@@ -648,7 +700,8 @@ pub fn record_answer(conn: &mut Connection, payload: &AnswerPayload) -> Result<A
             new_level,
             new_needs_review as i64,
             now,
-            new_next_due
+            new_next_due,
+            missed_in
         ],
     )
     .map_err(err)?;
@@ -787,7 +840,7 @@ pub fn get_session_questions(
     category: Option<String>,
     count: u32,
 ) -> CmdResult<Vec<SessionQuestion>> {
-    if !MODES.contains(&mode.as_str()) {
+    if mode != REVIEW_SESSION && !MODES.contains(&mode.as_str()) {
         return Err(format!("unknown mode {mode}"));
     }
     let conn = state.db.lock().map_err(err)?;
@@ -1189,6 +1242,63 @@ mod tests {
         let (level, needs, due) = history(&c, qid);
         assert_eq!((level, needs), (1, 1));
         assert_eq!(due.as_deref(), Some(date_plus(3).as_str()));
+    }
+
+    /// A phrase got wrong by typing comes back to be typed: in typing sessions and in the review
+    /// session from home, never as a four-way pick in a choice session.
+    #[test]
+    fn a_miss_is_reviewed_in_the_mode_it_was_missed_in() {
+        let mut c = conn();
+        let typed = question_id(&c, "p001");
+        let picked = question_id(&c, "w003");
+        let spoken = question_id(&c, "i001");
+        answer(&mut c, typed, "typing", false, None);
+        answer(&mut c, picked, "choice", false, None);
+        answer(&mut c, spoken, "speaking", true, Some(40.0)); // passed, but low enough for review
+        c.execute("UPDATE learning_history SET next_due_at = ?1", params![today()]).unwrap();
+
+        let in_session = |c: &Connection, mode: &str, qid: i64| {
+            session_questions(c, mode, "mixed", "all", 50).unwrap().into_iter().find(|q| q.question.id == qid)
+        };
+        assert!(in_session(&c, "choice", typed).is_none(), "not picked from four");
+        let t = in_session(&c, "typing", typed).expect("typed again in a typing session");
+        assert!(t.is_review);
+        assert!(in_session(&c, "typing", picked).is_none());
+        assert!(in_session(&c, "choice", picked).expect("choice review").is_review);
+
+        let review = session_questions(&c, REVIEW_SESSION, "mixed", "all", 10).unwrap();
+        assert_eq!(review.len(), 3, "only the due reviews, nothing fresh");
+        assert!(review.iter().all(|q| q.is_review));
+        let mode_of = |qid: i64| review.iter().find(|q| q.question.id == qid).unwrap().mode.clone();
+        assert_eq!(mode_of(typed), "typing");
+        assert_eq!(mode_of(picked), "choice");
+        assert_eq!(mode_of(spoken), "speaking");
+        let t = review.iter().find(|q| q.question.id == typed).unwrap();
+        assert_eq!(t.answer, "Nice to meet you.");
+        assert!(t.options.is_empty());
+
+        // Answered right in its review, it stays a typing review until it graduates.
+        answer(&mut c, typed, "typing", true, None);
+        c.execute("UPDATE learning_history SET next_due_at = ?1", params![today()]).unwrap();
+        assert!(in_session(&c, "typing", typed).is_some());
+        assert!(in_session(&c, "choice", typed).is_none());
+    }
+
+    /// A question that went into review before the mode was recorded is asked by choice where it
+    /// can be, and joins sessions of any mode.
+    #[test]
+    fn an_unrecorded_review_is_asked_by_choice() {
+        let mut c = conn();
+        let qid = question_id(&c, "p002");
+        answer(&mut c, qid, "typing", false, None);
+        c.execute("UPDATE learning_history SET next_due_at = ?1, review_mode = NULL", params![today()]).unwrap();
+        let review = session_questions(&c, REVIEW_SESSION, "mixed", "all", 10).unwrap();
+        assert_eq!(review[0].mode, "choice");
+        assert_eq!(review[0].options.len(), 4);
+        for mode in ["choice", "typing"] {
+            let s = session_questions(&c, mode, "mixed", "all", 50).unwrap();
+            assert!(s.iter().any(|q| q.question.id == qid && q.is_review), "{mode}");
+        }
     }
 
     #[test]

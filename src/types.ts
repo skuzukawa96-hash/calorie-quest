@@ -1,4 +1,6 @@
 export type Mode = "choice" | "typing" | "speaking" | "listening";
+/** a study session: one mode, or "review" (every due review, each in the mode it was missed in) */
+export type SessionMode = Mode | "review";
 export type Difficulty = "low" | "mid" | "high" | "mixed";
 export type Level = "low" | "mid" | "high";
 
@@ -248,6 +250,18 @@ export type RecipeAddStatus = "added" | "exists" | "restored";
 export interface RecipeAddResult {
   status: RecipeAddStatus;
   entry: RecipeWord;
+}
+
+/** choice: pick the meaning of the English (0.5 kcal) / typing: write the English for the meaning (1 kcal) */
+export type RecipeReviewMode = "choice" | "typing";
+
+export interface RecipeReviewResult {
+  entry: RecipeWord;
+  /** whole kcal added to today just now; half a calorie waits for the next one */
+  kcalEarned: number;
+  todayKcal: number;
+  /** 0.5 kcal is waiting for the next correct pick today */
+  halfPending: boolean;
 }
 
 export interface SpeechCapabilities {

@@ -8,7 +8,7 @@ import Recipe from "./screens/Recipe";
 import Snacks from "./screens/Snacks";
 import Stats from "./screens/Stats";
 import Study from "./screens/Study";
-import type { Dashboard, Difficulty, Mode } from "./types";
+import type { Dashboard, Difficulty, SessionMode } from "./types";
 
 type Tab = "home" | "snacks" | "recipe" | "stats";
 
@@ -20,7 +20,7 @@ const TABS: Array<{ id: Tab; label: string }> = [
 ];
 
 interface SessionConfig {
-  mode: Mode;
+  mode: SessionMode;
   difficulty: Difficulty;
   /** genre name or "all" */
   category: string;
@@ -135,7 +135,7 @@ export default function App() {
               <Snacks dash={dash} onChanged={() => void refresh()} toast={showToast} />
             ) : null
           ) : tab === "recipe" ? (
-            <Recipe toast={showToast} />
+            <Recipe onProgress={() => void refresh()} toast={showToast} />
           ) : (
             <Stats onChanged={() => void refresh()} toast={showToast} />
           )}

@@ -9,12 +9,13 @@ import {
   type Dashboard,
   type Difficulty,
   type Mode,
+  type SessionMode,
   type Snack,
 } from "../types";
 
 interface Props {
   dash: Dashboard;
-  onStart: (mode: Mode, difficulty: Difficulty, category: string) => void;
+  onStart: (mode: SessionMode, difficulty: Difficulty, category: string) => void;
   onChanged: () => void;
   goToSnacks: () => void;
   toast: (msg: string) => void;
@@ -232,14 +233,15 @@ export default function Home({ dash, onStart, onChanged, goToSnacks, toast }: Pr
             <strong>🔁 復習</strong>{" "}
             {dash.dueReviewCount > 0 ? (
               <span>
-                今日の復習が <b>{dash.dueReviewCount} 問</b> あります。復習問題は正解でカロリー <b>×{kcalRates.reviewMultiplier}</b>！
+                今日の復習が <b>{dash.dueReviewCount} 問</b> あります。間違えたときと同じ形式で出題され、正解でカロリー{" "}
+                <b>×{kcalRates.reviewMultiplier}</b>！
               </span>
             ) : (
               <span className="muted">今日の復習はありません。間違えた問題は忘れる前に自動で再出題されます。</span>
             )}
           </div>
           {dash.dueReviewCount > 0 && (
-            <button className="btn" onClick={() => onStart("choice", "mixed", ALL_CATEGORIES)}>
+            <button className="btn" onClick={() => onStart("review", "mixed", ALL_CATEGORIES)}>
               復習をはじめる
             </button>
           )}

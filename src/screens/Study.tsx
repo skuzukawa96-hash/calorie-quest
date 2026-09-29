@@ -35,16 +35,18 @@ import {
   type AnswerResult,
   type Difficulty,
   type KcalRates,
-  type Mode,
+  type SessionMode,
   type SessionQuestion,
 } from "../types";
 
 const SESSION_SIZE = 10;
 const AUTO_SPEAK_KEY = "cq-auto-speak";
 const GLOSS_KEY = "cq-show-gloss";
+const TYPING_HINT_KEY = "cq-typing-hint";
 
 interface Props {
-  mode: Mode;
+  /** one mode for every question, or "review": each due review in the mode it was missed in */
+  mode: SessionMode;
   difficulty: Difficulty;
   /** genre name or "all" */
   category: string;
@@ -115,6 +117,7 @@ export default function Study({ mode, difficulty, category, rates, onExit, onPro
   const [runId, setRunId] = useState(0);
   const [autoSpeak, setAutoSpeak] = useState<boolean>(() => loadFlag(AUTO_SPEAK_KEY, true));
   const [showGloss, setShowGloss] = useState<boolean>(() => loadFlag(GLOSS_KEY, true));
+  const [typingHint, setTypingHint] = useState<boolean>(() => loadFlag(TYPING_HINT_KEY, false));
   const [dict, setDict] = useState<Dictionary | null>(null);
 
   useEffect(() => {
@@ -134,6 +137,12 @@ export default function Study({ mode, difficulty, category, rates, onExit, onPro
   const toggleGloss = () =>
     setShowGloss((v) => {
       saveFlag(GLOSS_KEY, !v);
+      return !v;
+    });
+
+  const toggleTypingHint = () =>
+    setTypingHint((v) => {
+      saveFlag(TYPING_HINT_KEY, !v);
       return !v;
     });
 
@@ -166,11 +175,13 @@ export default function Study({ mode, difficulty, category, rates, onExit, onPro
       typing?: TypingGrade,
     ) => {
       if (!current || submitting || feedback) return;
+      // A review session mixes modes, so each answer is recorded in its question's own mode.
+      const qMode = current.mode;
       setSubmitting(true);
       try {
         const result = await api.submitAnswer({
           questionId: current.question.id,
-          mode,
+          mode: qMode,
           correct,
           score,
           hintsUsed,
@@ -191,7 +202,7 @@ export default function Study({ mode, difficulty, category, rates, onExit, onPro
         onProgress();
         // Read the English aloud after the answer sound so the learner hears the pronunciation.
         // Listening mode has just played it, so it only repeats when the answer was wrong.
-        const repeat = mode !== "speaking" && autoSpeak && isTtsSupported() && (mode !== "listening" || !correct);
+        const repeat = qMode !== "speaking" && autoSpeak && isTtsSupported() && (qMode !== "listening" || !correct);
         if (repeat) {
           const text = current.audioText;
           window.setTimeout(() => {
@@ -204,7 +215,7 @@ export default function Study({ mode, difficulty, category, rates, onExit, onPro
         setSubmitting(false);
       }
     },
-    [current, submitting, feedback, mode, autoSpeak, onProgress, toast],
+    [current, submitting, feedback, autoSpeak, onProgress, toast],
   );
 
   const next = useCallback(() => {
@@ -251,7 +262,11 @@ export default function Study({ mode, difficulty, category, rates, onExit, onPro
     return (
       <div className="screen">
         <div className="card">
-          <p>この条件に合う問題がありません。難易度やモードを変えてみてください。</p>
+          <p>
+            {mode === "review"
+              ? "今日の復習はすべて終わりました。"
+              : "この条件に合う問題がありません。難易度やモードを変えてみてください。"}
+          </p>
           <button className="btn" onClick={onExit}>
             ホームへ戻る
           </button>
@@ -260,11 +275,20 @@ export default function Study({ mode, difficulty, category, rates, onExit, onPro
     );
   }
   if (finished) {
-    return <Summary total={questions.length} tally={tally} onExit={onExit} onAgain={() => setRunId((r) => r + 1)} />;
+    return (
+      <Summary
+        total={questions.length}
+        tally={tally}
+        againLabel={mode === "review" ? "続けて復習する" : "もう10問"}
+        onExit={onExit}
+        onAgain={() => setRunId((r) => r + 1)}
+      />
+    );
   }
   if (!current) return null;
 
   const glossOn = showGloss && isMultiWord(current);
+  const qMode = current.mode;
 
   return (
     <div className="screen study">
@@ -273,7 +297,7 @@ export default function Study({ mode, difficulty, category, rates, onExit, onPro
           ← やめる
         </button>
         <div className="study-meta">
-          <span className="pill">{MODE_LABEL[mode]}</span>
+          <span className="pill">{MODE_LABEL[qMode]}</span>
           <span className="pill">{DIFFICULTY_LABEL[difficulty]}</span>
           {category !== ALL_CATEGORIES && (
             <span className="pill">
@@ -282,7 +306,7 @@ export default function Study({ mode, difficulty, category, rates, onExit, onPro
           )}
           <span className="pill level">難易度 {LEVEL_SHORT[current.question.difficulty]}</span>
           {current.isReview && <span className="pill review">🔁 復習 ×{rates.reviewMultiplier}</span>}
-          {mode !== "speaking" && (
+          {qMode !== "speaking" && (
             <button
               type="button"
               className={"pill toggle " + (autoSpeak ? "on" : "")}
@@ -300,6 +324,16 @@ export default function Study({ mode, difficulty, category, rates, onExit, onPro
           >
             🔤 単語の意味 {showGloss ? "ON" : "OFF"}
           </button>
+          {qMode === "typing" && (
+            <button
+              type="button"
+              className={"pill toggle " + (typingHint ? "on" : "")}
+              onClick={toggleTypingHint}
+              title="記入問題のヒント（伏せ字）を最初から表示します。表示するだけなら減点はありません"
+            >
+              💡 ヒント常時表示 {typingHint ? "ON" : "OFF"}
+            </button>
+          )}
         </div>
         <div className="study-progress">
           {idx + 1} / {questions.length}
@@ -315,7 +349,7 @@ export default function Study({ mode, difficulty, category, rates, onExit, onPro
             {categoryIcon(current.question.category)} {current.question.category}
           </div>
         )}
-        {mode === "choice" && (
+        {qMode === "choice" && (
           <ChoiceCard
             q={current}
             dict={dict}
@@ -325,9 +359,10 @@ export default function Study({ mode, difficulty, category, rates, onExit, onPro
             chosen={feedback?.given ?? null}
           />
         )}
-        {mode === "typing" && (
+        {qMode === "typing" && (
           <TypingCard
             q={current}
+            hintAlways={typingHint}
             disabled={!!feedback || submitting}
             onAnswer={(input, hintsUsed) => {
               const grade = gradeTyping(current.accepted ?? current.answer, input);
@@ -335,7 +370,7 @@ export default function Study({ mode, difficulty, category, rates, onExit, onPro
             }}
           />
         )}
-        {mode === "listening" && (
+        {qMode === "listening" && (
           <ListeningCard
             q={current}
             disabled={!!feedback || submitting}
@@ -346,7 +381,7 @@ export default function Study({ mode, difficulty, category, rates, onExit, onPro
             chosen={feedback?.given ?? null}
           />
         )}
-        {mode === "speaking" && (
+        {qMode === "speaking" && (
           <SpeakingCard
             q={current}
             alternatives={questions.filter((x) => x !== current).map((x) => x.question.en)}
@@ -374,7 +409,7 @@ export default function Study({ mode, difficulty, category, rates, onExit, onPro
               </div>
             </div>
             <div className="feedback-detail">
-              {mode === "listening" && (
+              {qMode === "listening" && (
                 <div className="heard-line">
                   <span className="label">聞こえた英語</span>{" "}
                   <strong>
@@ -411,8 +446,8 @@ export default function Study({ mode, difficulty, category, rates, onExit, onPro
                     current.answer
                   )}
                 </strong>
-                {mode === "choice" && current.subDisplay && <span className="muted">　{current.subDisplay}</span>}
-                {mode !== "speaking" && (
+                {qMode === "choice" && current.subDisplay && <span className="muted">　{current.subDisplay}</span>}
+                {qMode !== "speaking" && (
                   <button className="btn-link" onClick={() => speak(current.audioText).catch(() => undefined)} disabled={!isTtsSupported()}>
                     🔊 もう一度聞く
                   </button>
@@ -546,14 +581,27 @@ function ChoiceCard({
 
 /* ---------- Typing ---------- */
 
-function TypingCard({ q, disabled, onAnswer }: { q: SessionQuestion; disabled: boolean; onAnswer: (s: string, hintsUsed: number) => void }) {
+function TypingCard({
+  q,
+  hintAlways,
+  disabled,
+  onAnswer,
+}: {
+  q: SessionQuestion;
+  /** 「ヒント常時表示」: the masked hint is open from the start (revealing a word still costs) */
+  hintAlways: boolean;
+  disabled: boolean;
+  onAnswer: (s: string, hintsUsed: number) => void;
+}) {
   const [value, setValue] = useState("");
-  const [showHint, setShowHint] = useState(false);
+  const [showHint, setShowHint] = useState(hintAlways);
   const [revealed, setRevealed] = useState<number[]>([]);
   const ref = useRef<HTMLInputElement>(null);
   useEffect(() => {
     ref.current?.focus();
   }, []);
+  // Switching the setting mid-question applies to this question too.
+  useEffect(() => setShowHint(hintAlways), [hintAlways]);
 
   const hintWords = q.answer.split(" ");
   // フレーズの記入問題は1語 1 kcal、開示した語1つにつき −1 kcal。ほかは開示1語ごとに半分。
@@ -878,7 +926,19 @@ function SpeakingCard({
 
 /* ---------- Summary ---------- */
 
-function Summary({ total, tally, onExit, onAgain }: { total: number; tally: Tally; onExit: () => void; onAgain: () => void }) {
+function Summary({
+  total,
+  tally,
+  againLabel,
+  onExit,
+  onAgain,
+}: {
+  total: number;
+  tally: Tally;
+  againLabel: string;
+  onExit: () => void;
+  onAgain: () => void;
+}) {
   const rate = total ? Math.round((tally.correct / total) * 100) : 0;
   const cheer = rate === 100 ? "パーフェクト！ご褒美タイムです🍰" : rate >= 70 ? "いい調子！サクサク進んでます🍪" : "復習で取り返そう。明日また出題されます🍫";
   return (
@@ -904,7 +964,7 @@ function Summary({ total, tally, onExit, onAgain }: { total: number; tally: Tall
         <p className="cheer">{cheer}</p>
         <div className="row">
           <button className="btn btn-primary" onClick={onAgain}>
-            もう10問
+            {againLabel}
           </button>
           <button className="btn" onClick={onExit}>
             ホームへ戻る

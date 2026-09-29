@@ -78,6 +78,7 @@ CREATE TABLE IF NOT EXISTS learning_history (
   needs_review INTEGER NOT NULL DEFAULT 0,
   last_studied_at TEXT NOT NULL,
   next_due_at TEXT,
+  review_mode TEXT,
   UNIQUE(user_id, question_id)
 );
 CREATE TABLE IF NOT EXISTS answer_log (
@@ -99,6 +100,7 @@ CREATE TABLE IF NOT EXISTS daily_stats (
   answered INTEGER NOT NULL DEFAULT 0,
   correct INTEGER NOT NULL DEFAULT 0,
   saved_kcal INTEGER,
+  recipe_half_kcal INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (user_id, date)
 );
 CREATE TABLE IF NOT EXISTS snacks (
@@ -243,6 +245,22 @@ fn setup(conn: Connection) -> rusqlite::Result<Connection> {
         conn.execute(
             "UPDATE daily_stats SET saved_kcal = 0 WHERE date < ?1",
             params![crate::util::today()],
+        )?;
+    }
+    // レシピの復習は 0.5 kcal 単位で貯まる。整数にならなかった端数をその日のうちだけ持ち越す。
+    ensure_column(&conn, "daily_stats", "recipe_half_kcal", "INTEGER NOT NULL DEFAULT 0")?;
+    // A missed question comes back for review in the mode it was missed in (a phrase got wrong by
+    // typing is reviewed by typing, not picked from four). Questions already waiting take the mode
+    // of their latest miss from the answer log.
+    if ensure_column(&conn, "learning_history", "review_mode", "TEXT")? {
+        conn.execute(
+            "UPDATE learning_history SET review_mode = (
+               SELECT a.mode FROM answer_log a
+               WHERE a.user_id = learning_history.user_id AND a.question_id = learning_history.question_id
+                 AND (a.correct = 0 OR (a.mode = 'speaking' AND a.score < ?1))
+               ORDER BY a.id DESC LIMIT 1)
+             WHERE needs_review = 1",
+            params![crate::srs::SPEAKING_REVIEW_THRESHOLD],
         )?;
     }
     conn.execute(
@@ -826,6 +844,40 @@ mod tests {
         assert_eq!(saved(&today), None);
         let balance: i64 = conn.query_row("SELECT savings_kcal FROM users WHERE id = 1", [], |r| r.get(0)).unwrap();
         assert_eq!(balance, 0);
+    }
+
+    /// Questions already waiting for review when the mode began to be recorded take the mode of
+    /// their latest miss, so a phrase got wrong by typing is typed again from the first day.
+    #[test]
+    fn waiting_reviews_take_the_mode_of_their_last_miss() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE learning_history (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL,
+               question_id INTEGER NOT NULL, correct_count INTEGER NOT NULL DEFAULT 0,
+               wrong_count INTEGER NOT NULL DEFAULT 0, last_correct INTEGER, last_score REAL,
+               srs_level INTEGER NOT NULL DEFAULT 0, needs_review INTEGER NOT NULL DEFAULT 0,
+               last_studied_at TEXT NOT NULL, next_due_at TEXT, UNIQUE(user_id, question_id));
+             INSERT INTO learning_history (user_id, question_id, needs_review, last_studied_at) VALUES
+               (1, 10, 1, 'x'), (1, 20, 1, 'x'), (1, 30, 0, 'x');
+             CREATE TABLE answer_log (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL,
+               question_id INTEGER NOT NULL, mode TEXT NOT NULL, correct INTEGER NOT NULL, score REAL,
+               kcal INTEGER NOT NULL, is_review INTEGER NOT NULL DEFAULT 0, answered_at TEXT NOT NULL);
+             INSERT INTO answer_log (user_id, question_id, mode, correct, score, kcal, answered_at) VALUES
+               (1, 10, 'choice', 0, NULL, 0, 'a'),
+               (1, 10, 'typing', 0, NULL, 0, 'b'),
+               (1, 10, 'choice', 1, NULL, 3, 'c'),
+               (1, 20, 'speaking', 1, 40, 4, 'a'),
+               (1, 30, 'typing', 0, NULL, 0, 'a');",
+        )
+        .unwrap();
+        let conn = setup(conn).unwrap();
+        let mode = |qid: i64| -> Option<String> {
+            conn.query_row("SELECT review_mode FROM learning_history WHERE question_id = ?1", params![qid], |r| r.get(0))
+                .unwrap()
+        };
+        assert_eq!(mode(10).as_deref(), Some("typing"), "the latest miss, not the latest answer");
+        assert_eq!(mode(20).as_deref(), Some("speaking"), "a low pronunciation score is a miss");
+        assert_eq!(mode(30), None, "not waiting for review");
     }
 
     /// The single goal of earlier versions becomes the first entry of the goal list.

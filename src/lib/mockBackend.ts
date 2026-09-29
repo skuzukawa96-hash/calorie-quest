@@ -20,6 +20,7 @@ import type {
   RecipeAddResult,
   RecipeWord,
   RecipeWordInput,
+  SessionMode,
   SessionQuestion,
   Snack,
   Stats,
@@ -52,6 +53,8 @@ interface Hist {
   wrong: number;
   lastScore: number | null;
   lastStudiedAt: string;
+  /** the mode it was last missed in, which its review is asked in (learning_history.review_mode) */
+  reviewMode?: Mode | null;
 }
 
 interface StoredConsumption extends ConsumptionEntry {
@@ -83,6 +86,8 @@ interface MockState {
   snackTickets: SnackTicket[];
   /** 目標のお菓子（mirrors goal_snacks） */
   goals: number[];
+  /** レシピ復習の 0.5 kcal 単位の点、日ごと（mirrors daily_stats.recipe_half_kcal） */
+  recipeHalves: Record<string, number>;
   nextId: number;
 }
 
@@ -213,6 +218,7 @@ function freshState(): MockState {
     saved: {},
     snackTickets: [],
     goals: [],
+    recipeHalves: {},
     nextId: 100,
   };
 }
@@ -231,7 +237,7 @@ function load(): MockState {
     if (raw) {
       // State saved before the word list or savings existed lacks them. Like the Rust migration,
       // days already over are closed at 0 rather than paid into savings all at once.
-      const stored = JSON.parse(raw) as Partial<MockState> & Omit<MockState, "recipe" | "savings" | "saved" | "snackTickets" | "goals">;
+      const stored = JSON.parse(raw) as Partial<MockState> & Omit<MockState, "recipe" | "savings" | "saved" | "snackTickets" | "goals" | "recipeHalves">;
       const closed = Object.fromEntries(Object.keys(stored.daily).filter((d) => d < today()).map((d) => [d, 0]));
       return {
         ...stored,
@@ -241,6 +247,7 @@ function load(): MockState {
         snackTickets: stored.snackTickets ?? [],
         // The single goal of earlier versions becomes the first entry of the list.
         goals: stored.goals ?? legacyGoal(stored.user),
+        recipeHalves: stored.recipeHalves ?? {},
       };
     }
   } catch {
@@ -593,8 +600,31 @@ function buildSessionQuestion(q: Question, mode: Mode, isReview: boolean): Sessi
   return { ...base, display: q.en, subDisplay: q.ja, options: [], answer: q.en, accepted: [q.en] };
 }
 
-function getSessionQuestions(mode: Mode, difficulty: string, category: string, count: number): SessionQuestion[] {
+/** Mirrors offers_mode in commands.rs: listening also plays anything recorded for speaking. */
+function offersMode(q: Question, mode: Mode): boolean {
+  return q.modes.includes(mode) || (mode === "listening" && q.modes.includes("speaking"));
+}
+
+/** Mirrors review_mode_for: the mode it was missed in, else choice, else its first mode. */
+function reviewModeFor(q: Question, missedIn: Mode | null | undefined): Mode {
+  if (missedIn && offersMode(q, missedIn)) return missedIn;
+  if (offersMode(q, "choice")) return "choice";
+  return q.modes[0] ?? "choice";
+}
+
+function getSessionQuestions(mode: SessionMode, difficulty: string, category: string, count: number): SessionQuestion[] {
   const t = today();
+  const isDue = (q: Question) => !!state.history[q.key]?.needsReview && (state.history[q.key].nextDue ?? "9999") <= t;
+  const byDue = (a: Question, b: Question) =>
+    (state.history[a.key].nextDue ?? "").localeCompare(state.history[b.key].nextDue ?? "");
+  if (mode === "review") {
+    // Mirrors review_session: every due review, each in the mode it was missed in; nothing fresh.
+    const due = questions
+      .filter((q) => isDue(q) && (difficulty === "mixed" || q.difficulty === difficulty) && (category === "all" || q.category === category))
+      .sort(byDue)
+      .slice(0, count);
+    return shuffle(due.map((q) => buildSessionQuestion(q, reviewModeFor(q, state.history[q.key].reviewMode), true)));
+  }
   const hasMode = (q: Question) =>
     mode === "listening" ? q.modes.includes("listening") || q.modes.includes("speaking") : q.modes.includes(mode);
   const fits = (q: Question) =>
@@ -602,9 +632,10 @@ function getSessionQuestions(mode: Mode, difficulty: string, category: string, c
     (difficulty === "mixed" || q.difficulty === difficulty) &&
     (category === "all" || q.category === category);
   const maxReviews = Math.ceil(count * 0.6);
+  // A review joins only sessions of the mode it was missed in.
   const due = questions
-    .filter((q) => fits(q) && state.history[q.key]?.needsReview && (state.history[q.key].nextDue ?? "9999") <= t)
-    .sort((a, b) => (state.history[a.key].nextDue ?? "").localeCompare(state.history[b.key].nextDue ?? ""))
+    .filter((q) => fits(q) && isDue(q) && (!state.history[q.key].reviewMode || state.history[q.key].reviewMode === mode))
+    .sort(byDue)
     .slice(0, maxReviews);
   const dueKeys = new Set(due.map((q) => q.key));
   const freshPool = questions.filter((q) => fits(q) && !dueKeys.has(q.key) && !state.history[q.key]?.needsReview);
@@ -660,6 +691,7 @@ function submitAnswer(p: AnswerPayload): AnswerResult {
     wrong: h.wrong + (p.correct ? 0 : 1),
     lastScore: p.score ?? null,
     lastStudiedAt: nowTs(),
+    reviewMode: !p.correct || lowScore ? p.mode : (h.reviewMode ?? null),
   };
   const d = daily(t);
   d.kcalEarned += kcal;
@@ -824,7 +856,7 @@ export async function mockInvoke<T>(cmd: string, args: Record<string, unknown>):
       return dash as T;
     }
     case "get_session_questions":
-      return getSessionQuestions(args.mode as Mode, String(args.difficulty), String(args.category || "all"), Number(args.count)) as T;
+      return getSessionQuestions(args.mode as SessionMode, String(args.difficulty), String(args.category || "all"), Number(args.count)) as T;
     case "submit_answer":
       return submitAnswer(args.payload as AnswerPayload) as T;
     case "list_snacks":
@@ -941,13 +973,22 @@ export async function mockInvoke<T>(cmd: string, args: Record<string, unknown>):
     case "add_recipe_word":
       return addRecipeWord(args.entry as RecipeWordInput) as T;
     case "review_recipe_word": {
+      // Mirrors recipe::review and srs::recipe_half_kcal / recipe_kcal_gain: pay is counted in
+      // halves per day (choice 0.5, typing 1 kcal) and only whole calories reach the budget.
+      const halves = args.mode === "choice" ? 1 : args.mode === "typing" ? 2 : 0;
+      if (!halves) throw new Error(`unknown review mode ${String(args.mode)}`);
       const w = recipeWord(Number(args.id));
       const now = nowTs();
       w.reviews += 1;
       w.lastReviewedAt = now;
       w.masteredAt = args.remembered ? now : null;
+      const before = state.recipeHalves[t] ?? 0;
+      const gained = args.remembered ? halves : 0;
+      const kcal = Math.floor((before + gained) / 2) - Math.floor(before / 2);
+      state.recipeHalves[t] = before + gained;
+      daily(t).kcalEarned += kcal;
       save();
-      return { ...w } as T;
+      return { entry: { ...w }, kcalEarned: kcal, todayKcal: daily(t).kcalEarned, halfPending: (before + gained) % 2 === 1 } as T;
     }
     case "set_recipe_mastered": {
       const w = recipeWord(Number(args.id));

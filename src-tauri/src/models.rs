@@ -272,6 +272,18 @@ pub struct RecipeAddResult {
     pub entry: RecipeWord,
 }
 
+/// One word reviewed from the recipe, and what it paid into today's budget.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RecipeReviewResult {
+    pub entry: RecipeWord,
+    /// whole kcal added to today just now (0.5 kcal waits for the next half)
+    pub kcal_earned: i64,
+    pub today_kcal: i64,
+    /// half a calorie is waiting for the next correct pick today
+    pub half_pending: bool,
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Stats {

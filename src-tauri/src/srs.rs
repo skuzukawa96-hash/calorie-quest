@@ -77,6 +77,24 @@ pub fn apply_hint_penalty(kcal: i64, hints_used: i64) -> i64 {
     ((kcal as f64) / 2f64.powi(halvings)).round() as i64
 }
 
+/// お菓子作りレシピの復習で1語正解したときのカロリーを 0.5 kcal 単位で数えたもの。
+/// 意味を4択で選ぶと 0.5 kcal、日本語から英語を書くと 1 kcal。
+pub fn recipe_half_kcal(mode: &str) -> Option<i64> {
+    match mode {
+        "choice" => Some(1),
+        "typing" => Some(2),
+        _ => None,
+    }
+}
+
+/// その日のレシピ復習で貯まった 0.5 kcal 単位の点が `before` から `gained` 増えたとき、今日の
+/// 獲得カロリーに足す kcal。小数点以下は切り捨てるが、端数は捨てずにその日の次の正解と合わせる
+/// （0.5 + 0.5 = 1 kcal）。日付が変わると残った 0.5 kcal は切り捨てになる。
+pub fn recipe_kcal_gain(before: i64, gained: i64) -> i64 {
+    let before = before.max(0);
+    (before + gained.max(0)) / 2 - before / 2
+}
+
 /// その日に使わずに残ったカロリー。食べすぎた日（マイナス）は貯蓄を減らさず 0 とする。
 pub fn leftover_kcal(earned: i64, consumed: i64) -> i64 {
     (earned - consumed).max(0)
@@ -159,6 +177,21 @@ mod tests {
         assert_eq!(per_word_kcal(answer, false, 0, None), 0, "no count, no partial credit");
         // Contractions are one word; a lone dash is not a word at all.
         assert_eq!(answer_word_count("Let's go - I think it's time."), 6);
+    }
+
+    #[test]
+    fn recipe_reviews_pay_half_a_calorie_or_one_and_drop_the_last_half() {
+        assert_eq!(recipe_half_kcal("choice"), Some(1));
+        assert_eq!(recipe_half_kcal("typing"), Some(2));
+        assert_eq!(recipe_half_kcal("speaking"), None);
+        // Three meanings picked in a row: 0.5 → 0, 1.0 → +1, 1.5 → 0.
+        assert_eq!(recipe_kcal_gain(0, 1), 0);
+        assert_eq!(recipe_kcal_gain(1, 1), 1);
+        assert_eq!(recipe_kcal_gain(2, 1), 0);
+        // A word typed is a whole calorie, whatever half is pending.
+        assert_eq!(recipe_kcal_gain(0, 2), 1);
+        assert_eq!(recipe_kcal_gain(3, 2), 1);
+        assert_eq!(recipe_kcal_gain(5, -2), 0, "nothing is ever taken back");
     }
 
     #[test]

@@ -1,8 +1,10 @@
 //! お菓子作りレシピ: the learner's own word list. Words arrive by right-clicking English in a
-//! question or an explanation, are reviewed as flashcards, and are cleared out once learned.
+//! question or an explanation, are reviewed by picking the meaning or typing the English, and are
+//! cleared out once learned. A correct review pays 0.5 kcal (picked) or 1 kcal (typed).
 
-use crate::models::{RecipeAddResult, RecipeAddStatus, RecipeWord, RecipeWordInput};
-use crate::util::now_ts;
+use crate::models::{RecipeAddResult, RecipeAddStatus, RecipeReviewResult, RecipeWord, RecipeWordInput};
+use crate::srs;
+use crate::util::{now_ts, today};
 use crate::AppState;
 use rusqlite::{params, Connection, OptionalExtension, Row};
 use tauri::State;
@@ -12,6 +14,9 @@ type CmdResult<T> = Result<T, String>;
 fn err<E: std::fmt::Display>(e: E) -> String {
     e.to_string()
 }
+
+/// The single player, as in `commands.rs`.
+const USER_ID: i64 = 1;
 
 const COLS: &str = "id, word, meaning, form, example, example_ja, added_at, reviews, last_reviewed_at, mastered_at";
 
@@ -93,10 +98,15 @@ pub fn add(conn: &Connection, input: &RecipeWordInput) -> CmdResult<RecipeAddRes
     Ok(RecipeAddResult { status: RecipeAddStatus::Added, entry: load(conn, conn.last_insert_rowid())? })
 }
 
-/// One flashcard answered: "覚えた" marks the word learned, "まだ" keeps it in review.
-pub fn review(conn: &Connection, id: i64, remembered: bool) -> CmdResult<RecipeWord> {
+/// One word reviewed in `mode` ("choice": its meaning picked from four, "typing": the English
+/// written from the meaning). Right marks it learned and pays into today's kcal, wrong keeps it in
+/// review. Pay is counted in halves per day, so two meanings picked make a whole calorie; whatever
+/// half is left when the day ends is dropped.
+pub fn review(conn: &mut Connection, id: i64, remembered: bool, mode: &str) -> CmdResult<RecipeReviewResult> {
+    let halves = srs::recipe_half_kcal(mode).ok_or_else(|| format!("unknown review mode {mode}"))?;
+    let tx = conn.transaction().map_err(err)?;
     let now = now_ts();
-    let changed = conn
+    let changed = tx
         .execute(
             "UPDATE recipe_words SET reviews = reviews + 1, last_reviewed_at = ?2,
              mastered_at = CASE WHEN ?3 THEN ?2 ELSE NULL END WHERE id = ?1",
@@ -106,7 +116,35 @@ pub fn review(conn: &Connection, id: i64, remembered: bool) -> CmdResult<RecipeW
     if changed == 0 {
         return Err("その単語はレシピにありません".into());
     }
-    load(conn, id)
+
+    let day = today();
+    tx.execute("INSERT OR IGNORE INTO daily_stats (user_id, date) VALUES (?1, ?2)", params![USER_ID, day])
+        .map_err(err)?;
+    let before: i64 = tx
+        .query_row(
+            "SELECT recipe_half_kcal FROM daily_stats WHERE user_id = ?1 AND date = ?2",
+            params![USER_ID, day],
+            |r| r.get(0),
+        )
+        .map_err(err)?;
+    let gained = if remembered { halves } else { 0 };
+    let kcal = srs::recipe_kcal_gain(before, gained);
+    tx.execute(
+        "UPDATE daily_stats SET recipe_half_kcal = recipe_half_kcal + ?3, kcal_earned = kcal_earned + ?4
+         WHERE user_id = ?1 AND date = ?2",
+        params![USER_ID, day, gained, kcal],
+    )
+    .map_err(err)?;
+    let today_kcal: i64 = tx
+        .query_row(
+            "SELECT kcal_earned FROM daily_stats WHERE user_id = ?1 AND date = ?2",
+            params![USER_ID, day],
+            |r| r.get(0),
+        )
+        .map_err(err)?;
+    let entry = load(&tx, id)?;
+    tx.commit().map_err(err)?;
+    Ok(RecipeReviewResult { entry, kcal_earned: kcal, today_kcal, half_pending: (before + gained) % 2 == 1 })
 }
 
 /// Marks or unmarks a word as learned from the list, without counting it as a review.
@@ -147,9 +185,14 @@ pub fn add_recipe_word(state: State<'_, AppState>, entry: RecipeWordInput) -> Cm
 }
 
 #[tauri::command]
-pub fn review_recipe_word(state: State<'_, AppState>, id: i64, remembered: bool) -> CmdResult<RecipeWord> {
-    let conn = state.db.lock().map_err(err)?;
-    review(&conn, id, remembered)
+pub fn review_recipe_word(
+    state: State<'_, AppState>,
+    id: i64,
+    remembered: bool,
+    mode: String,
+) -> CmdResult<RecipeReviewResult> {
+    let mut conn = state.db.lock().map_err(err)?;
+    review(&mut conn, id, remembered, &mode)
 }
 
 #[tauri::command]
@@ -221,16 +264,16 @@ mod tests {
 
     #[test]
     fn reviewing_marks_words_learned_and_learned_words_can_be_cleared() {
-        let c = db::init_in_memory().unwrap();
+        let mut c = db::init_in_memory().unwrap();
         let hear = add(&c, &input("hear", "")).unwrap().entry;
         let bag = add(&c, &input("doggy bag", "")).unwrap().entry;
 
-        let not_yet = review(&c, hear.id, false).unwrap();
+        let not_yet = review(&mut c, hear.id, false, "choice").unwrap().entry;
         assert_eq!(not_yet.reviews, 1);
         assert!(not_yet.last_reviewed_at.is_some());
         assert!(not_yet.mastered_at.is_none());
 
-        let learned = review(&c, hear.id, true).unwrap();
+        let learned = review(&mut c, hear.id, true, "typing").unwrap().entry;
         assert_eq!(learned.reviews, 2);
         assert!(learned.mastered_at.is_some());
 
@@ -244,14 +287,46 @@ mod tests {
         let left = list(&c).unwrap();
         assert_eq!(left.len(), 1);
         assert_eq!(left[0].id, bag.id);
-        assert!(review(&c, hear.id, true).is_err(), "a deleted word cannot be reviewed");
+        assert!(review(&mut c, hear.id, true, "choice").is_err(), "a deleted word cannot be reviewed");
+    }
+
+    #[test]
+    fn a_meaning_picked_pays_half_a_calorie_and_a_word_typed_pays_one() {
+        let mut c = db::init_in_memory().unwrap();
+        let ids: Vec<i64> = ["hear", "apple", "bag", "cloud", "river"]
+            .iter()
+            .map(|w| add(&c, &input(w, "")).unwrap().entry.id)
+            .collect();
+        let kcal = |c: &Connection| -> i64 {
+            c.query_row("SELECT kcal_earned FROM daily_stats WHERE date = ?1", params![today()], |r| r.get(0))
+                .unwrap()
+        };
+
+        // 0.5 kcal: nothing whole yet, and nothing is lost either.
+        let r = review(&mut c, ids[0], true, "choice").unwrap();
+        assert_eq!((r.kcal_earned, r.today_kcal, r.half_pending), (0, 0, true));
+        // A miss pays nothing and leaves the half waiting.
+        let r = review(&mut c, ids[1], false, "choice").unwrap();
+        assert_eq!((r.kcal_earned, r.half_pending), (0, true));
+        // The second half makes a calorie.
+        let r = review(&mut c, ids[2], true, "choice").unwrap();
+        assert_eq!((r.kcal_earned, r.today_kcal, r.half_pending), (1, 1, false));
+        // A word typed is a calorie of its own; a pending half stays pending beside it.
+        review(&mut c, ids[3], true, "choice").unwrap();
+        let r = review(&mut c, ids[4], true, "typing").unwrap();
+        assert_eq!((r.kcal_earned, r.today_kcal, r.half_pending), (1, 2, true));
+        assert_eq!(kcal(&c), 2, "1.5 + 1 = 2.5 kcal, of which the half is not paid");
+
+        assert!(review(&mut c, ids[0], true, "speaking").is_err());
+        assert_eq!(kcal(&c), 2, "an unknown mode changes nothing");
     }
 
     #[test]
     fn saving_a_learned_word_again_puts_it_back_into_review() {
         let c = db::init_in_memory().unwrap();
+        let mut c = c;
         let hear = add(&c, &input("hear", "")).unwrap().entry;
-        review(&c, hear.id, true).unwrap();
+        review(&mut c, hear.id, true, "choice").unwrap();
         let again = add(&c, &input("hear", "")).unwrap();
         assert_eq!(again.status, RecipeAddStatus::Restored);
         assert!(again.entry.mastered_at.is_none());

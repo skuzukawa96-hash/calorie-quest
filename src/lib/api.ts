@@ -6,12 +6,14 @@ import type {
   DailyStats,
   Dashboard,
   Difficulty,
-  Mode,
   NativeRecognition,
   RecipeAddResult,
+  RecipeReviewMode,
+  RecipeReviewResult,
   RecipeWord,
   RecipeWordInput,
   RedeemResult,
+  SessionMode,
   SessionQuestion,
   Snack,
   SpeechCapabilities,
@@ -38,7 +40,7 @@ async function call<T>(cmd: string, args: Record<string, unknown> = {}): Promise
 
 export const api = {
   getDashboard: () => call<Dashboard>("get_dashboard"),
-  getSessionQuestions: (mode: Mode, difficulty: Difficulty, category: string, count: number) =>
+  getSessionQuestions: (mode: SessionMode, difficulty: Difficulty, category: string, count: number) =>
     call<SessionQuestion[]>("get_session_questions", { mode, difficulty, category, count }),
   submitAnswer: (payload: AnswerPayload) => call<AnswerResult>("submit_answer", { payload }),
   listSnacks: () => call<Snack[]>("list_snacks"),
@@ -60,7 +62,8 @@ export const api = {
   // お菓子作りレシピ (the learner's word list)
   listRecipeWords: () => call<RecipeWord[]>("list_recipe_words"),
   addRecipeWord: (entry: RecipeWordInput) => call<RecipeAddResult>("add_recipe_word", { entry }),
-  reviewRecipeWord: (id: number, remembered: boolean) => call<RecipeWord>("review_recipe_word", { id, remembered }),
+  reviewRecipeWord: (id: number, remembered: boolean, mode: RecipeReviewMode) =>
+    call<RecipeReviewResult>("review_recipe_word", { id, remembered, mode }),
   setRecipeMastered: (id: number, mastered: boolean) => call<RecipeWord>("set_recipe_mastered", { id, mastered }),
   deleteRecipeWords: (ids: number[]) => call<number>("delete_recipe_words", { ids }),
   logDebug: (message: string) => call<void>("log_debug", { message }).catch(() => undefined),
