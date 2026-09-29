@@ -14,6 +14,8 @@ interface Props {
 }
 
 type Filter = "all" | "learning" | "mastered";
+/** which words a review goes over: those still being learned, or those already learned */
+type Target = "learning" | "mastered";
 
 const NO_MEANING = "（辞書に意味がありません）";
 
@@ -33,6 +35,13 @@ function shuffled<T>(items: T[]): T[] {
     [a[i], a[j]] = [a[j], a[i]];
   }
   return a;
+}
+
+/** Learned words gone over longest ago come first, as the likeliest to have been forgotten. */
+function stalestFirst(words: RecipeWord[]): RecipeWord[] {
+  const day = (w: RecipeWord) => (w.lastReviewedAt ?? w.masteredAt ?? w.addedAt).slice(0, 10);
+  // Shuffled first, so words of the same day do not always come in the same order.
+  return shuffled(words).sort((a, b) => day(a).localeCompare(day(b)));
 }
 
 /** The form that was right-clicked, when it differs from the headword ("heard" for hear). */
@@ -134,13 +143,14 @@ function withGap(word: RecipeWord): string | null {
 /**
  * お菓子作りレシピ: the words the learner right-clicked while studying. They are reviewed by
  * picking the meaning (0.5 kcal) or writing the English (1 kcal); a word answered right is
- * learned, and learned words can be cleared out of the list.
+ * learned, and learned words can be cleared out of the list. Learned words can be gone over again
+ * too, and one got wrong goes back to being learned.
  */
 export default function Recipe({ onProgress, toast }: Props) {
   const [words, setWords] = useState<RecipeWord[] | null>(null);
   const [dict, setDict] = useState<Dictionary | null>(null);
   const [filter, setFilter] = useState<Filter>("all");
-  const [reviewing, setReviewing] = useState<{ mode: RecipeReviewMode; queue: RecipeWord[] } | null>(null);
+  const [reviewing, setReviewing] = useState<{ target: Target; mode: RecipeReviewMode; queue: RecipeWord[] } | null>(null);
   /** each round of review starts from a fresh component */
   const [round, setRound] = useState(0);
   const [confirmClear, setConfirmClear] = useState(false);
@@ -184,20 +194,25 @@ export default function Recipe({ onProgress, toast }: Props) {
   const learning = words.filter((w) => !w.masteredAt);
   const mastered = words.filter((w) => w.masteredAt);
   // Both kinds of review ask about the meaning, so a word without one cannot be quizzed.
-  const quizzable = learning.filter((w) => w.meaning);
+  const quizzable: Record<Target, RecipeWord[]> = {
+    learning: learning.filter((w) => w.meaning),
+    mastered: mastered.filter((w) => w.meaning),
+  };
 
   if (reviewing) {
     return (
       <div className="screen recipe">
         <RecipeReview
           key={round}
+          target={reviewing.target}
           mode={reviewing.mode}
           queue={reviewing.queue}
           words={words}
           dict={dict}
           onAgain={(left) => {
             setRound((r) => r + 1);
-            setReviewing({ mode: reviewing.mode, queue: shuffled(left) });
+            // Missed words are back in review now, even those that had been learned.
+            setReviewing({ target: "learning", mode: reviewing.mode, queue: shuffled(left) });
           }}
           onDone={() => {
             stopSpeaking();
@@ -212,9 +227,10 @@ export default function Recipe({ onProgress, toast }: Props) {
   }
 
   const shown = filter === "learning" ? learning : filter === "mastered" ? mastered : words;
-  const start = (mode: RecipeReviewMode) => {
+  const start = (target: Target, mode: RecipeReviewMode) => {
+    const pool = quizzable[target];
     setRound((r) => r + 1);
-    setReviewing({ mode, queue: shuffled(quizzable) });
+    setReviewing({ target, mode, queue: target === "mastered" ? stalestFirst(pool) : shuffled(pool) });
   };
 
   const clearMastered = () =>
@@ -242,34 +258,45 @@ export default function Recipe({ onProgress, toast }: Props) {
           </div>
         </div>
         <p className="muted">
-          問題や解説の英単語を<b>右クリック</b>すると、ここに材料として集まります。復習は英単語の意味を4択で選ぶ「選択」（1語 0.5 kcal）と、日本語から英語を書く「記入」（1語 1 kcal）の2通り。正解した単語は習得済みになり、レシピから片付けられます。獲得したカロリーは今日のおやつ予算に入ります（小数点以下は切り捨て）。
+          問題や解説の英単語を<b>右クリック</b>すると、ここに材料として集まります。復習は英単語の意味を4択で選ぶ「選択」（1語 0.5 kcal）と、日本語から英語を書く「記入」（1語 1 kcal）の2通り。正解した単語は習得済みになり、レシピから片付けられます。習得済みの単語も復習でき、間違えると復習中に戻ります。獲得したカロリーは今日のおやつ予算に入ります（1語につき1日1回、小数点以下は切り捨て）。
         </p>
-        <div className="row recipe-actions">
-          {(["choice", "typing"] as const).map((mode) => (
-            <button key={mode} className="btn btn-primary" disabled={busy || quizzable.length === 0} onClick={() => start(mode)}>
-              {REVIEW_ICON[mode]} {REVIEW_TITLE[mode]}
-            </button>
-          ))}
-          {mastered.length > 0 &&
-            (confirmClear ? (
-              <>
-                <span>習得済みの{mastered.length}語をレシピから削除します。</span>
-                <button className="btn btn-danger" disabled={busy} onClick={() => void clearMastered()}>
-                  削除する
-                </button>
-                <button className="btn-link" onClick={() => setConfirmClear(false)}>
-                  やめる
-                </button>
-              </>
-            ) : (
-              <button className="btn" disabled={busy} onClick={() => setConfirmClear(true)}>
-                習得済みを片付ける（{mastered.length}語）
+        {(["learning", "mastered"] as const).map((target) => (
+          <div key={target} className="row recipe-actions">
+            <span className="recipe-target">
+              {target === "learning" ? "復習中" : "習得済み"} <b>{quizzable[target].length}</b>語
+            </span>
+            {(["choice", "typing"] as const).map((mode) => (
+              <button
+                key={mode}
+                className={"btn " + (target === "learning" ? "btn-primary" : "")}
+                disabled={busy || quizzable[target].length === 0}
+                onClick={() => start(target, mode)}
+              >
+                {REVIEW_ICON[mode]} {REVIEW_TITLE[mode]}
               </button>
             ))}
-        </div>
-        {learning.length > quizzable.length && (
+            {target === "mastered" &&
+              mastered.length > 0 &&
+              (confirmClear ? (
+                <>
+                  <span>習得済みの{mastered.length}語をレシピから削除します。</span>
+                  <button className="btn btn-danger" disabled={busy} onClick={() => void clearMastered()}>
+                    削除する
+                  </button>
+                  <button className="btn-link" onClick={() => setConfirmClear(false)}>
+                    やめる
+                  </button>
+                </>
+              ) : (
+                <button className="btn-link" disabled={busy} onClick={() => setConfirmClear(true)}>
+                  習得済みを片付ける
+                </button>
+              ))}
+          </div>
+        ))}
+        {learning.length > quizzable.learning.length && (
           <p className="muted small">
-            辞書に意味のない{learning.length - quizzable.length}語は復習に出ません（一覧の「✓ 覚えた」で習得済みにできます）。
+            辞書に意味のない{learning.length - quizzable.learning.length}語は復習に出ません（一覧の「✓ 覚えた」で習得済みにできます）。
           </p>
         )}
       </section>
@@ -362,9 +389,12 @@ interface Answered {
   correct: boolean;
   /** the option picked, or what was typed */
   given: string;
+  /** right and paid; a word pays once a day */
+  counted: boolean;
 }
 
 function RecipeReview({
+  target,
   mode,
   queue,
   words,
@@ -374,6 +404,8 @@ function RecipeReview({
   onProgress,
   toast,
 }: {
+  /** learned words: right keeps them learned, wrong puts them back into review */
+  target: Target;
   mode: RecipeReviewMode;
   queue: RecipeWord[];
   /** the whole recipe, whose meanings serve as wrong options */
@@ -431,7 +463,7 @@ function RecipeReview({
         }
         setEarned((k) => k + r.kcalEarned);
         setHalfPending(r.halfPending);
-        setAnswered({ correct, given });
+        setAnswered({ correct, given, counted: r.counted });
         if (r.kcalEarned > 0) onProgress();
         if (mode === "typing") window.setTimeout(() => say(current.word), 380);
       } catch (e) {
@@ -465,13 +497,14 @@ function RecipeReview({
     return () => window.removeEventListener("keydown", handler);
   }, [finished, answered, mode, options, current, answer, next]);
 
+  const again = target === "mastered";
   if (finished) {
     const clearRemembered = async () => {
       setSaving(true);
       try {
         const n = await api.deleteRecipeWords(remembered.map((w) => w.id));
         setCleared(true);
-        toast(`🧁 覚えた${n}語をレシピから片付けました`);
+        toast(`🧁 ${again ? "覚えていた" : "覚えた"}${n}語をレシピから片付けました`);
       } catch (e) {
         toast(String(e));
       } finally {
@@ -483,10 +516,10 @@ function RecipeReview({
         <h2>🧁 復習おしまい！</h2>
         <div className="recipe-counts big">
           <span className="positive">
-            覚えた <b>{remembered.length}</b>語
+            {again ? "覚えていた" : "覚えた"} <b>{remembered.length}</b>語
           </span>
           <span>
-            まだ <b>{left.length}</b>語
+            {again ? "忘れていた" : "まだ"} <b>{left.length}</b>語
           </span>
           <span className="recipe-kcal">
             おやつ予算 <b>+{earned}</b> kcal
@@ -497,18 +530,22 @@ function RecipeReview({
             端数の 0.5 kcal は、今日のうちに次の 0.5 kcal と合わせて 1 kcal になります（日付が変わると切り捨て）。
           </p>
         )}
+        {again && left.length > 0 && <p className="muted">忘れていた単語は復習中に戻しました。</p>}
         {remembered.length > 0 && (
-          <p className="muted">覚えた単語は習得済みになりました。レシピに残しておくことも、片付けることもできます。</p>
+          <p className="muted">
+            {again ? "覚えていた単語は習得済みのままです。" : "覚えた単語は習得済みになりました。"}
+            レシピに残しておくことも、片付けることもできます。
+          </p>
         )}
         <div className="row recipe-actions">
           {remembered.length > 0 && !cleared && (
             <button className="btn btn-primary" disabled={saving} onClick={() => void clearRemembered()}>
-              覚えた{remembered.length}語をレシピから片付ける
+              {again ? "覚えていた" : "覚えた"}{remembered.length}語をレシピから片付ける
             </button>
           )}
           {left.length > 0 && (
             <button className="btn" disabled={saving} onClick={() => onAgain(left)}>
-              まだの{left.length}語をもう一度
+              {again ? "忘れていた" : "まだの"}{left.length}語をもう一度
             </button>
           )}
           <button className="btn" onClick={onDone}>
@@ -530,7 +567,8 @@ function RecipeReview({
     <section className="card recipe-review">
       <div className="section-head">
         <h2>
-          {REVIEW_ICON[mode]} {REVIEW_TITLE[mode]} <span className="pill">1語 {REVIEW_KCAL[mode]} kcal</span>
+          {REVIEW_ICON[mode]} {REVIEW_TITLE[mode]} {again && <span className="pill mastered">習得済み</span>}{" "}
+          <span className="pill">1語 {REVIEW_KCAL[mode]} kcal</span>
         </h2>
         <div className="study-progress">
           {idx + 1} / {queue.length}
@@ -614,7 +652,7 @@ function RecipeReview({
         <div className={"feedback " + (answered.correct ? "ok" : "ng")}>
           <div className="feedback-main">
             <div className="feedback-title">{answered.correct ? "正解！ サクサク🍪" : "ざんねん…"}</div>
-            <div className="feedback-kcal">{answered.correct ? `+${REVIEW_KCAL[mode]} kcal` : "+0 kcal"}</div>
+            <div className="feedback-kcal">{answered.counted ? `+${REVIEW_KCAL[mode]} kcal` : "+0 kcal"}</div>
           </div>
           <div className="feedback-detail">
             {mode === "typing" && !answered.correct && answered.given && (
@@ -630,7 +668,14 @@ function RecipeReview({
               </button>
             </div>
             <div className="muted">
-              {answered.correct ? "習得済みになりました。" : "復習中のまま残ります。最後にもう一度挑戦できます。"}
+              {answered.correct
+                ? again
+                  ? "習得済みのままです。"
+                  : "習得済みになりました。"
+                : again
+                  ? "復習中に戻しました。最後にもう一度挑戦できます。"
+                  : "復習中のまま残ります。最後にもう一度挑戦できます。"}
+              {answered.correct && !answered.counted && " この単語のカロリーは今日もう受け取っています（1語につき1日1回）。"}
             </div>
           </div>
           <button className="btn btn-primary" onClick={next} autoFocus>

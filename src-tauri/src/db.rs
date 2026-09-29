@@ -150,7 +150,8 @@ CREATE TABLE IF NOT EXISTS recipe_words (
   added_at TEXT NOT NULL,
   reviews INTEGER NOT NULL DEFAULT 0,
   last_reviewed_at TEXT,
-  mastered_at TEXT
+  mastered_at TEXT,
+  paid_on TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_history_due ON learning_history (user_id, needs_review, next_due_at);
 CREATE INDEX IF NOT EXISTS idx_log_date ON answer_log (user_id, answered_at);
@@ -249,6 +250,8 @@ fn setup(conn: Connection) -> rusqlite::Result<Connection> {
     }
     // レシピの復習は 0.5 kcal 単位で貯まる。整数にならなかった端数をその日のうちだけ持ち越す。
     ensure_column(&conn, "daily_stats", "recipe_half_kcal", "INTEGER NOT NULL DEFAULT 0")?;
+    // レシピの単語は1日1回だけカロリーを払う。最後に払った日。
+    ensure_column(&conn, "recipe_words", "paid_on", "TEXT")?;
     // A missed question comes back for review in the mode it was missed in (a phrase got wrong by
     // typing is reviewed by typing, not picked from four). Questions already waiting take the mode
     // of their latest miss from the answer log.

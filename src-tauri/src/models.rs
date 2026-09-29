@@ -277,6 +277,8 @@ pub struct RecipeAddResult {
 #[serde(rename_all = "camelCase")]
 pub struct RecipeReviewResult {
     pub entry: RecipeWord,
+    /// the answer earned its 0.5 / 1 kcal: right, and the word had not paid yet today
+    pub counted: bool,
     /// whole kcal added to today just now (0.5 kcal waits for the next half)
     pub kcal_earned: i64,
     pub today_kcal: i64,

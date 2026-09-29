@@ -99,25 +99,31 @@ pub fn add(conn: &Connection, input: &RecipeWordInput) -> CmdResult<RecipeAddRes
 }
 
 /// One word reviewed in `mode` ("choice": its meaning picked from four, "typing": the English
-/// written from the meaning). Right marks it learned and pays into today's kcal, wrong keeps it in
-/// review. Pay is counted in halves per day, so two meanings picked make a whole calorie; whatever
-/// half is left when the day ends is dropped.
+/// written from the meaning). Right marks it learned (a word already learned keeps its date) and
+/// pays into today's kcal; wrong puts it back into review, learned or not. Pay is counted in halves
+/// per day, so two meanings picked make a whole calorie; whatever half is left when the day ends is
+/// dropped. A word pays once a day at most, so going over the learned words again and again is
+/// practice, not a source of calories.
 pub fn review(conn: &mut Connection, id: i64, remembered: bool, mode: &str) -> CmdResult<RecipeReviewResult> {
     let halves = srs::recipe_half_kcal(mode).ok_or_else(|| format!("unknown review mode {mode}"))?;
     let tx = conn.transaction().map_err(err)?;
     let now = now_ts();
-    let changed = tx
-        .execute(
-            "UPDATE recipe_words SET reviews = reviews + 1, last_reviewed_at = ?2,
-             mastered_at = CASE WHEN ?3 THEN ?2 ELSE NULL END WHERE id = ?1",
-            params![id, now, remembered],
-        )
-        .map_err(err)?;
-    if changed == 0 {
-        return Err("その単語はレシピにありません".into());
-    }
-
     let day = today();
+    let paid_on: Option<String> = tx
+        .query_row("SELECT paid_on FROM recipe_words WHERE id = ?1", params![id], |r| r.get(0))
+        .optional()
+        .map_err(err)?
+        .ok_or_else(|| "その単語はレシピにありません".to_string())?;
+    let counted = remembered && paid_on.as_deref() != Some(day.as_str());
+    tx.execute(
+        "UPDATE recipe_words SET reviews = reviews + 1, last_reviewed_at = ?2,
+         mastered_at = CASE WHEN ?3 THEN COALESCE(mastered_at, ?2) ELSE NULL END,
+         paid_on = CASE WHEN ?4 THEN ?5 ELSE paid_on END
+         WHERE id = ?1",
+        params![id, now, remembered, counted, day],
+    )
+    .map_err(err)?;
+
     tx.execute("INSERT OR IGNORE INTO daily_stats (user_id, date) VALUES (?1, ?2)", params![USER_ID, day])
         .map_err(err)?;
     let before: i64 = tx
@@ -127,7 +133,7 @@ pub fn review(conn: &mut Connection, id: i64, remembered: bool, mode: &str) -> C
             |r| r.get(0),
         )
         .map_err(err)?;
-    let gained = if remembered { halves } else { 0 };
+    let gained = if counted { halves } else { 0 };
     let kcal = srs::recipe_kcal_gain(before, gained);
     tx.execute(
         "UPDATE daily_stats SET recipe_half_kcal = recipe_half_kcal + ?3, kcal_earned = kcal_earned + ?4
@@ -144,7 +150,13 @@ pub fn review(conn: &mut Connection, id: i64, remembered: bool, mode: &str) -> C
         .map_err(err)?;
     let entry = load(&tx, id)?;
     tx.commit().map_err(err)?;
-    Ok(RecipeReviewResult { entry, kcal_earned: kcal, today_kcal, half_pending: (before + gained) % 2 == 1 })
+    Ok(RecipeReviewResult {
+        entry,
+        counted,
+        kcal_earned: kcal,
+        today_kcal,
+        half_pending: (before + gained) % 2 == 1,
+    })
 }
 
 /// Marks or unmarks a word as learned from the list, without counting it as a review.
@@ -319,6 +331,42 @@ mod tests {
 
         assert!(review(&mut c, ids[0], true, "speaking").is_err());
         assert_eq!(kcal(&c), 2, "an unknown mode changes nothing");
+    }
+
+    /// Learned words can be gone over again: right keeps them learned (from the day they were
+    /// first learned), wrong puts them back into review. Either way a word pays once a day.
+    #[test]
+    fn a_learned_word_reviewed_again_stays_learned_or_goes_back() {
+        let mut c = db::init_in_memory().unwrap();
+        let hear = add(&c, &input("hear", "")).unwrap().entry.id;
+        let bag = add(&c, &input("doggy bag", "")).unwrap().entry.id;
+
+        let first = review(&mut c, hear, true, "typing").unwrap();
+        assert!(first.counted);
+        assert_eq!(first.kcal_earned, 1);
+        let learned_at = first.entry.mastered_at.clone().expect("learned");
+
+        // The same day, over the learned words again: still learned, still dated the first time,
+        // but no second calorie for the same word.
+        let again = review(&mut c, hear, true, "typing").unwrap();
+        assert!(!again.counted);
+        assert_eq!((again.kcal_earned, again.today_kcal), (0, 1));
+        assert_eq!(again.entry.mastered_at.as_deref(), Some(learned_at.as_str()));
+        assert_eq!(again.entry.reviews, 2);
+
+        // Forgotten: back into review, and a miss pays nothing whether or not it was paid before.
+        let forgot = review(&mut c, hear, false, "choice").unwrap();
+        assert!(forgot.entry.mastered_at.is_none());
+        assert_eq!((forgot.counted, forgot.kcal_earned), (false, 0));
+
+        // Another word still pays today.
+        let other = review(&mut c, bag, true, "typing").unwrap();
+        assert!(other.counted);
+        assert_eq!(other.today_kcal, 2);
+
+        // The next day the word pays again.
+        c.execute("UPDATE recipe_words SET paid_on = '2000-01-01' WHERE id = ?1", params![hear]).unwrap();
+        assert!(review(&mut c, hear, true, "typing").unwrap().counted);
     }
 
     #[test]

@@ -532,6 +532,11 @@ main {
 .recipe-kcal {
   color: var(--caramel-dark);
 }
+.recipe-target {
+  min-width: 8em;
+  font-weight: 600;
+  color: var(--choco);
+}
 .recipe-review h2 .pill {
   font-family: var(--font);
   vertical-align: middle;

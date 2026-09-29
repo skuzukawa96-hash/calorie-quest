@@ -1097,7 +1097,8 @@ pub fn reset_progress(state: State<'_, AppState>) -> CmdResult<()> {
         "DELETE FROM learning_history; DELETE FROM answer_log; DELETE FROM daily_stats;
          DELETE FROM consumption_log; DELETE FROM cheat_tickets; DELETE FROM snack_tickets;
          UPDATE users SET total_study_days = 0, current_streak = 0, longest_streak = 0, last_study_date = NULL,
-           savings_kcal = 0;",
+           savings_kcal = 0;
+         UPDATE recipe_words SET paid_on = NULL;",
     )
     .map_err(err)
 }

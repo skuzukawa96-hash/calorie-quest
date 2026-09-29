@@ -257,6 +257,8 @@ export type RecipeReviewMode = "choice" | "typing";
 
 export interface RecipeReviewResult {
   entry: RecipeWord;
+  /** the answer earned its 0.5 / 1 kcal: right, and the word had not paid yet today */
+  counted: boolean;
   /** whole kcal added to today just now; half a calorie waits for the next one */
   kcalEarned: number;
   todayKcal: number;

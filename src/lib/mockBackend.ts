@@ -88,6 +88,8 @@ interface MockState {
   goals: number[];
   /** レシピ復習の 0.5 kcal 単位の点、日ごと（mirrors daily_stats.recipe_half_kcal） */
   recipeHalves: Record<string, number>;
+  /** the day each recipe word last paid (mirrors recipe_words.paid_on) */
+  recipePaid: Record<number, string>;
   nextId: number;
 }
 
@@ -219,6 +221,7 @@ function freshState(): MockState {
     snackTickets: [],
     goals: [],
     recipeHalves: {},
+    recipePaid: {},
     nextId: 100,
   };
 }
@@ -237,7 +240,7 @@ function load(): MockState {
     if (raw) {
       // State saved before the word list or savings existed lacks them. Like the Rust migration,
       // days already over are closed at 0 rather than paid into savings all at once.
-      const stored = JSON.parse(raw) as Partial<MockState> & Omit<MockState, "recipe" | "savings" | "saved" | "snackTickets" | "goals" | "recipeHalves">;
+      const stored = JSON.parse(raw) as Partial<MockState> & Omit<MockState, "recipe" | "savings" | "saved" | "snackTickets" | "goals" | "recipeHalves" | "recipePaid">;
       const closed = Object.fromEntries(Object.keys(stored.daily).filter((d) => d < today()).map((d) => [d, 0]));
       return {
         ...stored,
@@ -248,6 +251,7 @@ function load(): MockState {
         // The single goal of earlier versions becomes the first entry of the list.
         goals: stored.goals ?? legacyGoal(stored.user),
         recipeHalves: stored.recipeHalves ?? {},
+        recipePaid: stored.recipePaid ?? {},
       };
     }
   } catch {
@@ -943,7 +947,8 @@ export async function mockInvoke<T>(cmd: string, args: Record<string, unknown>):
       return getStats() as T;
     case "reset_progress": {
       // Like the snacks, the word list and the goals are the learner's own, not learning history
-      // (reset_progress in Rust leaves recipe_words and goal_snacks alone too).
+      // (reset_progress in Rust leaves recipe_words and goal_snacks alone too, forgetting only the
+      // day each word last paid, which went with the day's kcal).
       const { snacks, recipe, goals } = state;
       state = freshState();
       state.snacks = snacks;
@@ -979,16 +984,19 @@ export async function mockInvoke<T>(cmd: string, args: Record<string, unknown>):
       if (!halves) throw new Error(`unknown review mode ${String(args.mode)}`);
       const w = recipeWord(Number(args.id));
       const now = nowTs();
+      // A word pays once a day; a learned word answered right keeps the day it was learned.
+      const counted = !!args.remembered && state.recipePaid[w.id] !== t;
       w.reviews += 1;
       w.lastReviewedAt = now;
-      w.masteredAt = args.remembered ? now : null;
+      w.masteredAt = args.remembered ? (w.masteredAt ?? now) : null;
+      if (counted) state.recipePaid[w.id] = t;
       const before = state.recipeHalves[t] ?? 0;
-      const gained = args.remembered ? halves : 0;
+      const gained = counted ? halves : 0;
       const kcal = Math.floor((before + gained) / 2) - Math.floor(before / 2);
       state.recipeHalves[t] = before + gained;
       daily(t).kcalEarned += kcal;
       save();
-      return { entry: { ...w }, kcalEarned: kcal, todayKcal: daily(t).kcalEarned, halfPending: (before + gained) % 2 === 1 } as T;
+      return { entry: { ...w }, counted, kcalEarned: kcal, todayKcal: daily(t).kcalEarned, halfPending: (before + gained) % 2 === 1 } as T;
     }
     case "set_recipe_mastered": {
       const w = recipeWord(Number(args.id));
