@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import GlossedText from "../components/GlossedText";
 import { api } from "../lib/api";
 import { loadDictionary, lookup, type Dictionary } from "../lib/dictionary";
@@ -22,7 +22,25 @@ const NO_MEANING = "（辞書に意味がありません）";
 /** What one correct word pays, as shown to the learner (srs::recipe_half_kcal). */
 const REVIEW_KCAL: Record<RecipeReviewMode, string> = { choice: "0.5", typing: "1" };
 const REVIEW_TITLE: Record<RecipeReviewMode, string> = { choice: "選択式", typing: "記入式" };
-const REVIEW_ICON: Record<RecipeReviewMode, string> = { choice: "👆", typing: "✏️" };
+/**
+ * A green pencil, drawn here because the ✏️ emoji comes out red on Windows, while a pencil in Japan
+ * is green more often than not.
+ */
+function PencilIcon() {
+  return (
+    <svg className="pencil-icon" viewBox="0 0 24 24" width="1.15em" height="1.15em" aria-hidden="true">
+      <g transform="rotate(45 12 12)">
+        <rect x="9" y="1.5" width="6" height="16" rx="1" fill="#3f9a5c" />
+        <rect x="11.1" y="1.5" width="1.8" height="16" fill="#62bb7c" />
+        <rect x="9" y="1.5" width="6" height="1.6" rx="0.8" fill="#2f7a47" />
+        <path d="M9 17.5 L15 17.5 L12 22.5 Z" fill="#f1d3a4" />
+        <path d="M10.9 20.7 L13.1 20.7 L12 22.5 Z" fill="#3b2a1e" />
+      </g>
+    </svg>
+  );
+}
+
+const REVIEW_ICON: Record<RecipeReviewMode, ReactNode> = { choice: "👆", typing: <PencilIcon /> };
 
 function say(text: string) {
   if (isTtsSupported()) speak(text).catch(() => undefined);
@@ -270,7 +288,7 @@ export default function Recipe({ onProgress, toast }: Props) {
           {(["choice", "typing"] as const).map((mode) => (
             <button
               key={mode}
-              className="btn btn-primary"
+              className={"btn recipe-mode-btn " + mode}
               disabled={busy || quizzable[target].length === 0}
               onClick={() => start(target, mode)}
             >

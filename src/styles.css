@@ -532,6 +532,35 @@ main {
 .recipe-kcal {
   color: var(--caramel-dark);
 }
+/* 復習ボタン（選択式・記入式）: 文字に合わせた高さで、淡い色 */
+.btn.recipe-mode-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 16px;
+  line-height: 1.35;
+  box-shadow: none;
+}
+.btn.recipe-mode-btn.choice {
+  background: #fdebd9;
+  border-color: #f4d3ae;
+  color: var(--choco);
+}
+.btn.recipe-mode-btn.choice:hover:not(:disabled) {
+  background: #fbdfc2;
+}
+.btn.recipe-mode-btn.typing {
+  background: var(--mint-bg);
+  border-color: #c6e3cf;
+  color: #2f6b45;
+}
+.btn.recipe-mode-btn.typing:hover:not(:disabled) {
+  background: #d7eddd;
+}
+.pencil-icon {
+  flex-shrink: 0;
+  vertical-align: -0.2em;
+}
 .recipe-target {
   min-width: 8em;
   font-weight: 600;
