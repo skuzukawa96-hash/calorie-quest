@@ -142,23 +142,29 @@ export default function Home({ dash, onStart, onChanged, goToSnacks, toast }: Pr
               {goalSnacks.map((g) => {
                 const remaining = Math.max(0, g.calories - budget);
                 const ate = eatenToday.includes(g.id);
+                const filled = Math.min(100, (Math.max(0, budget) / g.calories) * 100);
+                // One line per goal: the word count leads, the other kinds of question are in the tooltip.
+                const breakdown =
+                  `あと ${remaining} kcal：英単語 ${need(remaining, kcalRates.low)} 問・` +
+                  `フレーズ・文法 ${need(remaining, kcalRates.mid)} 問・慣用句・長文 ${need(remaining, kcalRates.high)} 問`;
                 return (
-                  <li key={g.id} className={"goal-row" + (ate ? " eaten" : "")}>
+                  <li key={g.id} className={"goal-row" + (ate ? " eaten" : "") + (remaining === 0 ? " reached" : "")}>
                     <span className="goal-icon">{g.icon}</span>
-                    <div className="goal-main">
-                      <div className="goal-name">
-                        {g.name} <span className="muted">{g.calories} kcal</span>
-                        {ate && <span className="pill eaten">✓ 今日食べた</span>}
-                      </div>
-                      {remaining === 0 ? (
-                        <div className="goal-reached">🎉 もう食べられます！</div>
-                      ) : (
-                        <div className="goal-need">
-                          あと <b>{need(remaining, kcalRates.low)}</b> 問（英単語）・<b>{need(remaining, kcalRates.mid)}</b> 問（フレーズ・文法）・
-                          <b>{need(remaining, kcalRates.high)}</b> 問（慣用句・長文）
-                        </div>
-                      )}
-                    </div>
+                    <span className="goal-name" title={g.name}>
+                      {g.name}
+                      <span className="goal-kcal">{g.calories} kcal</span>
+                      {ate && <span className="pill eaten">✓ 今日食べた</span>}
+                    </span>
+                    <span className="goal-meter" aria-hidden="true">
+                      <span style={{ width: `${filled}%` }} />
+                    </span>
+                    {remaining === 0 ? (
+                      <span className="goal-status reached">🎉 食べられます</span>
+                    ) : (
+                      <span className="goal-status" title={breakdown}>
+                        あと <b>{need(remaining, kcalRates.low)}</b> 問<span className="goal-status-kind">英単語</span>
+                      </span>
+                    )}
                     <div className="goal-actions">
                       <button
                         className={"btn-small eat " + (remaining === 0 ? "" : "over")}

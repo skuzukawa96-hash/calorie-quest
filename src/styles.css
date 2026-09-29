@@ -806,11 +806,11 @@ main {
   margin: 0 20px 28px 0;
 }
 .kcal-big {
-  font-family: var(--font);
-  font-weight: 700;
-  font-size: 42px;
+  /* Mincho first: its digits are all one height, unlike Georgia's old-style ones */
+  font-family: "Yu Mincho", "YuMincho", "Hiragino Mincho ProN", "Noto Serif JP", serif;
+  font-weight: 600;
+  font-size: 44px;
   line-height: 1.15;
-  /* digits of one height, so the figure reads as a block */
   font-variant-numeric: lining-nums tabular-nums;
   color: var(--choco);
 }
@@ -904,11 +904,6 @@ main {
 .milestone.reached .milestone-icon {
   border-color: var(--caramel);
 }
-.goal-head {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-}
 .goal-icon {
   font-size: 40px;
 }
@@ -917,61 +912,89 @@ main {
   font-weight: 700;
   color: var(--choco);
 }
-.goal-reached {
-  margin-top: 12px;
-  background: var(--mint-bg);
-  color: var(--mint);
-  padding: 12px 16px;
-  border-radius: 12px;
-  font-weight: 700;
-}
-/* Several goals, one row each: what is left, and eat or drop it right here. */
+/* Several goals, one line each: how close it is, and eat or drop it right here. */
 .goal-list {
   list-style: none;
   margin: 0;
   padding: 0;
   display: grid;
-  gap: 10px;
+  gap: 6px;
 }
 .goal-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) 110px 150px auto;
   align-items: center;
-  gap: 14px;
-  padding: 10px 14px;
+  gap: 12px;
+  padding: 6px 12px;
   background: var(--cream);
-  border-radius: 14px;
+  border-radius: 12px;
 }
 .goal-row.eaten {
   background: var(--mint-bg);
 }
 .goal-row .goal-icon {
-  font-size: 34px;
-}
-.goal-main {
-  flex: 1;
-  min-width: 0;
+  font-size: 24px;
+  text-align: center;
 }
 .goal-row .goal-name {
-  font-size: 17px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
+  font-size: 15px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
-.goal-row .goal-reached {
-  margin-top: 4px;
-  padding: 4px 10px;
-  display: inline-block;
-  font-size: 14px;
-}
-.goal-need {
-  margin-top: 2px;
-  font-size: 13.5px;
+.goal-kcal {
+  margin-left: 8px;
+  font-size: 13px;
+  font-weight: 600;
   color: var(--muted);
 }
-.goal-need b {
-  color: var(--caramel-dark);
+.goal-row .pill.eaten {
+  margin-left: 8px;
+  padding: 1px 8px;
+  font-size: 11.5px;
+}
+.goal-meter {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--cream-2);
+  overflow: hidden;
+}
+.goal-meter span {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #ffd58c, #f7a94b);
+}
+.goal-row.reached .goal-meter span {
+  background: var(--mint);
+}
+.goal-status {
+  font-size: 13px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.goal-status b {
   font-size: 16px;
+  color: var(--caramel-dark);
+}
+.goal-status.reached {
+  font-weight: 700;
+  color: var(--mint);
+}
+.goal-status-kind {
+  margin-left: 4px;
+  font-size: 11.5px;
+}
+@media (max-width: 640px) {
+  .goal-row {
+    grid-template-columns: 24px minmax(0, 1fr) auto;
+  }
+  .goal-meter {
+    display: none;
+  }
+  .goal-actions {
+    grid-column: 2 / -1;
+  }
 }
 .goal-actions {
   display: flex;
