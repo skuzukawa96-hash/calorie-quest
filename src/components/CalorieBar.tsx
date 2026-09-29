@@ -18,10 +18,14 @@ const MIN_GAP = 9;
 /**
  * Today's calorie progress with snack icons as milestones along the bar. Every goal snack sits at
  * its own calorie mark, and a few built-in snacks fill the gaps. Clicking an icon eats that snack.
+ * The bar shows what is left to spend, not what was earned: after 500 kcal earned and a 300 kcal
+ * snack eaten it stands at 200, and only snacks that still fit are marked within reach.
  */
 export default function CalorieBar({ earned, consumed, goals, snacks, eatenToday, onEat }: Props) {
+  const budget = earned - consumed;
+  const left = Math.max(0, budget);
   const max = goals.length > 0 ? Math.max(...goals.map((g) => g.calories)) : Math.max(250, Math.ceil((earned + 1) / 100) * 100);
-  const pct = Math.min(100, (earned / max) * 100);
+  const pct = Math.min(100, (left / max) * 100);
   const at = (s: Snack) => Math.min(100, (s.calories / max) * 100);
 
   // Goals always show; then unique-calorie built-in snacks wherever there is room.
@@ -39,9 +43,8 @@ export default function CalorieBar({ earned, consumed, goals, snacks, eatenToday
 
   const eaten = new Set(eatenToday);
   const representative = snacks
-    .filter((s) => s.calories <= earned)
+    .filter((s) => s.calories <= left)
     .sort((a, b) => b.calories - a.calories)[0];
-  const budget = earned - consumed;
 
   return (
     <div className="calorie-bar">
@@ -53,7 +56,7 @@ export default function CalorieBar({ earned, consumed, goals, snacks, eatenToday
           </div>
           {representative ? (
             <div className="muted">
-              ≒ {representative.icon} {representative.name}（{representative.calories} kcal）
+              残りで ≒ {representative.icon} {representative.name}（{representative.calories} kcal）
             </div>
           ) : (
             <div className="muted">問題を解いてお菓子のカロリーを貯めよう</div>
@@ -65,11 +68,11 @@ export default function CalorieBar({ earned, consumed, goals, snacks, eatenToday
           <div className={"kcal-mid " + (budget < 0 ? "negative" : "positive")}>残り {budget} kcal</div>
         </div>
       </div>
-      <div className="bar-track" role="progressbar" aria-valuenow={earned} aria-valuemin={0} aria-valuemax={max}>
+      <div className="bar-track" role="progressbar" aria-label="今日の残りカロリー" aria-valuenow={left} aria-valuemin={0} aria-valuemax={max}>
         <div className="bar-fill" style={{ width: `${pct}%` }} />
         {placed.map(({ snack: s, goal }) => {
           const ate = eaten.has(s.id);
-          const cls = ["milestone", earned >= s.calories ? "reached" : "", goal ? "goal" : "", ate ? "eaten" : ""]
+          const cls = ["milestone", left >= s.calories ? "reached" : "", goal ? "goal" : "", ate ? "eaten" : ""]
             .filter(Boolean)
             .join(" ");
           const over = budget < s.calories ? "（今日の残りを超えます）" : "";
