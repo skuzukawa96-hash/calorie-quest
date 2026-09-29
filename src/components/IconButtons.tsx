@@ -1,4 +1,4 @@
-// Icon-only buttons used across the screens: 🍽️ records a snack as eaten, a red × deletes, a brown
+// Icon-only buttons used across the screens: 🍴 records a snack as eaten, a red × deletes, a brown
 // curved arrow undoes. Each keeps its words in the tooltip and the accessible name.
 
 interface Common {
@@ -7,14 +7,14 @@ interface Common {
 }
 
 /**
- * 食べた！ as a plate with knife and fork. A snack today's remainder does not cover is greyed out;
+ * 食べた！ as a knife and fork. A snack today's remainder does not cover is greyed out;
  * it can still be pressed, so eating over budget is recorded rather than hidden.
  */
 export function EatButton({ affordable, disabled, onClick }: Common & { affordable: boolean }) {
   const title = affordable ? "食べた！（今日の残りカロリーで食べられます）" : "食べた！（今日の残りを超えます。記録はできます）";
   return (
     <button type="button" className={"icon-btn eat" + (affordable ? "" : " over")} disabled={disabled} title={title} aria-label={title} onClick={onClick}>
-      🍽️
+      🍴
     </button>
   );
 }

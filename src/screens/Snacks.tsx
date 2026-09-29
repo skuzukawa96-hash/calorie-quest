@@ -166,7 +166,7 @@ export default function Snacks({ dash, onChanged, toast }: Props) {
           </div>
         </div>
         {log.length === 0 ? (
-          <div className="muted">まだ何も食べていません。食べたら図鑑の 🍽️ で記録しましょう。</div>
+          <div className="muted">まだ何も食べていません。食べたら図鑑の 🍴 で記録しましょう。</div>
         ) : (
           <ul className="log-list">
             {log.map((e) => (
