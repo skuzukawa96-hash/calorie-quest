@@ -273,21 +273,20 @@ main {
   width: 18px;
   height: 18px;
 }
-/* within today's remainder: a mint disc, the same green as 「食べられます」 */
+/* The pale plate emoji gets a dark-brown outline (the text colour) traced around its own shape. */
 .icon-btn.eat {
-  font-size: 19px;
-  background: var(--mint-bg);
-  border-color: #b9dcc4;
+  --eat-outline: drop-shadow(1px 0 0 var(--choco)) drop-shadow(-1px 0 0 var(--choco))
+    drop-shadow(0 1px 0 var(--choco)) drop-shadow(0 -1px 0 var(--choco));
+  font-size: 20px;
+  filter: var(--eat-outline);
+  transition: transform 0.12s ease, opacity 0.12s ease;
 }
 .icon-btn.eat:hover:not(:disabled) {
-  background: #d4ebdb;
-  border-color: var(--mint);
+  transform: scale(1.12);
 }
 /* not covered by today's remainder: greyed out, but it still records */
 .icon-btn.eat.over {
-  background: #fff;
-  border-color: var(--line);
-  filter: grayscale(1);
+  filter: var(--eat-outline) grayscale(1);
   opacity: 0.4;
 }
 .icon-btn.eat.over:hover:not(:disabled) {
