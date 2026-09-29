@@ -21,7 +21,7 @@ const NO_MEANING = "（辞書に意味がありません）";
 
 /** What one correct word pays, as shown to the learner (srs::recipe_half_kcal). */
 const REVIEW_KCAL: Record<RecipeReviewMode, string> = { choice: "0.5", typing: "1" };
-const REVIEW_TITLE: Record<RecipeReviewMode, string> = { choice: "選択", typing: "記入" };
+const REVIEW_TITLE: Record<RecipeReviewMode, string> = { choice: "選択式", typing: "記入式" };
 const REVIEW_ICON: Record<RecipeReviewMode, string> = { choice: "👆", typing: "✏️" };
 
 function say(text: string) {
@@ -227,6 +227,9 @@ export default function Recipe({ onProgress, toast }: Props) {
   }
 
   const shown = filter === "learning" ? learning : filter === "mastered" ? mastered : words;
+  // The review buttons follow the list's tab: 習得済み goes over the learned words, the others
+  // over the words still in review.
+  const target: Target = filter === "mastered" ? "mastered" : "learning";
   const start = (target: Target, mode: RecipeReviewMode) => {
     const pool = quizzable[target];
     setRound((r) => r + 1);
@@ -258,43 +261,41 @@ export default function Recipe({ onProgress, toast }: Props) {
           </div>
         </div>
         <p className="muted">
-          問題や解説の英単語を<b>右クリック</b>すると、ここに材料として集まります。復習は英単語の意味を4択で選ぶ「選択」（1語 0.5 kcal）と、日本語から英語を書く「記入」（1語 1 kcal）の2通り。正解した単語は習得済みになり、レシピから片付けられます。習得済みの単語も復習でき、間違えると復習中に戻ります。獲得したカロリーは今日のおやつ予算に入ります（1語につき1日1回、小数点以下は切り捨て）。
+          問題や解説の英単語を<b>右クリック</b>すると、ここに材料として集まります。復習は英単語の意味を4択で選ぶ「選択式」（1語 0.5 kcal）と、日本語から英語を書く「記入式」（1語 1 kcal）の2通り。正解した単語は習得済みになり、レシピから片付けられます。習得済みの単語も下の「習得済み」タブから復習でき、間違えると復習中に戻ります。獲得したカロリーは今日のおやつ予算に入ります（1語につき1日1回、小数点以下は切り捨て）。
         </p>
-        {(["learning", "mastered"] as const).map((target) => (
-          <div key={target} className="row recipe-actions">
-            <span className="recipe-target">
-              {target === "learning" ? "復習中" : "習得済み"} <b>{quizzable[target].length}</b>語
-            </span>
-            {(["choice", "typing"] as const).map((mode) => (
-              <button
-                key={mode}
-                className={"btn " + (target === "learning" ? "btn-primary" : "")}
-                disabled={busy || quizzable[target].length === 0}
-                onClick={() => start(target, mode)}
-              >
-                {REVIEW_ICON[mode]} {REVIEW_TITLE[mode]}
+        <div className="row recipe-actions">
+          <span className="recipe-target">
+            {target === "learning" ? "復習中" : "習得済み"} <b>{quizzable[target].length}</b>語
+          </span>
+          {(["choice", "typing"] as const).map((mode) => (
+            <button
+              key={mode}
+              className="btn btn-primary"
+              disabled={busy || quizzable[target].length === 0}
+              onClick={() => start(target, mode)}
+            >
+              {REVIEW_ICON[mode]} {REVIEW_TITLE[mode]}
+            </button>
+          ))}
+          {target === "mastered" &&
+            mastered.length > 0 &&
+            (confirmClear ? (
+              <>
+                <span>習得済みの{mastered.length}語をレシピから削除します。</span>
+                <button className="btn btn-danger" disabled={busy} onClick={() => void clearMastered()}>
+                  削除する
+                </button>
+                <button className="btn-link" onClick={() => setConfirmClear(false)}>
+                  やめる
+                </button>
+              </>
+            ) : (
+              <button className="btn-link" disabled={busy} onClick={() => setConfirmClear(true)}>
+                習得済みを片付ける
               </button>
             ))}
-            {target === "mastered" &&
-              mastered.length > 0 &&
-              (confirmClear ? (
-                <>
-                  <span>習得済みの{mastered.length}語をレシピから削除します。</span>
-                  <button className="btn btn-danger" disabled={busy} onClick={() => void clearMastered()}>
-                    削除する
-                  </button>
-                  <button className="btn-link" onClick={() => setConfirmClear(false)}>
-                    やめる
-                  </button>
-                </>
-              ) : (
-                <button className="btn-link" disabled={busy} onClick={() => setConfirmClear(true)}>
-                  習得済みを片付ける
-                </button>
-              ))}
-          </div>
-        ))}
-        {learning.length > quizzable.learning.length && (
+        </div>
+        {target === "learning" && learning.length > quizzable.learning.length && (
           <p className="muted small">
             辞書に意味のない{learning.length - quizzable.learning.length}語は復習に出ません（一覧の「✓ 覚えた」で習得済みにできます）。
           </p>

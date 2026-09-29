@@ -25,7 +25,7 @@ npm run tauri build        # 配布ビルド
 
 | 場所 | 役割 |
 | --- | --- |
-| `src-tauri/src/srs.rs` | kcal 換算（低2/中4/高10、発音はスコア按分）、復習倍率 1.5、ヒント開示1語ごとに半減、SRS 間隔 [1,3,7,14,30] 日。例外として中難易度の記入問題（フレーズ）は答えの1語 1 kcal・ヒント開示1語ごとに −1 kcal・打ち間違えた語1つごとに −1 kcal（`scores_per_word` / `per_word_kcal`）。間違えた語の数はフロントの `gradeTyping`（`scoring.ts`、最も近い正解との語単位の編集距離）が `mistakes` として送り、不正解でも残りの kcal を払う（正誤と復習の判定は従来どおり完全一致）。どの語も開示できるよう、この問題のヒントは "a" や "I" も伏せる（`scoring.ts` の `maskWord(word, true)`）。`mockBackend.ts` に同じ計算の写しがある。お菓子作りレシピの復習は `recipe_half_kcal`（選択 0.5 / 記入 1 kcal）を 0.5 kcal 単位で `daily_stats.recipe_half_kcal` に貯め、`recipe_kcal_gain` で整数になった分だけ今日の獲得に足す（端数はその日のうちだけ持ち越し） |
+| `src-tauri/src/srs.rs` | kcal 換算（低2/中4/高10、発音はスコア按分）、復習倍率 1.5、ヒント開示1語ごとに半減、SRS 間隔 [1,3,7,14,30] 日。例外として中難易度の記入問題（フレーズ）は答えの1語 1 kcal・ヒント開示1語ごとに −1 kcal・打ち間違えた語1つごとに −1 kcal（`scores_per_word` / `per_word_kcal`）。間違えた語の数はフロントの `gradeTyping`（`scoring.ts`、最も近い正解との語単位の編集距離）が `mistakes` として送り、不正解でも残りの kcal を払う（正誤と復習の判定は従来どおり完全一致）。どの語も開示できるよう、この問題のヒントは "a" や "I" も伏せる（`scoring.ts` の `maskWord(word, true)`）。`mockBackend.ts` に同じ計算の写しがある。お菓子作りレシピの復習は `recipe_half_kcal`（選択式 0.5 / 記入式 1 kcal）を 0.5 kcal 単位で `daily_stats.recipe_half_kcal` に貯め、`recipe_kcal_gain` で整数になった分だけ今日の獲得に足す（端数はその日のうちだけ持ち越し） |
 | `src-tauri/src/commands.rs` | Tauri コマンド。コアロジックは `session_questions` / `record_answer` / `redeem_ticket` / `load_dashboard` などに分離され、`Connection` だけでテストできる。貯蓄は `settle_savings` が `load_dashboard` のたびに、終わった日（`daily_stats.saved_kcal` が NULL）の残りを `users.savings_kcal` へ移し、2,000 kcal ごとに `snack_tickets` を発行する。貯蓄を入れる前からあった過去の日は、移行時に 0 で締めてある（さかのぼって払わない）。復習は**間違えた形式で出す**: `record_answer` が間違えた（発音は低スコアの）モードを `learning_history.review_mode` に記録し、通常のセッションはそのモードの復習だけを混ぜ、ホームの「復習をはじめる」（`REVIEW_SESSION` = `"review"`）は期限の来た復習だけを問題ごとのモードで出す。移行前から復習待ちの問題は `answer_log` の直近の間違いから埋めてあり、記録のないものは選択問題で出す。フロントの Study は `current.mode` で問題ごとに描き分ける |
 | `src-tauri/src/db.rs` | スキーマ、`ensure_column` によるマイグレーション、`questions.json` / お菓子の初期投入 |
 | `src-tauri/src/recipe.rs` | お菓子作りレシピ（学習者の単語帳）。`recipe_words` テーブルへの追加・一覧・復習・習得済み・削除。同じ語の再追加はエラーにせず、習得済みなら復習に戻す。復習（`review`）は `mode`（`choice` / `typing`）付きで、正解なら習得済みにして（習得済みの語は習得日をそのまま）カロリーを払い、不正解なら習得済みでも復習中に戻す。習得済みの語を何度も復習してカロリーを稼げないよう、1語が払うのは1日1回（`recipe_words.paid_on`） |
@@ -36,7 +36,7 @@ npm run tauri build        # 配布ビルド
 | `src/lib/dictionary.ts` | 単語ポップアップの辞書引き。`tokenize` / `lemmas` は `util.rs` の同名関数と、`buildPhraseIndex` / `phraseSpans` は `util.rs` の `PhraseIndex` と挙動を合わせる |
 | `src/components/GlossedText.tsx` | 英文の各単語にホバーで意味を出し、クリックでその単語を読み上げる（読み上げは「単語の意味」トグルとは独立で、辞書にない語でも鳴る）。熟語・慣用句の範囲は一続きの実線で示し、熟語の意味と語自体の意味を2行で出す。慣用句（`db::idiom_keys`、単語問題と同じ英語のものは除く）は文字どおりの意味でも使われる（"The cat is under the table"）ので、意味の前に「慣用句なら」を付ける。選択問題の回答前は `withhold` で正解と同じ訳を伏せる。右クリックでその語をレシピに追加する（`headword` で辞書形に直し、`context` の文を例文として保存。熟語の一部なら熟語も追加を提案） |
 | `src/components/RecipeProvider.tsx` | 右クリックされた語の保存と確認メッセージ。回答前に右クリックされることがあるので、メッセージに**意味を出さない**（意味がそのまま正解のことがある） |
-| `src/screens/` | Home（ジャンル・難易度選択）、Study（4モード＋回答後の自動読み上げ＋単語の意味＋記入問題のヒント常時表示）、Snacks、Recipe（お菓子作りレシピ: 単語一覧と、選択（意味を4択）／記入（英語を書く）の復習。4択の誤答はレシピの他の語と辞書から、正解と意味が重ならないものを選ぶ）、Stats |
+| `src/screens/` | Home（ジャンル・難易度選択）、Study（4モード＋回答後の自動読み上げ＋単語の意味＋記入問題のヒント常時表示）、Snacks、Recipe（お菓子作りレシピ: 単語一覧と、選択式（意味を4択）／記入式（英語を書く）の復習。一覧のタブが「習得済み」なら習得済みの語、それ以外なら復習中の語を復習する。4択の誤答はレシピの他の語と辞書から、正解と意味が重ならないものを選ぶ）、Stats |
 
 ## データの約束
 
