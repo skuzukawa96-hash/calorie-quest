@@ -1,5 +1,6 @@
 import { useState } from "react";
 import CalorieBar from "../components/CalorieBar";
+import { DeleteButton, EatButton } from "../components/IconButtons";
 import { api } from "../lib/api";
 import { playCrunch, playFanfare } from "../lib/sfx";
 import {
@@ -166,17 +167,8 @@ export default function Home({ dash, onStart, onChanged, goToSnacks, toast }: Pr
                       </span>
                     )}
                     <div className="goal-actions">
-                      <button
-                        className={"btn-small eat " + (remaining === 0 ? "" : "over")}
-                        disabled={busy}
-                        title={remaining === 0 ? "今日の残りカロリーで食べられます" : "今日の残りを超えます（記録は可能）"}
-                        onClick={() => void eat(g)}
-                      >
-                        食べた！
-                      </button>
-                      <button className="btn-link danger" disabled={busy} title="目標から外します（お菓子図鑑には残ります）" onClick={() => void dropGoal(g)}>
-                        削除
-                      </button>
+                      <EatButton affordable={remaining === 0} disabled={busy} onClick={() => void eat(g)} />
+                      <DeleteButton label="目標から外す（お菓子図鑑には残ります）" disabled={busy} onClick={() => void dropGoal(g)} />
                     </div>
                   </li>
                 );

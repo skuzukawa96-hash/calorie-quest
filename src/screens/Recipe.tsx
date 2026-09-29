@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import GlossedText from "../components/GlossedText";
+import { DeleteButton } from "../components/IconButtons";
 import { api } from "../lib/api";
 import { loadDictionary, lookup, type Dictionary } from "../lib/dictionary";
 import { onRecipeChanged } from "../lib/recipe";
@@ -378,8 +379,8 @@ export default function Recipe({ onProgress, toast }: Props) {
                       >
                         {w.masteredAt ? "復習に戻す" : "✓ 覚えた"}
                       </button>
-                      <button
-                        className="btn-link danger"
+                      <DeleteButton
+                        label="レシピから削除"
                         disabled={busy}
                         onClick={() =>
                           run(async () => {
@@ -387,9 +388,7 @@ export default function Recipe({ onProgress, toast }: Props) {
                             toast(`「${w.word}」をレシピから削除しました`);
                           })
                         }
-                      >
-                        削除
-                      </button>
+                      />
                     </div>
                   </li>
                 ))}

@@ -255,6 +255,57 @@ main {
   color: var(--berry);
   border-color: #f0c9c8;
 }
+/* Icon-only buttons (components/IconButtons.tsx): 🍽️ eat, × delete, ↶ undo */
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: none;
+  line-height: 1;
+  transition: background 0.12s ease, opacity 0.12s ease;
+}
+.icon-btn svg {
+  width: 18px;
+  height: 18px;
+}
+/* within today's remainder: a mint disc, the same green as 「食べられます」 */
+.icon-btn.eat {
+  font-size: 19px;
+  background: var(--mint-bg);
+  border-color: #b9dcc4;
+}
+.icon-btn.eat:hover:not(:disabled) {
+  background: #d4ebdb;
+  border-color: var(--mint);
+}
+/* not covered by today's remainder: greyed out, but it still records */
+.icon-btn.eat.over {
+  background: #fff;
+  border-color: var(--line);
+  filter: grayscale(1);
+  opacity: 0.4;
+}
+.icon-btn.eat.over:hover:not(:disabled) {
+  opacity: 0.7;
+}
+.icon-btn.delete {
+  color: var(--berry);
+}
+.icon-btn.delete:hover:not(:disabled) {
+  background: var(--berry-bg);
+}
+.icon-btn.undo {
+  color: var(--choco-light);
+}
+.icon-btn.undo:hover:not(:disabled) {
+  color: var(--choco);
+  background: var(--cream-2);
+}
 .segmented {
   display: inline-flex;
   background: var(--cream-2);
@@ -1489,7 +1540,7 @@ main {
 }
 .snack-row {
   display: grid;
-  grid-template-columns: 26px 30px minmax(0, 1fr) 44px 76px 130px;
+  grid-template-columns: 26px 30px minmax(0, 1fr) 44px 76px 76px;
   align-items: center;
   gap: 8px;
   background: #fff;
@@ -1498,7 +1549,7 @@ main {
   padding: 5px 12px 5px 8px;
 }
 .snack-list.with-tickets .snack-row {
-  grid-template-columns: 26px 30px minmax(0, 1fr) 44px 76px 210px;
+  grid-template-columns: 26px 30px minmax(0, 1fr) 44px 76px 160px;
 }
 .snack-row:hover {
   border-color: var(--caramel-light);

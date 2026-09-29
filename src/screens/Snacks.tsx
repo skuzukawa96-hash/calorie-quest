@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { DeleteButton, EatButton, UndoButton } from "../components/IconButtons";
 import { api } from "../lib/api";
 import { playCrunch } from "../lib/sfx";
 import type { ConsumptionEntry, Dashboard, Snack } from "../types";
@@ -165,7 +166,7 @@ export default function Snacks({ dash, onChanged, toast }: Props) {
           </div>
         </div>
         {log.length === 0 ? (
-          <div className="muted">まだ何も食べていません。食べたら図鑑の「食べた！」で記録しましょう。</div>
+          <div className="muted">まだ何も食べていません。食べたら図鑑の 🍽️ で記録しましょう。</div>
         ) : (
           <ul className="log-list">
             {log.map((e) => (
@@ -174,9 +175,7 @@ export default function Snacks({ dash, onChanged, toast }: Props) {
                 <span className="log-name">{e.snackName}</span>
                 <span className="log-kcal">{e.withTicket ? "🎟 引換券" : `−${e.calories} kcal`}</span>
                 <span className="muted small">{e.eatenAt.slice(11, 16)}</span>
-                <button className="btn-link" disabled={busy} onClick={() => run(async () => { await api.deleteConsumption(e.id); })}>
-                  取り消す
-                </button>
+                <UndoButton disabled={busy} onClick={() => run(async () => { await api.deleteConsumption(e.id); })} />
               </li>
             ))}
           </ul>
@@ -235,10 +234,9 @@ export default function Snacks({ dash, onChanged, toast }: Props) {
                 </span>
                 <span className="snack-row-kcal">{s.calories} kcal</span>
                 <span className="snack-row-actions">
-                  <button
-                    className={"btn-small eat " + (affordable ? "" : "over")}
+                  <EatButton
+                    affordable={affordable}
                     disabled={busy}
-                    title={affordable ? "今日の予算内です" : "今日の予算を超えます（記録は可能）"}
                     onClick={() =>
                       run(async () => {
                         await api.logSnackEaten(s.id);
@@ -246,9 +244,7 @@ export default function Snacks({ dash, onChanged, toast }: Props) {
                         toast(`${s.icon} ${s.name}（${s.calories} kcal）を記録しました`);
                       })
                     }
-                  >
-                    食べた！
-                  </button>
+                  />
                   {tickets > 0 && (
                     <button
                       className="btn-small ticket"
@@ -266,9 +262,7 @@ export default function Snacks({ dash, onChanged, toast }: Props) {
                     </button>
                   )}
                   {!s.isBuiltin && (
-                    <button className="btn-link danger" disabled={busy} onClick={() => run(async () => { await api.deleteSnack(s.id); })}>
-                      削除
-                    </button>
+                    <DeleteButton label="図鑑から削除" disabled={busy} onClick={() => run(async () => { await api.deleteSnack(s.id); })} />
                   )}
                 </span>
               </li>
