@@ -19,7 +19,8 @@ const NO_MEANING = "（辞書に意味がありません）";
 
 /** What one correct word pays, as shown to the learner (srs::recipe_half_kcal). */
 const REVIEW_KCAL: Record<RecipeReviewMode, string> = { choice: "0.5", typing: "1" };
-const REVIEW_TITLE: Record<RecipeReviewMode, string> = { choice: "意味を選ぶ", typing: "英語で書く" };
+const REVIEW_TITLE: Record<RecipeReviewMode, string> = { choice: "選択", typing: "記入" };
+const REVIEW_ICON: Record<RecipeReviewMode, string> = { choice: "👆", typing: "✏️" };
 
 function say(text: string) {
   if (isTtsSupported()) speak(text).catch(() => undefined);
@@ -39,7 +40,7 @@ function shownForm(w: RecipeWord): string | null {
   return w.form && w.form.toLowerCase() !== w.word.toLowerCase() ? w.form : null;
 }
 
-/* ---------- 意味を選ぶ: three wrong meanings ---------- */
+/* ---------- 選択: three wrong meanings ---------- */
 
 /** The senses of a gloss, so "聞く" and "聞く、聞こえる" count as the same answer. */
 function senses(meaning: string): string[] {
@@ -91,7 +92,7 @@ function meaningOptions(word: RecipeWord, words: RecipeWord[], dict: Dictionary 
   return shuffled([...picked, word.meaning]);
 }
 
-/* ---------- 英語で書く: grading and the sentence with a gap ---------- */
+/* ---------- 記入: grading and the sentence with a gap ---------- */
 
 function normalizeAnswer(text: string): string {
   return text
@@ -241,12 +242,12 @@ export default function Recipe({ onProgress, toast }: Props) {
           </div>
         </div>
         <p className="muted">
-          問題や解説の英単語を<b>右クリック</b>すると、ここに材料として集まります。復習は英単語の意味を4択で選ぶ「意味を選ぶ」（1語 0.5 kcal）と、日本語から英語を書く「英語で書く」（1語 1 kcal）の2通り。正解した単語は習得済みになり、レシピから片付けられます。獲得したカロリーは今日のおやつ予算に入ります（小数点以下は切り捨て）。
+          問題や解説の英単語を<b>右クリック</b>すると、ここに材料として集まります。復習は英単語の意味を4択で選ぶ「選択」（1語 0.5 kcal）と、日本語から英語を書く「記入」（1語 1 kcal）の2通り。正解した単語は習得済みになり、レシピから片付けられます。獲得したカロリーは今日のおやつ予算に入ります（小数点以下は切り捨て）。
         </p>
         <div className="row recipe-actions">
           {(["choice", "typing"] as const).map((mode) => (
             <button key={mode} className="btn btn-primary" disabled={busy || quizzable.length === 0} onClick={() => start(mode)}>
-              {mode === "choice" ? "🍪" : "🍫"} {REVIEW_TITLE[mode]}（{quizzable.length}語・1語 {REVIEW_KCAL[mode]} kcal）
+              {REVIEW_ICON[mode]} {REVIEW_TITLE[mode]}
             </button>
           ))}
           {mastered.length > 0 &&
@@ -355,7 +356,7 @@ export default function Recipe({ onProgress, toast }: Props) {
   );
 }
 
-/* ---------- review: 意味を選ぶ / 英語で書く ---------- */
+/* ---------- review: 選択 / 記入 ---------- */
 
 interface Answered {
   correct: boolean;
@@ -529,7 +530,7 @@ function RecipeReview({
     <section className="card recipe-review">
       <div className="section-head">
         <h2>
-          🧁 {REVIEW_TITLE[mode]} <span className="pill">1語 {REVIEW_KCAL[mode]} kcal</span>
+          {REVIEW_ICON[mode]} {REVIEW_TITLE[mode]} <span className="pill">1語 {REVIEW_KCAL[mode]} kcal</span>
         </h2>
         <div className="study-progress">
           {idx + 1} / {queue.length}
