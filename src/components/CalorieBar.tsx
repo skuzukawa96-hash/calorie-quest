@@ -45,15 +45,17 @@ export default function CalorieBar({ earned, consumed, goals, snacks, eatenToday
 
   return (
     <div className="calorie-bar">
-      {/* Right-aligned over the end of the bar, where the numbers are read against it. */}
+      {/* The day's total on the left; what went and what is left on the right, over the bar's end. */}
       <div className="calorie-bar-head">
-        <div className="label">今日の獲得カロリー</div>
-        <div className="kcal-big">
-          {earned} <span>kcal</span>
+        <div>
+          <div className="label">今日の獲得カロリー</div>
+          <div className="kcal-big">
+            {earned} <span>kcal</span>
+          </div>
         </div>
         <div className="kcal-split">
-          <span className="negative">消費 {consumed} kcal</span>
-          <span className={budget < 0 ? "negative" : "positive"}>残り {budget} kcal</span>
+          <div className="negative">消費 {consumed} kcal</div>
+          <div className={budget < 0 ? "negative" : "positive"}>残り {budget} kcal</div>
         </div>
       </div>
       <div className="bar-track" role="progressbar" aria-label="今日の残りカロリー" aria-valuenow={left} aria-valuemin={0} aria-valuemax={max}>

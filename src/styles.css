@@ -797,8 +797,12 @@ main {
   justify-content: flex-end;
 }
 .calorie-bar-head {
-  text-align: right;
-  /* lines the numbers up with the end of the bar, which stops 20px short of the card */
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 16px;
+  flex-wrap: wrap;
+  /* the right-hand figures end where the bar does, 20px short of the card */
   margin: 0 20px 28px 0;
 }
 .kcal-big {
@@ -816,12 +820,13 @@ main {
   color: var(--muted);
 }
 .kcal-split {
-  display: flex;
-  justify-content: flex-end;
-  gap: 18px;
+  text-align: right;
   font-weight: 700;
-  font-size: 17px;
+  font-size: 18px;
+  line-height: 1.4;
   font-variant-numeric: lining-nums tabular-nums;
+  /* sits the 残り line on the big figure's baseline rather than below its descender room */
+  padding-bottom: 4px;
 }
 .bar-track {
   position: relative;
