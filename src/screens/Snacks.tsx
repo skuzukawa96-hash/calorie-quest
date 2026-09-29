@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { DeleteButton, EatButton, UndoButton } from "../components/IconButtons";
 import { api } from "../lib/api";
+import { SNACK_ICONS } from "../lib/snackIcons";
 import { playCrunch } from "../lib/sfx";
 import type { ConsumptionEntry, Dashboard, Snack } from "../types";
 
@@ -10,7 +11,6 @@ interface Props {
   toast: (msg: string) => void;
 }
 
-const ICONS = ["🍪", "🍫", "🍰", "🍦", "🍩", "🍮", "🍡", "🍘", "🍬", "🍭", "🧁", "🥐", "🍞", "🍓", "🍎", "🥨", "🍿", "🧃", "☕", "🍵"];
 
 type SortKey = "calories" | "added" | "name" | "icon" | "eaten";
 type SortDir = "asc" | "desc";
@@ -52,8 +52,8 @@ const collator = new Intl.Collator("ja");
 
 /** Icons in the order of the picker, so "アイコン順" groups them the way they are offered. */
 function iconRank(icon: string): number {
-  const i = ICONS.indexOf(icon);
-  return i < 0 ? ICONS.length : i;
+  const i = SNACK_ICONS.indexOf(icon);
+  return i < 0 ? SNACK_ICONS.length : i;
 }
 
 function compare(key: SortKey, a: Snack, b: Snack): number {
@@ -275,7 +275,7 @@ export default function Snacks({ dash, onChanged, toast }: Props) {
         <h2>お菓子を登録する</h2>
         <form className="add-form" onSubmit={add}>
           <div className="icon-picker">
-            {ICONS.map((i) => (
+            {SNACK_ICONS.map((i) => (
               <button type="button" key={i} className={icon === i ? "active" : ""} onClick={() => setIcon(i)}>
                 {i}
               </button>

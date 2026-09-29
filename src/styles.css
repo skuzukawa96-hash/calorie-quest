@@ -1057,11 +1057,171 @@ main {
   border: 1px solid #c6e3cf;
 }
 .goal-empty {
+  margin: 2px 0 0;
+}
+/* ＋ 目標追加: 名前 / カロリー / アイコン / 追加 on one line, the book's matches dropping below the name */
+.goal-adder {
+  margin: 0 0 14px;
+}
+.goal-adder-row {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  gap: 14px;
-  flex-wrap: wrap;
+  gap: 8px;
+}
+.goal-adder-input {
+  width: 100%;
+  height: 38px;
+  border: 1.5px solid var(--line);
+  border-radius: 8px;
+  padding: 0 12px;
+  font-size: 15px;
+  background: #fff;
+  outline: none;
+}
+.goal-adder-input::placeholder {
+  color: #bcae9f;
+}
+.goal-adder-input:focus {
+  border-color: var(--caramel);
+}
+.goal-adder-name {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+.goal-adder-kcal {
+  position: relative;
+  width: 132px;
+  flex-shrink: 0;
+}
+.goal-adder-kcal .goal-adder-input {
+  padding-right: 42px;
+}
+.goal-adder-kcal span {
+  position: absolute;
+  right: 11px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 13px;
+  color: var(--muted);
+  pointer-events: none;
+}
+/* the spinner arrows only crowd a small box */
+.goal-adder-kcal input::-webkit-inner-spin-button,
+.goal-adder-kcal input::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.goal-adder-icon {
+  position: relative;
+  flex-shrink: 0;
+}
+.goal-adder-icon-btn {
+  height: 38px;
+  padding: 0 8px 0 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 20px;
+  background: #fff;
+  border: 1.5px solid var(--line);
+  border-radius: 8px;
+}
+.goal-adder-icon-btn:hover,
+.goal-adder-icon-btn[aria-expanded="true"] {
+  border-color: var(--caramel);
+}
+.goal-adder-caret {
+  font-size: 11px;
+  color: var(--muted);
+}
+.goal-icon-grid {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 4px);
+  right: 0;
+  display: grid;
+  grid-template-columns: repeat(5, 36px);
+  gap: 4px;
+  padding: 8px;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+}
+.goal-icon-grid button {
+  height: 36px;
+  font-size: 20px;
+  background: none;
+  border: 2px solid transparent;
+  border-radius: 8px;
+}
+.goal-icon-grid button:hover {
+  background: var(--cream);
+}
+.goal-icon-grid button.active {
+  border-color: var(--caramel);
+  background: #fff8ec;
+}
+.goal-adder-submit {
+  height: 38px;
+  padding: 0 20px;
+  flex-shrink: 0;
+}
+.goal-suggest {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+}
+.goal-suggest li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  border-radius: 7px;
+  cursor: pointer;
+}
+.goal-suggest li.active {
+  background: var(--cream);
+}
+.goal-suggest-icon {
+  font-size: 18px;
+}
+.goal-suggest-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--choco);
+}
+.goal-suggest-name b {
+  color: var(--caramel-dark);
+}
+.goal-suggest-goal {
+  font-size: 11.5px;
+  color: var(--caramel);
+}
+.goal-suggest-kcal {
+  font-size: 13px;
+  color: var(--muted);
+}
+.goal-adder-note {
+  margin-top: 6px;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+.goal-adder-note.warn {
+  color: var(--berry);
 }
 .need-grid {
   display: grid;
