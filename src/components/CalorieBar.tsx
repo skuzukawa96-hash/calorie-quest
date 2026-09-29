@@ -42,30 +42,18 @@ export default function CalorieBar({ earned, consumed, goals, snacks, eatenToday
   placed.sort((a, b) => a.snack.calories - b.snack.calories);
 
   const eaten = new Set(eatenToday);
-  const representative = snacks
-    .filter((s) => s.calories <= left)
-    .sort((a, b) => b.calories - a.calories)[0];
 
   return (
     <div className="calorie-bar">
+      {/* Right-aligned over the end of the bar, where the numbers are read against it. */}
       <div className="calorie-bar-head">
-        <div>
-          <div className="label">今日の獲得カロリー</div>
-          <div className="kcal-big">
-            {earned} <span>kcal</span>
-          </div>
-          {representative ? (
-            <div className="muted">
-              残りで ≒ {representative.icon} {representative.name}（{representative.calories} kcal）
-            </div>
-          ) : (
-            <div className="muted">問題を解いてお菓子のカロリーを貯めよう</div>
-          )}
+        <div className="label">今日の獲得カロリー</div>
+        <div className="kcal-big">
+          {earned} <span>kcal</span>
         </div>
-        <div className="calorie-bar-budget">
-          <div className="label">食べた分</div>
-          <div className="kcal-mid">{consumed} kcal</div>
-          <div className={"kcal-mid " + (budget < 0 ? "negative" : "positive")}>残り {budget} kcal</div>
+        <div className="kcal-split">
+          <span className="negative">消費 {consumed} kcal</span>
+          <span className={budget < 0 ? "negative" : "positive"}>残り {budget} kcal</span>
         </div>
       </div>
       <div className="bar-track" role="progressbar" aria-label="今日の残りカロリー" aria-valuenow={left} aria-valuemin={0} aria-valuemax={max}>

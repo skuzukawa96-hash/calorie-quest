@@ -797,29 +797,31 @@ main {
   justify-content: flex-end;
 }
 .calorie-bar-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-end;
-  gap: 16px;
-  flex-wrap: wrap;
-  margin-bottom: 26px;
+  text-align: right;
+  /* lines the numbers up with the end of the bar, which stops 20px short of the card */
+  margin: 0 20px 28px 0;
 }
 .kcal-big {
-  font-family: var(--font-display);
-  font-size: 46px;
-  line-height: 1.1;
+  font-family: var(--font);
+  font-weight: 700;
+  font-size: 42px;
+  line-height: 1.15;
+  /* digits of one height, so the figure reads as a block */
+  font-variant-numeric: lining-nums tabular-nums;
   color: var(--choco);
 }
 .kcal-big span {
   font-size: 18px;
+  font-weight: 600;
   color: var(--muted);
 }
-.kcal-mid {
+.kcal-split {
+  display: flex;
+  justify-content: flex-end;
+  gap: 18px;
   font-weight: 700;
-  font-size: 18px;
-}
-.calorie-bar-budget {
-  text-align: right;
+  font-size: 17px;
+  font-variant-numeric: lining-nums tabular-nums;
 }
 .bar-track {
   position: relative;
