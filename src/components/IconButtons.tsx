@@ -1,4 +1,4 @@
-// Icon-only buttons used across the screens: 🍴 records a snack as eaten, a red × deletes, a brown
+// Icon-only buttons used across the screens: a knife and fork records a snack as eaten, a red × deletes, a brown
 // curved arrow undoes. Each keeps its words in the tooltip and the accessible name.
 
 interface Common {
@@ -7,14 +7,22 @@ interface Common {
 }
 
 /**
- * 食べた！ as a knife and fork. A snack today's remainder does not cover is greyed out;
- * it can still be pressed, so eating over budget is recorded rather than hidden.
+ * 食べた！ as a knife and fork, drawn here in bold strokes: the 🍴 emoji shrinks to two grey
+ * sticks at button size. A snack today's remainder does not cover is greyed out; it can still be
+ * pressed, so eating over budget is recorded rather than hidden.
  */
 export function EatButton({ affordable, disabled, onClick }: Common & { affordable: boolean }) {
   const title = affordable ? "食べた！（今日の残りカロリーで食べられます）" : "食べた！（今日の残りを超えます。記録はできます）";
   return (
     <button type="button" className={"icon-btn eat" + (affordable ? "" : " over")} disabled={disabled} title={title} aria-label={title} onClick={onClick}>
-      🍴
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <g fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+          {/* fork: three tines joined by a curve, then the handle */}
+          <path d="M5 2.8v5.4M8 2.8v5.4M11 2.8v5.4M5 8.2a3 3 0 0 0 6 0M8 11.2v10" />
+          {/* knife: a curved blade, then the handle */}
+          <path d="M19 2.8c-2.3 1.1-3.6 3.9-3.6 7.3v3.4H19zM17.4 13.5v7.7" fill="currentColor" />
+        </g>
+      </svg>
     </button>
   );
 }
