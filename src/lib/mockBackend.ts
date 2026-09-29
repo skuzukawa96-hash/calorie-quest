@@ -212,7 +212,7 @@ function freshState(): MockState {
     },
     history: {},
     daily: {},
-    snacks: BUILTIN.map(([name, calories, icon], i) => ({ id: i + 1, name, calories, icon, isBuiltin: true })),
+    snacks: BUILTIN.map(([name, calories, icon], i) => ({ id: i + 1, name, calories, icon, isBuiltin: true, eatenCount: 0 })),
     consumption: [],
     tickets: [],
     recipe: [],
@@ -267,9 +267,19 @@ function save() {
   }
 }
 
+/** Mirrors SNACK_COLS in commands.rs: every snack carries how often it has been eaten. */
+function counted(snacks: Snack[]): Snack[] {
+  const eaten = new Map<number, number>();
+  for (const c of state.consumption) {
+    const id = snackIdOf(c);
+    if (id !== null) eaten.set(id, (eaten.get(id) ?? 0) + 1);
+  }
+  return snacks.map((s) => ({ ...s, eatenCount: eaten.get(s.id) ?? 0 }));
+}
+
 /** Mirrors commands::goal_snacks_inner: cheapest first. */
 function goalSnacks(): Snack[] {
-  return state.snacks
+  return counted(state.snacks)
     .filter((s) => state.goals.includes(s.id))
     .sort((a, b) => a.calories - b.calories || state.goals.indexOf(a.id) - state.goals.indexOf(b.id));
 }
@@ -844,7 +854,7 @@ export async function mockInvoke<T>(cmd: string, args: Record<string, unknown>):
         today: { ...daily(t) },
         goalSnacks: goalSnacks(),
         eatenToday: [...new Set(state.consumption.filter((c) => c.date === t).map((c) => snackIdOf(c)).filter((id): id is number => id !== null))].sort((a, b) => a - b),
-        snacks: state.snacks.slice().sort((a, b) => a.calories - b.calories),
+        snacks: counted(state.snacks).sort((a, b) => a.calories - b.calories),
         categories,
         dueReviewCount: dueCount(),
         ticketsAvailable: ticketsAvailable(),
@@ -864,13 +874,13 @@ export async function mockInvoke<T>(cmd: string, args: Record<string, unknown>):
     case "submit_answer":
       return submitAnswer(args.payload as AnswerPayload) as T;
     case "list_snacks":
-      return state.snacks.slice().sort((a, b) => a.calories - b.calories) as T;
+      return counted(state.snacks).sort((a, b) => a.calories - b.calories) as T;
     case "add_snack": {
       const name = String(args.name ?? "").trim();
       const calories = Number(args.calories);
       if (!name) throw new Error("お菓子の名前を入力してください");
       if (!(calories >= 1 && calories <= 5000)) throw new Error("カロリーは1〜5000の範囲で入力してください");
-      const snack: Snack = { id: state.nextId++, name, calories, icon: String(args.icon || "🍬"), isBuiltin: false };
+      const snack: Snack = { id: state.nextId++, name, calories, icon: String(args.icon || "🍬"), isBuiltin: false, eatenCount: 0 };
       state.snacks.push(snack);
       save();
       return snack as T;

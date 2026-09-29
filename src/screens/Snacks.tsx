@@ -11,6 +11,72 @@ interface Props {
 
 const ICONS = ["🍪", "🍫", "🍰", "🍦", "🍩", "🍮", "🍡", "🍘", "🍬", "🍭", "🧁", "🥐", "🍞", "🍓", "🍎", "🥨", "🍿", "🧃", "☕", "🍵"];
 
+type SortKey = "calories" | "added" | "name" | "icon" | "eaten";
+type SortDir = "asc" | "desc";
+interface SortState {
+  key: SortKey;
+  dir: SortDir;
+}
+
+/** Each order starts in the direction people usually want it, and flips on a second click. */
+const SORTS: Array<{ key: SortKey; label: string; first: SortDir; dirs: Record<SortDir, string> }> = [
+  { key: "calories", label: "カロリー", first: "asc", dirs: { asc: "低い順", desc: "高い順" } },
+  { key: "added", label: "追加", first: "desc", dirs: { desc: "新しい順", asc: "古い順" } },
+  { key: "name", label: "名前", first: "asc", dirs: { asc: "あ→ん", desc: "ん→あ" } },
+  { key: "icon", label: "アイコン", first: "asc", dirs: { asc: "種類ごと", desc: "種類ごと（逆）" } },
+  { key: "eaten", label: "よく食べる", first: "desc", dirs: { desc: "多い順", asc: "少ない順" } },
+];
+const SORT_STORAGE = "cq-snack-sort";
+const DEFAULT_SORT: SortState = { key: "calories", dir: "asc" };
+
+function loadSort(): SortState {
+  try {
+    const v = JSON.parse(localStorage.getItem(SORT_STORAGE) ?? "null") as SortState | null;
+    if (v && SORTS.some((s) => s.key === v.key) && (v.dir === "asc" || v.dir === "desc")) return v;
+  } catch {
+    /* ignore */
+  }
+  return DEFAULT_SORT;
+}
+
+function saveSort(sort: SortState) {
+  try {
+    localStorage.setItem(SORT_STORAGE, JSON.stringify(sort));
+  } catch {
+    /* ignore */
+  }
+}
+
+const collator = new Intl.Collator("ja");
+
+/** Icons in the order of the picker, so "アイコン順" groups them the way they are offered. */
+function iconRank(icon: string): number {
+  const i = ICONS.indexOf(icon);
+  return i < 0 ? ICONS.length : i;
+}
+
+function compare(key: SortKey, a: Snack, b: Snack): number {
+  switch (key) {
+    case "calories":
+      return a.calories - b.calories;
+    case "added":
+      // Ids grow as snacks are added; the built-in ones come first.
+      return a.id - b.id;
+    case "name":
+      return collator.compare(a.name, b.name);
+    case "icon":
+      return iconRank(a.icon) - iconRank(b.icon) || a.icon.localeCompare(b.icon);
+    case "eaten":
+      return a.eatenCount - b.eatenCount;
+  }
+}
+
+/** Ties fall back to calories and then the order added, always ascending, so rows stay put. */
+function sortSnacks(snacks: Snack[], { key, dir }: SortState): Snack[] {
+  const sign = dir === "asc" ? 1 : -1;
+  return snacks.slice().sort((a, b) => sign * compare(key, a, b) || a.calories - b.calories || a.id - b.id);
+}
+
 export default function Snacks({ dash, onChanged, toast }: Props) {
   const [snacks, setSnacks] = useState<Snack[]>(dash.snacks);
   const [log, setLog] = useState<ConsumptionEntry[]>([]);
@@ -18,6 +84,7 @@ export default function Snacks({ dash, onChanged, toast }: Props) {
   const [calories, setCalories] = useState("");
   const [icon, setIcon] = useState("🍰");
   const [busy, setBusy] = useState(false);
+  const [sort, setSort] = useState<SortState>(loadSort);
 
   const reload = useCallback(async () => {
     const [s, l] = await Promise.all([api.listSnacks(), api.getTodayConsumption()]);
@@ -46,6 +113,17 @@ export default function Snacks({ dash, onChanged, toast }: Props) {
       setBusy(false);
     }
   };
+
+  const chooseSort = (key: SortKey) => {
+    const next: SortState =
+      sort.key === key
+        ? { key, dir: sort.dir === "asc" ? "desc" : "asc" }
+        : { key, dir: SORTS.find((s) => s.key === key)!.first };
+    setSort(next);
+    saveSort(next);
+  };
+  const sortInfo = SORTS.find((s) => s.key === sort.key)!;
+  const shown = sortSnacks(snacks, sort);
 
   const add = (e: React.FormEvent) => {
     e.preventDefault();
@@ -107,27 +185,56 @@ export default function Snacks({ dash, onChanged, toast }: Props) {
 
       <section className="card">
         <div className="section-head">
-          <h2>お菓子図鑑</h2>
-          <div className="muted">目標にすると「あと何問で食べられるか」がホームに表示されます（いくつでも登録できます）</div>
+          <h2>
+            お菓子図鑑 <span className="snack-count">{snacks.length}種</span>
+          </h2>
+          <div className="sort-bar" role="group" aria-label="並び替え">
+            <span className="muted small">並び替え</span>
+            <div className="segmented">
+              {SORTS.map((s) => (
+                <button
+                  key={s.key}
+                  className={sort.key === s.key ? "active" : ""}
+                  title={sort.key === s.key ? "もう一度押すと逆順" : `${s.label}順（${s.dirs[s.first]}）`}
+                  onClick={() => chooseSort(s.key)}
+                >
+                  {s.label}
+                  {sort.key === s.key && (sort.dir === "asc" ? " ↑" : " ↓")}
+                </button>
+              ))}
+            </div>
+            <button className="btn-link sort-dir" title="逆順にする" onClick={() => chooseSort(sort.key)}>
+              {sortInfo.dirs[sort.dir]}
+            </button>
+          </div>
         </div>
-        <div className="snack-grid">
-          {snacks.map((s) => {
+        <p className="muted small">☆ を押すと目標になり、ホームに「あと何問で食べられるか」が表示されます（いくつでも登録できます）。</p>
+        <ul className={"snack-list" + (tickets > 0 ? " with-tickets" : "")}>
+          {shown.map((s) => {
             const isGoal = goalIds.has(s.id);
             const affordable = budget >= s.calories;
             return (
-              <div key={s.id} className={"snack-card " + (isGoal ? "goal" : "")}>
-                <div className="snack-icon">{s.icon}</div>
-                <div className="snack-name">{s.name}</div>
-                <div className="snack-kcal">{s.calories} kcal</div>
-                <div className="snack-actions">
-                  <button
-                    className={"btn-small " + (isGoal ? "active" : "")}
-                    disabled={busy}
-                    title={isGoal ? "目標から外します" : "目標に加えます（いくつでも登録できます）"}
-                    onClick={() => run(async () => { await api.setGoalSnack(s.id, !isGoal); })}
-                  >
-                    {isGoal ? "★ 目標中" : "目標にする"}
-                  </button>
+              <li key={s.id} className={"snack-row" + (isGoal ? " goal" : "")}>
+                <button
+                  className={"snack-star" + (isGoal ? " on" : "")}
+                  disabled={busy}
+                  aria-pressed={isGoal}
+                  aria-label={isGoal ? "目標から外す" : "目標にする"}
+                  title={isGoal ? "目標から外します" : "目標にします（いくつでも登録できます）"}
+                  onClick={() => run(async () => { await api.setGoalSnack(s.id, !isGoal); })}
+                >
+                  {isGoal ? "★" : "☆"}
+                </button>
+                <span className="snack-row-icon">{s.icon}</span>
+                <span className="snack-row-name" title={s.name}>
+                  {s.name}
+                  {!s.isBuiltin && <span className="pill snack-mine">自作</span>}
+                </span>
+                <span className="snack-row-count" title="これまでに食べた回数">
+                  {s.eatenCount > 0 || sort.key === "eaten" ? `${s.eatenCount}回` : ""}
+                </span>
+                <span className="snack-row-kcal">{s.calories} kcal</span>
+                <span className="snack-row-actions">
                   <button
                     className={"btn-small eat " + (affordable ? "" : "over")}
                     disabled={busy}
@@ -155,7 +262,7 @@ export default function Snacks({ dash, onChanged, toast }: Props) {
                         })
                       }
                     >
-                      🎟 引換券で食べる
+                      🎟 引換券
                     </button>
                   )}
                   {!s.isBuiltin && (
@@ -163,11 +270,11 @@ export default function Snacks({ dash, onChanged, toast }: Props) {
                       削除
                     </button>
                   )}
-                </div>
-              </div>
+                </span>
+              </li>
             );
           })}
-        </div>
+        </ul>
       </section>
 
       <section className="card">

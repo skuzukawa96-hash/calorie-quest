@@ -547,6 +547,7 @@ pub fn row_to_snack(row: &Row) -> rusqlite::Result<Snack> {
         calories: row.get(2)?,
         icon: row.get(3)?,
         is_builtin: row.get::<_, i64>(4)? != 0,
+        eaten_count: row.get(5)?,
     })
 }
 

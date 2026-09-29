@@ -57,9 +57,13 @@ fn load_daily(conn: &Connection, date: &str) -> rusqlite::Result<DailyStats> {
     Ok(found.unwrap_or(DailyStats { date: date.to_string(), ..Default::default() }))
 }
 
+/// The columns `db::row_to_snack` reads, from `snacks s`, with how often each has been eaten.
+const SNACK_COLS: &str = "s.id, s.name, s.calories, s.icon, s.is_builtin,
+    (SELECT COUNT(*) FROM consumption_log c WHERE c.snack_id = s.id)";
+
 fn load_snack(conn: &Connection, id: i64) -> rusqlite::Result<Option<Snack>> {
     conn.query_row(
-        "SELECT id, name, calories, icon, is_builtin FROM snacks WHERE id = ?1",
+        &format!("SELECT {SNACK_COLS} FROM snacks s WHERE s.id = ?1"),
         params![id],
         db::row_to_snack,
     )
@@ -67,18 +71,17 @@ fn load_snack(conn: &Connection, id: i64) -> rusqlite::Result<Option<Snack>> {
 }
 
 fn list_snacks_inner(conn: &Connection) -> rusqlite::Result<Vec<Snack>> {
-    let mut stmt =
-        conn.prepare("SELECT id, name, calories, icon, is_builtin FROM snacks ORDER BY calories ASC, id ASC")?;
+    let mut stmt = conn.prepare(&format!("SELECT {SNACK_COLS} FROM snacks s ORDER BY s.calories ASC, s.id ASC"))?;
     let rows = stmt.query_map([], db::row_to_snack)?;
     rows.collect()
 }
 
 /// The snacks set as goals, cheapest first: the next one within reach leads the list.
 pub fn goal_snacks_inner(conn: &Connection) -> rusqlite::Result<Vec<Snack>> {
-    let mut stmt = conn.prepare(
-        "SELECT s.id, s.name, s.calories, s.icon, s.is_builtin FROM goal_snacks g JOIN snacks s ON s.id = g.snack_id
-         ORDER BY s.calories ASC, g.added_at ASC, s.id ASC",
-    )?;
+    let mut stmt = conn.prepare(&format!(
+        "SELECT {SNACK_COLS} FROM goal_snacks g JOIN snacks s ON s.id = g.snack_id
+         ORDER BY s.calories ASC, g.added_at ASC, s.id ASC"
+    ))?;
     let rows = stmt.query_map([], db::row_to_snack)?;
     rows.collect()
 }
@@ -1433,6 +1436,26 @@ mod tests {
         assert_eq!(goals.iter().map(|s| s.id).collect::<Vec<_>>(), vec![cake]);
         assert!(load_snack(&c, pudding).unwrap().is_some());
         assert!(set_goal(&c, 999_999, true).is_err(), "no goal for a snack that does not exist");
+    }
+
+    /// The book can be sorted by how often each snack is eaten, tickets included.
+    #[test]
+    fn snacks_count_how_often_they_were_eaten() {
+        let c = conn();
+        let cookie = snack_id(&c, "クッキー 1枚");
+        let pudding = snack_id(&c, "プリン");
+        log_eaten(&c, cookie).unwrap();
+        log_eaten(&c, cookie).unwrap();
+        c.execute("INSERT INTO snack_tickets (user_id, issued_at) VALUES (1, ?1)", params![now_ts()]).unwrap();
+        eat_with_ticket_inner(&c, cookie).unwrap();
+        log_eaten(&c, pudding).unwrap();
+        let count = |id: i64| list_snacks_inner(&c).unwrap().into_iter().find(|s| s.id == id).unwrap().eaten_count;
+        assert_eq!(count(cookie), 3);
+        assert_eq!(count(pudding), 1);
+        assert_eq!(count(snack_id(&c, "大福")), 0);
+        set_goal(&c, cookie, true).unwrap();
+        assert_eq!(goal_snacks_inner(&c).unwrap()[0].eaten_count, 3);
+        assert_eq!(load_snack(&c, pudding).unwrap().unwrap().eaten_count, 1);
     }
 
     #[test]

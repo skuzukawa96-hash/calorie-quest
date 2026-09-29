@@ -75,6 +75,8 @@ export interface Snack {
   calories: number;
   icon: string;
   isBuiltin: boolean;
+  /** how many times it has been recorded as eaten (with kcal or a ticket) */
+  eatenCount: number;
 }
 
 export interface KcalRates {

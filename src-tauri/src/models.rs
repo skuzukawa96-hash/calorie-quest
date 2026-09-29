@@ -90,6 +90,8 @@ pub struct Snack {
     pub calories: i64,
     pub icon: String,
     pub is_builtin: bool,
+    /// how many times it has been recorded as eaten (with kcal or a ticket), for "よく食べる順"
+    pub eaten_count: i64,
 }
 
 #[derive(Debug, Serialize)]
