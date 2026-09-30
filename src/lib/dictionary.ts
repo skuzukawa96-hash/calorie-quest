@@ -119,7 +119,14 @@ export function headword(dict: Dictionary | null, rawWord: string): { word: stri
     return { word: rawWord.replace(/[’']s$/, "").replace(/^['.]+|['.]+$/g, ""), meaning: "" };
   }
   const lemma = lemmas(form).find((l) => l !== form && dict[l] === meaning);
-  return { word: lemma ?? form, meaning };
+  if (lemma) return { word: lemma, meaning };
+  // An irregular past form glossed on its own (heard 聞こえた, went 行った) is still saved as its
+  // verb, as a regular one is; a word of its own that shares the spelling (rose バラ, thought 考え)
+  // is not, and its gloss does not read as a past tense.
+  const base = IRREGULAR[form];
+  const first = meaning.split(/[、，,]/)[0].trim();
+  if (base && dict[base] && /[ただ]$/.test(first)) return { word: base, meaning: dict[base] };
+  return { word: form, meaning };
 }
 
 /** Expands a base dictionary so every word used in `texts` is a key of its own. */

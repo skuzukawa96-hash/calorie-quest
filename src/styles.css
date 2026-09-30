@@ -2373,17 +2373,18 @@ main {
 }
 .exam-level-foot {
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
-  gap: 8px;
+  gap: 2px 8px;
   font-size: 13px;
+}
+/* each part whole: 「合格 +100 kcal」, 「ベスト 27 / 30」 */
+.exam-level-foot span {
+  white-space: nowrap;
 }
 .exam-reward {
   font-weight: 700;
   color: var(--berry);
-}
-.exam-reward .muted {
-  font-weight: 400;
-  font-size: 12px;
 }
 .exam-quit {
   display: inline-flex;

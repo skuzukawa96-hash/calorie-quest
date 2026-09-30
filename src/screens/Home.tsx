@@ -313,11 +313,10 @@ export default function Home({ dash, onStart, onExam, onExamReview, onChanged, g
                   <span>{EXAM_DESC[l.level][1]}</span>
                 </div>
                 <div className="exam-level-foot">
-                  <span className="exam-reward">
-                    合格 +{l.reward} kcal{l.paidPassToday && <span className="muted">（今日は受取済み）</span>}
-                  </span>
+                  <span className="exam-reward">合格 +{l.reward} kcal</span>
                   <span className="muted">{best ? `ベスト ${best}` : "未受験"}</span>
                 </div>
+                {l.paidPassToday && <div className="muted small">今日の合格報酬は受取済み</div>}
                 <div className="mode-cta">{dash.exam.questionCount}問に挑戦 →</div>
               </button>
             );
