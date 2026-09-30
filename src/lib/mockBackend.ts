@@ -29,6 +29,7 @@ import type {
   PartOfSpeech,
   Question,
   RecipeAddResult,
+  RecipePos,
   RecipeWord,
   RecipeWordInput,
   SessionMode,
@@ -93,7 +94,7 @@ interface MockState {
   consumption: StoredConsumption[];
   tickets: Ticket[];
   /** お菓子作りレシピ; absent in state saved before the list existed */
-  recipe: RecipeWord[];
+  recipe: StoredRecipeWord[];
   /** 貯蓄 (mirrors users.savings_kcal) */
   savings: number;
   /** leftover moved to savings per finished day (mirrors daily_stats.saved_kcal) */
@@ -1164,7 +1165,42 @@ function mockDictionary(): Dictionary {
 
 /* ---------- お菓子作りレシピ (mirrors recipe.rs) ---------- */
 
-function recipeWord(id: number): RecipeWord {
+/** A recipe word as the mock keeps it; its part of speech is worked out when it is handed out. */
+type StoredRecipeWord = Omit<RecipeWord, "pos">;
+
+/** Mirrors db::pos_from_gloss: 走る a verb, 美しい an adjective, ゆっくりと an adverb, else a noun. */
+function posFromGloss(ja: string): PartOfSpeech {
+  const first = (ja.split(/[、，,]/)[0] ?? "").replace(/（[^）]*）|\([^)]*\)/g, "").trim();
+  if (/[にと]$/.test(first)) return "adverb";
+  if (/[うくぐすつぬぶむる]$/.test(first)) return "verb";
+  if (/[いなの的ただてで]$/.test(first)) return "adjective";
+  return "noun";
+}
+
+/** Mirrors db::words_by_english: each word question's meaning and part of speech, and the idioms. */
+const recipeLookup = (() => {
+  const words = new Map<string, Array<[string, PartOfSpeech]>>();
+  const idioms = new Set<string>();
+  for (const q of questions) {
+    const en = q.en.toLowerCase();
+    if (q.kind === "word") words.set(en, [...(words.get(en) ?? []), [q.ja, posOf[q.key] ?? posFromGloss(q.ja)]]);
+    else if (q.kind === "idiom") idioms.add(en);
+  }
+  return { words, idioms };
+})();
+
+/** Mirrors db::recipe_pos. */
+function recipePos(word: string, meaning: string): RecipePos {
+  const key = word.trim().toLowerCase();
+  const senses = recipeLookup.words.get(key);
+  if (senses) return (senses.find(([ja]) => ja === meaning) ?? senses[0])[1];
+  if (recipeLookup.idioms.has(key)) return "idiom";
+  return posFromGloss(meaning);
+}
+
+const withPos = (w: StoredRecipeWord): RecipeWord => ({ ...w, pos: recipePos(w.word, w.meaning) });
+
+function recipeWord(id: number): StoredRecipeWord {
   const w = state.recipe.find((x) => x.id === id);
   if (!w) throw new Error("その単語はレシピにありません");
   return w;
@@ -1185,9 +1221,9 @@ function addRecipeWord(input: RecipeWordInput): RecipeAddResult {
       found.form = input.form.trim();
     }
     save();
-    return { status, entry: { ...found } };
+    return { status, entry: withPos(found) };
   }
-  const entry: RecipeWord = {
+  const entry: StoredRecipeWord = {
     id: state.nextId++,
     word,
     meaning: input.meaning.trim(),
@@ -1201,7 +1237,7 @@ function addRecipeWord(input: RecipeWordInput): RecipeAddResult {
   };
   state.recipe.push(entry);
   save();
-  return { status: "added", entry: { ...entry } };
+  return { status: "added", entry: withPos(entry) };
 }
 
 export async function mockInvoke<T>(cmd: string, args: Record<string, unknown>): Promise<T> {
@@ -1364,7 +1400,7 @@ export async function mockInvoke<T>(cmd: string, args: Record<string, unknown>):
       return state.recipe
         .slice()
         .sort((a, b) => b.addedAt.localeCompare(a.addedAt) || b.id - a.id)
-        .map((w) => ({ ...w })) as T;
+        .map(withPos) as T;
     case "add_recipe_word":
       return addRecipeWord(args.entry as RecipeWordInput) as T;
     case "review_recipe_word": {
@@ -1387,13 +1423,13 @@ export async function mockInvoke<T>(cmd: string, args: Record<string, unknown>):
       state.recipeHalves[t] = before + gained;
       daily(t).kcalEarned += kcal;
       save();
-      return { entry: { ...w }, counted, kcalEarned: kcal, todayKcal: daily(t).kcalEarned, halfPending: (before + gained) % 2 === 1 } as T;
+      return { entry: withPos(w), counted, kcalEarned: kcal, todayKcal: daily(t).kcalEarned, halfPending: (before + gained) % 2 === 1 } as T;
     }
     case "set_recipe_mastered": {
       const w = recipeWord(Number(args.id));
       w.masteredAt = args.mastered ? (w.masteredAt ?? nowTs()) : null;
       save();
-      return { ...w } as T;
+      return withPos(w) as T;
     }
     case "delete_recipe_words": {
       const ids = new Set((args.ids as number[]).map(Number));

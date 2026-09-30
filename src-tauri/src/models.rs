@@ -346,6 +346,8 @@ pub struct RecipeWord {
     pub last_reviewed_at: Option<String>,
     /// Set once the learner has marked the word as learned; such words may be cleared out.
     pub mastered_at: Option<String>,
+    /// noun / verb / adjective / adverb / idiom (`db::recipe_pos`), for sorting and filtering
+    pub pos: String,
 }
 
 #[derive(Debug, Deserialize)]

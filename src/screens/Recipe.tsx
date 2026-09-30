@@ -8,7 +8,15 @@ import { loadDictionary, lookup, type Dictionary } from "../lib/dictionary";
 import { onRecipeChanged } from "../lib/recipe";
 import { playCrunch, playFanfare, playWrong } from "../lib/sfx";
 import { isTtsSupported, speak, stopSpeaking } from "../lib/speech";
-import type { RecipeReviewMode, RecipeReviewResult, RecipeWord, WordNotes } from "../types";
+import {
+  RECIPE_POS,
+  RECIPE_POS_LABEL,
+  type RecipePos,
+  type RecipeReviewMode,
+  type RecipeReviewResult,
+  type RecipeWord,
+  type WordNotes,
+} from "../types";
 
 interface Props {
   /** a correct review adds to today's kcal, which the header and home show */
@@ -50,6 +58,66 @@ function stalestFirst(words: RecipeWord[]): RecipeWord[] {
 /** The form that was right-clicked, when it differs from the headword ("heard" for hear). */
 function shownForm(w: RecipeWord): string | null {
   return w.form && w.form.toLowerCase() !== w.word.toLowerCase() ? w.form : null;
+}
+
+/* ---------- the list: search, order, parts of speech ---------- */
+
+/** abc順 or 追加日順, one at a time; clicking the one in use turns it around. */
+interface Order {
+  key: "added" | "abc";
+  reverse: boolean;
+}
+/** 品詞順: off, every part of speech in turn (名詞 → 動詞 → 形容詞 → 副詞 → 慣用句), or only one. */
+type PosView = "off" | "grouped" | RecipePos;
+
+const ORDERS: Array<{ key: Order["key"]; label: string; dirs: [string, string] }> = [
+  { key: "abc", label: "abc順", dirs: ["A→Z", "Z→A"] },
+  { key: "added", label: "追加日順", dirs: ["新→古", "古→新"] },
+];
+const LIST_STORAGE = "cq-recipe-order";
+
+/** The order and whether it goes by part of speech, as last left; a one-part filter is not kept. */
+function loadListView(): { order: Order; grouped: boolean } {
+  try {
+    const v = JSON.parse(localStorage.getItem(LIST_STORAGE) ?? "null");
+    if (v && (v.key === "added" || v.key === "abc") && typeof v.reverse === "boolean") {
+      return { order: { key: v.key, reverse: v.reverse }, grouped: v.grouped === true };
+    }
+  } catch {
+    /* ignore */
+  }
+  return { order: { key: "added", reverse: false }, grouped: false };
+}
+
+function saveListView(order: Order, grouped: boolean) {
+  try {
+    localStorage.setItem(LIST_STORAGE, JSON.stringify({ ...order, grouped }));
+  } catch {
+    /* ignore */
+  }
+}
+
+const abc = new Intl.Collator("en", { sensitivity: "base", numeric: true });
+
+/** Newest first or A→Z (turned around by `reverse`), within the parts of speech when `byPos`. */
+function ordered(words: RecipeWord[], { key, reverse }: Order, byPos: boolean): RecipeWord[] {
+  const sign = reverse ? -1 : 1;
+  const within = (a: RecipeWord, b: RecipeWord) =>
+    key === "abc" ? abc.compare(a.word, b.word) || a.id - b.id : b.addedAt.localeCompare(a.addedAt) || b.id - a.id;
+  return words
+    .slice()
+    .sort((a, b) => (byPos ? RECIPE_POS.indexOf(a.pos) - RECIPE_POS.indexOf(b.pos) : 0) || sign * within(a, b));
+}
+
+/** The words that begin with what is typed: "bar" finds barely and bare, but not cab or rebar. */
+function startingWith(words: RecipeWord[], query: string): RecipeWord[] {
+  const q = query.trimStart().toLowerCase();
+  return q ? words.filter((w) => w.word.toLowerCase().startsWith(q)) : words;
+}
+
+/** "2026-09-30T12:34:56" as 2026-09-30 12:34. */
+function stamp(ts: string): string {
+  return ts.slice(0, 16).replace("T", " ");
 }
 
 /* ---------- 選択: three wrong meanings ---------- */
@@ -145,9 +213,13 @@ function withGap(word: RecipeWord): string | null {
 
 /**
  * お菓子作りレシピ: the words the learner right-clicked while studying. They are reviewed by
- * picking the meaning (0.5 kcal) or writing the English (1 kcal); a word answered right is
- * learned, and learned words can be cleared out of the list. Learned words can be gone over again
- * too, and one got wrong goes back to being learned.
+ * picking the meaning (0.5 kcal) or writing the English (1 kcal); a word answered right becomes
+ * learned when the learner says so (習得), and learned words can be cleared out of the list. Learned
+ * words can be gone over again too, and one got wrong goes back into review.
+ *
+ * The list shows a word and its meaning on one line and opens to its example and dates on a
+ * click; it can be narrowed by the start of the word and put in abc or added order, by part of
+ * speech or not, or down to one part of speech.
  */
 export default function Recipe({ onProgress, toast }: Props) {
   const [words, setWords] = useState<RecipeWord[] | null>(null);
@@ -158,6 +230,29 @@ export default function Recipe({ onProgress, toast }: Props) {
   const [round, setRound] = useState(0);
   const [confirmClear, setConfirmClear] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [query, setQuery] = useState("");
+  const [order, setOrder] = useState<Order>(() => loadListView().order);
+  const [posView, setPosView] = useState<PosView>(() => (loadListView().grouped ? "grouped" : "off"));
+  const [posMenu, setPosMenu] = useState(false);
+  const posBox = useRef<HTMLDivElement>(null);
+  const [open, setOpen] = useState<ReadonlySet<number>>(() => new Set());
+
+  useEffect(() => saveListView(order, posView !== "off"), [order, posView]);
+
+  // The part-of-speech menu closes on a click elsewhere or Escape.
+  useEffect(() => {
+    if (!posMenu) return;
+    const away = (e: MouseEvent) => {
+      if (!posBox.current?.contains(e.target as Node)) setPosMenu(false);
+    };
+    const esc = (e: KeyboardEvent) => e.key === "Escape" && setPosMenu(false);
+    document.addEventListener("mousedown", away);
+    document.addEventListener("keydown", esc);
+    return () => {
+      document.removeEventListener("mousedown", away);
+      document.removeEventListener("keydown", esc);
+    };
+  }, [posMenu]);
 
   const reload = useCallback(async () => {
     setWords(await api.listRecipeWords());
@@ -230,6 +325,25 @@ export default function Recipe({ onProgress, toast }: Props) {
   }
 
   const shown = filter === "learning" ? learning : filter === "mastered" ? mastered : words;
+  const found = startingWith(shown, query);
+  const onlyPos = posView !== "off" && posView !== "grouped" ? posView : null;
+  const listed = ordered(onlyPos ? found.filter((w) => w.pos === onlyPos) : found, order, posView === "grouped");
+  const posCount = (pos: RecipePos) => found.filter((w) => w.pos === pos).length;
+
+  const chooseOrder = (key: Order["key"]) =>
+    setOrder((o) => (o.key === key ? { key, reverse: !o.reverse } : { key, reverse: false }));
+  // The first click lines the words up by part of speech; after that it opens the menu.
+  const clickPos = () => (posView === "off" ? setPosView("grouped") : setPosMenu((m) => !m));
+  const pickPos = (view: PosView) => {
+    setPosView(view);
+    setPosMenu(false);
+  };
+  const toggleOpen = (id: number) =>
+    setOpen((s) => {
+      const next = new Set(s);
+      if (!next.delete(id)) next.add(id);
+      return next;
+    });
   // The review buttons follow the list's tab: 習得済み goes over the learned words, the others
   // over the words still in review.
   const target: Target = filter === "mastered" ? "mastered" : "learning";
@@ -264,7 +378,7 @@ export default function Recipe({ onProgress, toast }: Props) {
           </div>
         </div>
         <p className="muted">
-          問題や解説の英単語を<b>右クリック</b>すると、ここに材料として集まります。復習は英単語の意味を4択で選ぶ「選択式」（1語 0.5 kcal）と、日本語から英語を書く「記入式」（1語 1 kcal）の2通り。正解した単語は習得済みになり、レシピから片付けられます。習得済みの単語も下の「習得済み」タブから復習でき、間違えると復習中に戻ります。獲得したカロリーは今日のおやつ予算に入ります（1語につき1日1回、小数点以下は切り捨て）。
+          問題や解説の英単語を<b>右クリック</b>すると、ここに材料として集まります。復習は英単語の意味を4択で選ぶ「選択式」（1語 0.5 kcal）と、日本語から英語を書く「記入式」（1語 1 kcal）の2通り。正解したら「習得」か「まだ」を選び、習得した単語はレシピから片付けられます。習得済みの単語も下の「習得済み」タブから復習でき、間違えるか「まだ」を選ぶと復習中に戻ります。獲得したカロリーは今日のおやつ予算に入ります（1語につき1日1回、小数点以下は切り捨て）。
         </p>
         <div className="row recipe-actions">
           <span className="recipe-target">
@@ -300,7 +414,7 @@ export default function Recipe({ onProgress, toast }: Props) {
         </div>
         {target === "learning" && learning.length > quizzable.learning.length && (
           <p className="muted small">
-            辞書に意味のない{learning.length - quizzable.learning.length}語は復習に出ません（一覧の「✓ 覚えた」で習得済みにできます）。
+            辞書に意味のない{learning.length - quizzable.learning.length}語は復習に出ません（一覧で単語を開き「✓ 覚えた」を押すと習得済みにできます）。
           </p>
         )}
       </section>
@@ -314,68 +428,177 @@ export default function Recipe({ onProgress, toast }: Props) {
           </div>
         ) : (
           <>
-            <div className="segmented recipe-filter">
-              {(
-                [
-                  ["all", `すべて ${words.length}`],
-                  ["learning", `復習中 ${learning.length}`],
-                  ["mastered", `習得済み ${mastered.length}`],
-                ] as const
-              ).map(([id, label]) => (
-                <button key={id} className={filter === id ? "active" : ""} onClick={() => setFilter(id)}>
-                  {label}
-                </button>
-              ))}
-            </div>
-            {shown.length === 0 ? (
-              <p className="muted">{filter === "mastered" ? "習得済みの単語はまだありません。" : "復習中の単語はありません。"}</p>
-            ) : (
-              <ul className="recipe-list">
-                {shown.map((w) => (
-                  <li key={w.id} className={"recipe-item" + (w.masteredAt ? " mastered" : "")}>
-                    <div className="recipe-item-head">
-                      <button className="recipe-word" onClick={() => say(w.word)} title="クリックで発音" disabled={!isTtsSupported()}>
-                        {w.word}
-                      </button>
-                      {shownForm(w) && <span className="muted small">（{shownForm(w)}）</span>}
-                      <span className="recipe-meaning">{w.meaning || NO_MEANING}</span>
-                      {w.masteredAt && <span className="pill mastered">✓ 習得済み</span>}
-                    </div>
-                    {w.example && (
-                      <div className="recipe-example">
-                        <GlossedText text={w.example} dict={dict} enabled highlight={w.form || w.word} />
+            <div className="recipe-toolbar">
+              <div className="segmented recipe-filter">
+                {(
+                  [
+                    ["all", `すべて ${words.length}`],
+                    ["learning", `復習中 ${learning.length}`],
+                    ["mastered", `習得済み ${mastered.length}`],
+                  ] as const
+                ).map(([id, label]) => (
+                  <button key={id} className={filter === id ? "active" : ""} onClick={() => setFilter(id)}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <div className="recipe-tools">
+                <input
+                  type="search"
+                  className="recipe-search"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  onKeyDown={(e) => e.key === "Escape" && setQuery("")}
+                  placeholder="🔍 英単語で検索"
+                  aria-label="英単語の先頭で絞り込む"
+                  autoComplete="off"
+                  spellCheck={false}
+                  lang="en"
+                />
+                <div className="segmented recipe-sort" role="group" aria-label="並び替え">
+                  <div className="recipe-pos" ref={posBox}>
+                    <button
+                      className={posView !== "off" ? "active" : ""}
+                      aria-haspopup="menu"
+                      aria-expanded={posMenu}
+                      title={posView === "off" ? "名詞・動詞・形容詞・副詞・慣用句の順に並べる" : "品詞を選ぶ"}
+                      onClick={clickPos}
+                    >
+                      {onlyPos ? `${RECIPE_POS_LABEL[onlyPos]}のみ` : "品詞順"}
+                      {posView !== "off" && <span className="recipe-caret-small"> ▾</span>}
+                    </button>
+                    {posMenu && (
+                      <div className="recipe-pos-menu" role="menu">
+                        <button role="menuitemradio" aria-checked={posView === "grouped"} onClick={() => pickPos("grouped")}>
+                          <span>すべての品詞</span>
+                          <span className="count">{found.length}</span>
+                        </button>
+                        {RECIPE_POS.map((pos) => (
+                          <button key={pos} role="menuitemradio" aria-checked={onlyPos === pos} onClick={() => pickPos(pos)}>
+                            <span>{RECIPE_POS_LABEL[pos]}のみ</span>
+                            <span className="count">{posCount(pos)}</span>
+                          </button>
+                        ))}
+                        <hr />
+                        <button role="menuitem" onClick={() => pickPos("off")}>
+                          <span>品詞順をやめる</span>
+                        </button>
                       </div>
                     )}
-                    {w.exampleJa && <div className="muted small">{w.exampleJa}</div>}
-                    <div className="recipe-item-foot">
-                      <span className="muted small">
-                        {w.addedAt.slice(0, 10)} に追加
-                        {w.reviews > 0 && `・復習 ${w.reviews}回`}
-                      </span>
-                      <button
-                        className={"btn-small " + (w.masteredAt ? "" : "eat")}
-                        disabled={busy}
-                        onClick={() =>
-                          run(async () => {
-                            await api.setRecipeMastered(w.id, !w.masteredAt);
-                          })
-                        }
+                  </div>
+                  {ORDERS.map((o) => (
+                    <button
+                      key={o.key}
+                      className={order.key === o.key ? "active" : ""}
+                      title={order.key === o.key ? "もう一度押すと逆順" : `${o.label}（${o.dirs[0]}）`}
+                      onClick={() => chooseOrder(o.key)}
+                    >
+                      {o.label}
+                      {order.key === o.key && <span className="recipe-dir">{o.dirs[order.reverse ? 1 : 0]}</span>}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+            {listed.length === 0 ? (
+              <p className="muted">
+                {shown.length === 0
+                  ? filter === "mastered"
+                    ? "習得済みの単語はまだありません。"
+                    : "復習中の単語はありません。"
+                  : found.length === 0
+                    ? `「${query.trim()}」で始まる単語はありません。`
+                    : `${RECIPE_POS_LABEL[onlyPos ?? "noun"]}の単語はありません。`}
+              </p>
+            ) : (
+              <ul className="recipe-list">
+                {listed.map((w, i) => {
+                  const isOpen = open.has(w.id);
+                  const heading = posView === "grouped" && (i === 0 || listed[i - 1].pos !== w.pos);
+                  return [
+                    heading && (
+                      <li key={"pos-" + w.pos} className="recipe-group">
+                        {RECIPE_POS_LABEL[w.pos]} <span>{posCount(w.pos)}</span>
+                      </li>
+                    ),
+                    <li key={w.id} className={"recipe-item" + (w.masteredAt ? " mastered" : "") + (isOpen ? " open" : "")}>
+                      <div
+                        className="recipe-item-head"
+                        role="button"
+                        tabIndex={0}
+                        aria-expanded={isOpen}
+                        title={isOpen ? "閉じる" : "例文と追加日を見る"}
+                        onClick={() => toggleOpen(w.id)}
+                        onKeyDown={(e) => {
+                          if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) {
+                            e.preventDefault();
+                            toggleOpen(w.id);
+                          }
+                        }}
                       >
-                        {w.masteredAt ? "復習に戻す" : "✓ 覚えた"}
-                      </button>
-                      <DeleteButton
-                        label="レシピから削除"
-                        disabled={busy}
-                        onClick={() =>
-                          run(async () => {
-                            await api.deleteRecipeWords([w.id]);
-                            toast(`「${w.word}」をレシピから削除しました`);
-                          })
-                        }
-                      />
-                    </div>
-                  </li>
-                ))}
+                        <button
+                          className="recipe-word"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            say(w.word);
+                          }}
+                          title="クリックで発音"
+                          disabled={!isTtsSupported()}
+                        >
+                          {w.word}
+                        </button>
+                        <span className={"recipe-meaning" + (w.meaning ? "" : " muted")}>{w.meaning || NO_MEANING}</span>
+                        {w.masteredAt && (
+                          <span className="recipe-check" title="習得済み" aria-label="習得済み">
+                            ✓
+                          </span>
+                        )}
+                        <span className="recipe-caret" aria-hidden="true">
+                          ▾
+                        </span>
+                      </div>
+                      {isOpen && (
+                        <div className="recipe-item-body">
+                          {w.example && (
+                            <div className="recipe-example">
+                              <GlossedText text={w.example} dict={dict} enabled highlight={w.form || w.word} />
+                            </div>
+                          )}
+                          {w.exampleJa && <div className="muted small">{w.exampleJa}</div>}
+                          <div className="recipe-item-foot">
+                            <span className="muted small">
+                              {RECIPE_POS_LABEL[w.pos]}
+                              {shownForm(w) && `・「${shownForm(w)}」から登録`}・{stamp(w.addedAt)} に追加
+                              {w.reviews > 0 && `・復習 ${w.reviews}回`}
+                              {w.masteredAt && `・${stamp(w.masteredAt)} に習得`}
+                            </span>
+                            <button
+                              className={"btn-small " + (w.masteredAt ? "" : "eat")}
+                              disabled={busy}
+                              onClick={() =>
+                                run(async () => {
+                                  await api.setRecipeMastered(w.id, !w.masteredAt);
+                                })
+                              }
+                            >
+                              {w.masteredAt ? "復習に戻す" : "✓ 覚えた"}
+                            </button>
+                            <DeleteButton
+                              label="レシピから削除"
+                              disabled={busy}
+                              onClick={() =>
+                                run(async () => {
+                                  await api.deleteRecipeWords([w.id]);
+                                  toast(`「${w.word}」をレシピから削除しました`);
+                                })
+                              }
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </li>,
+                  ];
+                })}
               </ul>
             )}
           </>

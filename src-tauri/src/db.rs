@@ -58,15 +58,16 @@ const WORD_RELATED_JSON: &str = include_str!("../data/word-related.json");
 /// (a clear grammar point). Sorted once, sentence by sentence; every other question's tab follows
 /// from its kind.
 const TIERS_JSON: &str = include_str!("../data/tiers.json");
-/// The part of speech of every word question written as one word (key → noun / verb / adjective /
-/// adverb), taken from the sense its Japanese gives: watch 腕時計 is a noun, watch 見守る a verb.
-/// Compounds (average deviation, ex-boyfriend) have none; they have a tab of their own.
+/// The part of speech of every word question (key → noun / verb / adjective / adverb), taken from
+/// the sense its Japanese gives: watch 腕時計 is a noun, watch 見守る a verb, and a compound goes by
+/// what the whole means (average deviation a noun, sign up a verb, duty-free an adjective). The 英単語
+/// tab narrows by it; the recipe sorts and filters its words by it.
 const WORD_POS_JSON: &str = include_str!("../data/word-pos.json");
 
 pub const TIERS: [&str; 6] = ["word", "compound", "grammar", "idiom", "phrase", "example"];
 pub const PARTS_OF_SPEECH: [&str; 4] = ["noun", "verb", "adjective", "adverb"];
 
-/// Question key → part of speech, for the words of the 英単語 tab.
+/// Question key → part of speech, for every word question.
 pub fn word_pos() -> &'static HashMap<String, String> {
     static TABLE: std::sync::OnceLock<HashMap<String, String>> = std::sync::OnceLock::new();
     TABLE.get_or_init(|| serde_json::from_str(WORD_POS_JSON).expect("data/word-pos.json must be a valid JSON object"))
@@ -690,6 +691,70 @@ pub fn related_groups(key: &str) -> Vec<crate::models::RelatedGroup> {
                 .collect(),
         })
         .collect()
+}
+
+/// A part of speech read from a Japanese gloss (走る a verb, 美しい an adjective, ゆっくりと an
+/// adverb, else a noun), for a word the bank has no part of speech for.
+pub fn pos_from_gloss(ja: &str) -> &'static str {
+    let first = ja.split(['、', '，', ',']).next().unwrap_or("");
+    let mut plain = String::new();
+    let mut depth = 0;
+    for c in first.chars() {
+        match c {
+            '（' | '(' => depth += 1,
+            '）' | ')' => depth -= 1,
+            _ if depth == 0 => plain.push(c),
+            _ => {}
+        }
+    }
+    let plain = plain.trim();
+    if plain.ends_with(['に', 'と']) {
+        "adverb"
+    } else if plain.ends_with(['う', 'く', 'ぐ', 'す', 'つ', 'ぬ', 'ぶ', 'む', 'る']) {
+        "verb"
+    } else if plain.ends_with(['い', 'な', 'の', '的', 'た', 'だ', 'て', 'で']) {
+        "adjective"
+    } else {
+        "noun"
+    }
+}
+
+/// English (lowercase) → (Japanese, part of speech) of each word question with it, and the idioms.
+fn words_by_english() -> &'static (HashMap<String, Vec<(String, String)>>, std::collections::HashSet<String>) {
+    static TABLE: std::sync::OnceLock<(HashMap<String, Vec<(String, String)>>, std::collections::HashSet<String>)> =
+        std::sync::OnceLock::new();
+    TABLE.get_or_init(|| {
+        let mut words: HashMap<String, Vec<(String, String)>> = HashMap::new();
+        let mut idioms = std::collections::HashSet::new();
+        for q in load_seed().questions {
+            match q.kind.as_str() {
+                "word" => {
+                    let pos = word_pos().get(&q.key).cloned().unwrap_or_else(|| pos_from_gloss(&q.ja).to_string());
+                    words.entry(q.en.to_lowercase()).or_default().push((q.ja, pos));
+                }
+                "idiom" => {
+                    idioms.insert(q.en.to_lowercase());
+                }
+                _ => {}
+            }
+        }
+        (words, idioms)
+    })
+}
+
+/// The part of speech of a word saved to the recipe: an idiom is "idiom"; a word of the bank takes
+/// its question's (the one whose meaning was saved, when the same English means two things); any
+/// other word goes by its gloss.
+pub fn recipe_pos(word: &str, meaning: &str) -> String {
+    let key = word.trim().to_lowercase();
+    let (words, idioms) = words_by_english();
+    if let Some(senses) = words.get(&key) {
+        return senses.iter().find(|(ja, _)| ja == meaning).unwrap_or(&senses[0]).1.clone();
+    }
+    if idioms.contains(&key) {
+        return "idiom".to_string();
+    }
+    pos_from_gloss(meaning).to_string()
 }
 
 /// Everything the data says about a word or an idiom beyond its meaning, or None when it says
@@ -1485,20 +1550,21 @@ mod tests {
         assert_eq!(tier_of("word", "w1", "apple"), "word");
     }
 
-    /// Every one-word word question has its part of speech, and word-pos.json names nothing else.
+    /// Every word question, one word or a compound, has its part of speech, and word-pos.json names
+    /// nothing else.
     #[test]
     fn every_word_has_a_part_of_speech() {
         let seed = load_seed();
         let by_key: HashMap<&str, &SeedQuestion> = seed.questions.iter().map(|q| (q.key.as_str(), q)).collect();
         for (key, pos) in word_pos() {
             let q = by_key.get(key.as_str()).unwrap_or_else(|| panic!("word-pos.json names {key}, which is no question"));
-            assert_eq!(tier_of(&q.kind, &q.key, &q.en), "word", "{key} ({}) is not a one-word word question", q.en);
+            assert_eq!(q.kind, "word", "{key} ({}) is not a word question", q.en);
             assert!(PARTS_OF_SPEECH.contains(&pos.as_str()), "{key}: {pos} is no part of speech");
         }
         let mut missing: Vec<&str> = seed
             .questions
             .iter()
-            .filter(|q| tier_of(&q.kind, &q.key, &q.en) == "word" && !word_pos().contains_key(&q.key))
+            .filter(|q| q.kind == "word" && !word_pos().contains_key(&q.key))
             .map(|q| q.en.as_str())
             .collect();
         missing.sort();
@@ -1999,6 +2065,22 @@ mod tests {
         }
         missed.sort();
         assert!(missed.is_empty(), "{} patterns not found in their sentence:\n{}", missed.len(), missed.join("\n"));
+    }
+
+    /// A saved word is sorted by what it is: a bank word by its question (watch by the meaning
+    /// saved), an idiom as one, anything else by its gloss.
+    #[test]
+    fn recipe_words_have_a_part_of_speech() {
+        assert_eq!(recipe_pos("envious", "うらやんで"), "adjective");
+        assert_eq!(recipe_pos("barely", "かろうじて"), "adverb");
+        assert_eq!(recipe_pos("average deviation", "平均偏差"), "noun");
+        assert_eq!(recipe_pos("sign up", "登録する"), "verb");
+        assert_eq!(recipe_pos("watch", "腕時計"), "noun");
+        assert_eq!(recipe_pos("watch", "じっと見る、見守る"), "verb");
+        assert_eq!(recipe_pos("keep your fingers crossed", "幸運を祈る"), "idiom");
+        assert_eq!(recipe_pos("hear", "聞く"), "verb");
+        assert_eq!(pos_from_gloss("美しい"), "adjective");
+        assert_eq!(pos_from_gloss("会議"), "noun");
     }
 
     /// An origin is written for an idiom of the bank, as a finished sentence.

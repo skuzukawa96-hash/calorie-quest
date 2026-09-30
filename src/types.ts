@@ -351,7 +351,14 @@ export interface RecipeWord {
   lastReviewedAt?: string | null;
   /** set once the word is marked learned; learned words can be cleared out */
   masteredAt?: string | null;
+  /** its part of speech, or idiom (db::recipe_pos), for sorting and filtering the list */
+  pos: RecipePos;
 }
+
+/** How a recipe word is sorted: by part of speech, idioms last. */
+export type RecipePos = PartOfSpeech | "idiom";
+export const RECIPE_POS: RecipePos[] = ["noun", "verb", "adjective", "adverb", "idiom"];
+export const RECIPE_POS_LABEL: Record<RecipePos, string> = { ...POS_LABEL, idiom: "慣用句" };
 
 export type RecipeWordInput = Pick<RecipeWord, "word" | "meaning" | "form" | "example" | "exampleJa">;
 

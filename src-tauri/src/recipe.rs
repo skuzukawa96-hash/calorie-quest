@@ -25,10 +25,13 @@ const COLS: &str = "id, word, meaning, form, example, example_ja, added_at, revi
 const MAX_WORD_CHARS: usize = 60;
 
 fn row_to_word(r: &Row) -> rusqlite::Result<RecipeWord> {
+    let word: String = r.get(1)?;
+    let meaning: String = r.get(2)?;
     Ok(RecipeWord {
         id: r.get(0)?,
-        word: r.get(1)?,
-        meaning: r.get(2)?,
+        pos: crate::db::recipe_pos(&word, &meaning),
+        word,
+        meaning,
         form: r.get(3)?,
         example: r.get(4)?,
         example_ja: r.get(5)?,
