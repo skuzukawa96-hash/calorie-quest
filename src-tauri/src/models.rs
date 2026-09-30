@@ -235,6 +235,110 @@ pub struct Dashboard {
     pub tickets_available: i64,
     pub kcal_rates: KcalRates,
     pub savings: SavingsInfo,
+    /// 試験: the levels, what they pay, and the exam questions waiting in review
+    pub exam: ExamOverview,
+}
+
+/// 試験の各レベル（中学～高校基礎 / TOEIC 500〜700 / TOEIC 800）。
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExamLevelInfo {
+    /// basic / toeic600 / toeic800
+    pub level: String,
+    pub label: String,
+    /// kcal for passing (70% or more), once a day per level
+    pub reward: i64,
+    pub attempts: i64,
+    /// the best score so far, out of `best_total`
+    pub best_correct: Option<i64>,
+    pub best_total: Option<i64>,
+    pub passed_ever: bool,
+    /// today's pass or try at this level has been paid already
+    pub paid_pass_today: bool,
+    pub paid_effort_today: bool,
+    /// questions of this level waiting in the exam review
+    pub review_count: i64,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExamOverview {
+    pub levels: Vec<ExamLevelInfo>,
+    pub review_count: i64,
+    pub question_count: i64,
+    pub pass_percent: i64,
+    /// kcal for trying, when the exam is not passed (once a day per level)
+    pub effort_kcal: i64,
+    /// kcal for each question put right in the exam review
+    pub review_kcal: i64,
+}
+
+/// One question of an exam, with its passage when it is part of one (長文穴埋め / 読解).
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExamQuestion {
+    /// the set's id and the question's number in it ("600-t-003-2")
+    pub id: String,
+    pub set_id: String,
+    pub level: String,
+    /// listening (応答問題) / short (短文穴埋め) / text (長文穴埋め) / reading (読解)
+    pub part: String,
+    /// what the passage is (Eメール, お知らせ…)
+    pub title: Option<String>,
+    /// the passage; blanks are written [1], [2] …
+    pub passage: Option<String>,
+    pub passage_ja: Option<String>,
+    /// 長文穴埋め: which blank of the passage this is
+    pub blank: Option<i64>,
+    /// the sentence with ___ (短文穴埋め), the line heard (応答問題), the question asked (読解)
+    pub prompt: Option<String>,
+    pub prompt_ja: Option<String>,
+    pub choices: Vec<String>,
+    pub answer: String,
+    pub explanation: String,
+    /// what it tests (時制 / 品詞 / 前置詞 / 語彙 …)
+    pub point: Option<String>,
+    /// the sentence the question is about, completed: its words go to the recipe with it
+    pub sentence: String,
+    pub sentence_ja: Option<String>,
+    /// the answer word's patterns and similar words, and the patterns the sentence uses
+    pub notes: Option<WordNotes>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExamAnswer {
+    pub id: String,
+    pub chosen: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExamResult {
+    pub level: String,
+    pub correct: i64,
+    pub total: i64,
+    pub passed: bool,
+    /// what this exam earned (0 when today's pay for this outcome was had already)
+    pub kcal_earned: i64,
+    /// what the outcome pays (合格なら reward、不合格なら effort)
+    pub reward: i64,
+    pub already_paid: bool,
+    pub today_kcal: i64,
+    pub streak: i64,
+    pub new_ticket: bool,
+    /// questions put into the exam review by this exam
+    pub review_added: i64,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExamReviewResult {
+    pub correct: bool,
+    pub kcal_earned: i64,
+    pub today_kcal: i64,
+    /// exam questions still waiting in review
+    pub remaining: i64,
 }
 
 /// 使わなかったカロリーの貯蓄と、それが変わったお菓子引換券。

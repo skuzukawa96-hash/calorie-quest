@@ -5,6 +5,11 @@ import type {
   ConsumptionEntry,
   DailyStats,
   Dashboard,
+  ExamAnswer,
+  ExamLevel,
+  ExamQuestion,
+  ExamResult,
+  ExamReviewResult,
   NativeRecognition,
   RecipeAddResult,
   RecipeReviewMode,
@@ -63,6 +68,12 @@ export const api = {
   /** how a word is built, sentences and patterns using it, an idiom's origin; null when none */
   getWordNotes: (word: string) => call<WordNotes | null>("get_word_notes", { word }),
   resetProgress: () => call<void>("reset_progress"),
+
+  // 試験
+  startExam: (level: ExamLevel) => call<ExamQuestion[]>("start_exam", { level }),
+  finishExam: (level: ExamLevel, answers: ExamAnswer[]) => call<ExamResult>("finish_exam", { level, answers }),
+  getExamReview: () => call<ExamQuestion[]>("get_exam_review"),
+  answerExamReview: (id: string, chosen: string) => call<ExamReviewResult>("answer_exam_review", { id, chosen }),
 
   // お菓子作りレシピ (the learner's word list)
   listRecipeWords: () => call<RecipeWord[]>("list_recipe_words"),

@@ -246,6 +246,96 @@ export interface Dashboard {
   ticketsAvailable: number;
   kcalRates: KcalRates;
   savings: SavingsInfo;
+  /** 試験: the levels, what they pay, and the exam questions waiting in review */
+  exam: ExamOverview;
+}
+
+/* ---------- 試験 ---------- */
+
+export type ExamLevel = "basic" | "toeic600" | "toeic800";
+/** listening 応答問題 (TOEIC Part 2) / short 短文穴埋め (Part 5) / text 長文穴埋め (Part 6) / reading 読解 (Part 7) */
+export type ExamPart = "listening" | "short" | "text" | "reading";
+
+export const EXAM_PART_LABEL: Record<ExamPart, string> = {
+  listening: "応答問題",
+  short: "短文穴埋め",
+  text: "長文穴埋め",
+  reading: "読解問題",
+};
+
+export interface ExamLevelInfo {
+  level: ExamLevel;
+  label: string;
+  /** kcal for passing, once a day per level */
+  reward: number;
+  attempts: number;
+  bestCorrect: number | null;
+  bestTotal: number | null;
+  passedEver: boolean;
+  paidPassToday: boolean;
+  paidEffortToday: boolean;
+  reviewCount: number;
+}
+
+export interface ExamOverview {
+  levels: ExamLevelInfo[];
+  reviewCount: number;
+  questionCount: number;
+  passPercent: number;
+  /** kcal for trying when the exam is not passed, once a day per level */
+  effortKcal: number;
+  /** kcal for each question put right in the exam review */
+  reviewKcal: number;
+}
+
+export interface ExamQuestion {
+  id: string;
+  setId: string;
+  level: ExamLevel;
+  part: ExamPart;
+  title?: string | null;
+  /** blanks are written [1], [2] … */
+  passage?: string | null;
+  passageJa?: string | null;
+  /** 長文穴埋め: which blank this is */
+  blank?: number | null;
+  /** the sentence with ___, the line heard, or the question asked */
+  prompt?: string | null;
+  promptJa?: string | null;
+  choices: string[];
+  answer: string;
+  explanation: string;
+  point?: string | null;
+  /** the sentence the question is about, completed: its words go to the recipe with it */
+  sentence: string;
+  sentenceJa?: string | null;
+  notes?: WordNotes | null;
+}
+
+export interface ExamAnswer {
+  id: string;
+  chosen: string;
+}
+
+export interface ExamResult {
+  level: ExamLevel;
+  correct: number;
+  total: number;
+  passed: boolean;
+  kcalEarned: number;
+  reward: number;
+  alreadyPaid: boolean;
+  todayKcal: number;
+  streak: number;
+  newTicket: boolean;
+  reviewAdded: number;
+}
+
+export interface ExamReviewResult {
+  correct: boolean;
+  kcalEarned: number;
+  todayKcal: number;
+  remaining: number;
 }
 
 /** 使わなかったカロリーの貯蓄と、それが変わったお菓子引換券。 */

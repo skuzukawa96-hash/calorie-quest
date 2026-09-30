@@ -12,6 +12,9 @@ import idiomOrigins from "../../src-tauri/data/idiom-origins.json";
 import wordPos from "../../src-tauri/data/word-pos.json";
 import relatedSeeds from "../../src-tauri/data/word-related.json";
 import confusableSets from "../../src-tauri/data/word-confusables.json";
+import examBasic from "../../src-tauri/data/exam-basic.json";
+import exam600 from "../../src-tauri/data/exam-600.json";
+import exam800 from "../../src-tauri/data/exam-800.json";
 import { expandDictionary, lemmas, tokenize, type Dictionary } from "./dictionary";
 import { answerWordCount, scoresPerWord } from "./scoring";
 import type {
@@ -22,7 +25,15 @@ import type {
   DailyStats,
   Dashboard,
   DayPoint,
+  ExamAnswer,
   ExampleSentence,
+  ExamLevel,
+  ExamLevelInfo,
+  ExamOverview,
+  ExamPart,
+  ExamQuestion,
+  ExamResult,
+  ExamReviewResult,
   GrammarNote,
   Level,
   RelatedGroup,
@@ -108,7 +119,21 @@ interface MockState {
   recipeHalves: Record<string, number>;
   /** the day each recipe word last paid (mirrors recipe_words.paid_on) */
   recipePaid: Record<number, string>;
+  /** 試験 handed in (mirrors exam_attempts) */
+  examAttempts: ExamAttempt[];
+  /** exam question id → missed and not yet put right in the exam review (mirrors exam_mistakes) */
+  examMistakes: Record<string, { level: ExamLevel; addedAt: string; misses: number }>;
   nextId: number;
+}
+
+interface ExamAttempt {
+  level: ExamLevel;
+  date: string;
+  total: number;
+  correct: number;
+  passed: boolean;
+  kcal: number;
+  finishedAt: string;
 }
 
 interface SnackTicket {
@@ -171,7 +196,7 @@ const seedQuestions: SeedQuestion[] = [
   ...Object.entries(packModules)
     .filter(
       ([path]) =>
-        !/\/(questions|glossary|grammar-notes|pronunciations|word-parts|tiers|word-examples|word-usage|idiom-origins|word-related|word-pos|word-confusables)\.json$/.test(
+        !/\/(questions|glossary|grammar-notes|pronunciations|word-parts|tiers|word-examples|word-usage|idiom-origins|word-related|word-pos|word-confusables|exam-[^/]*)\.json$/.test(
           path,
         ),
     )
@@ -267,6 +292,8 @@ function freshState(): MockState {
     goals: [],
     recipeHalves: {},
     recipePaid: {},
+    examAttempts: [],
+    examMistakes: {},
     nextId: 100,
   };
 }
@@ -285,7 +312,7 @@ function load(): MockState {
     if (raw) {
       // State saved before the word list or savings existed lacks them. Like the Rust migration,
       // days already over are closed at 0 rather than paid into savings all at once.
-      const stored = JSON.parse(raw) as Partial<MockState> & Omit<MockState, "recipe" | "savings" | "saved" | "snackTickets" | "goals" | "recipeHalves" | "recipePaid">;
+      const stored = JSON.parse(raw) as Partial<MockState> & Omit<MockState, "recipe" | "savings" | "saved" | "snackTickets" | "goals" | "recipeHalves" | "recipePaid" | "examAttempts" | "examMistakes">;
       const closed = Object.fromEntries(Object.keys(stored.daily).filter((d) => d < today()).map((d) => [d, 0]));
       return {
         ...stored,
@@ -297,6 +324,8 @@ function load(): MockState {
         goals: stored.goals ?? legacyGoal(stored.user),
         recipeHalves: stored.recipeHalves ?? {},
         recipePaid: stored.recipePaid ?? {},
+        examAttempts: stored.examAttempts ?? [],
+        examMistakes: stored.examMistakes ?? {},
       };
     }
   } catch {
@@ -1167,6 +1196,275 @@ function getSessionQuestions(mode: SessionMode, tier: string, category: string, 
   ]);
 }
 
+/** Mirrors commands::mark_studied: the first answer of a day extends the streak or starts one. */
+function markStudied(t: string): { firstStudyToday: boolean; newTicket: boolean } {
+  const u = state.user;
+  if (u.lastStudyDate === t) return { firstStudyToday: false, newTicket: false };
+  u.currentStreak = u.lastStudyDate === datePlus(-1) ? u.currentStreak + 1 : 1;
+  u.longestStreak = Math.max(u.longestStreak, u.currentStreak);
+  u.totalStudyDays += 1;
+  u.lastStudyDate = t;
+  const newTicket = u.currentStreak % 7 === 0;
+  if (newTicket) state.tickets.push({ id: state.nextId++, issuedAt: nowTs(), issuedForStreak: u.currentStreak, usedAt: null });
+  return { firstStudyToday: true, newTicket };
+}
+
+/* ---------- 試験 (mirrors exam.rs) ---------- */
+
+interface ExamSetSeed {
+  id: string;
+  part: ExamPart;
+  title?: string;
+  passage?: string;
+  passageJa?: string;
+  questions: Array<{ prompt?: string; choices: string[]; answer: string; ja?: string; explanation: string; point?: string }>;
+}
+
+const EXAM_LEVELS: ExamLevel[] = ["basic", "toeic600", "toeic800"];
+const EXAM_SETS: Record<ExamLevel, ExamSetSeed[]> = {
+  basic: examBasic as ExamSetSeed[],
+  toeic600: exam600 as ExamSetSeed[],
+  toeic800: exam800 as ExamSetSeed[],
+};
+const EXAM = { size: 30, listening: 6, textSets: 1, reading: 8, passPercent: 70, effortKcal: 30, reviewKcal: 3, reviewSize: 10 };
+const EXAM_REWARD: Record<ExamLevel, number> = { basic: 100, toeic600: 150, toeic800: 200 };
+const EXAM_LABEL: Record<ExamLevel, string> = { basic: "中学～高校基礎", toeic600: "TOEIC 500〜700点目安", toeic800: "TOEIC 800点目安" };
+
+const examPasses = (correct: number, total: number) => total > 0 && correct * 100 >= total * EXAM.passPercent;
+
+/** Mirrors exam::ends_sentence: not after Ms. / Mr. …, nor after a.m. / p.m. unless a capital follows. */
+function endsSentence(before: string, rest: string): boolean {
+  const word = before.toLowerCase().split(" ").pop() ?? "";
+  if (["mr.", "ms.", "mrs.", "dr.", "co.", "inc.", "st."].includes(word)) return false;
+  if (word.endsWith("a.m.") || word.endsWith("p.m.")) return /^\s*[A-Z]/.test(rest);
+  return true;
+}
+
+/** Mirrors exam::sentences: split after . ? ! and at line breaks. */
+function examSentences(passage: string): string[] {
+  const out: string[] = [];
+  for (const line of passage.split("\n")) {
+    let cur = "";
+    for (let i = 0; i < line.length; i++) {
+      cur += line[i];
+      if (
+        ".?!".includes(line[i]) &&
+        (i + 1 >= line.length || line[i + 1] === " ") &&
+        (line[i] !== "." || endsSentence(cur, line.slice(i + 1)))
+      ) {
+        out.push(cur.trim());
+        cur = "";
+      }
+    }
+    if (cur.trim()) out.push(cur.trim());
+  }
+  return out;
+}
+
+/** Mirrors exam::notes_for. */
+function examNotes(answer: string, texts: string[]): WordNotes | null {
+  const short = answer.trim().split(/\s+/).length <= 3 && !/[.,?]/.test(answer);
+  const own = short ? wordNotes(answer) : null;
+  const notes: WordNotes = own ?? { parts: [], examples: [], usages: [], origin: null, related: [], used: [] };
+  notes.used = usedWords(texts);
+  return notesAreEmpty(notes) ? null : notes;
+}
+
+function buildExamQuestion(level: ExamLevel, set: ExamSetSeed, index: number): ExamQuestion {
+  const q = set.questions[index];
+  const answers = set.questions.map((x) => x.answer);
+  let sentence = "";
+  let sentenceJa: string | null = null;
+  let texts: string[] = [];
+  if (set.part === "short") {
+    sentence = fillBlank(q.prompt ?? "", q.answer);
+    sentenceJa = q.ja ?? null;
+    texts = [sentence];
+  } else if (set.part === "listening") {
+    sentence = q.prompt ?? "";
+    sentenceJa = q.ja ?? null;
+    texts = [sentence, q.answer];
+  } else if (set.part === "text" && /[.?!]$/.test(q.answer)) {
+    // A sentence put into the passage is its own sentence.
+    sentence = q.answer;
+    texts = [sentence];
+  } else if (set.part === "text") {
+    const own = examSentences(set.passage ?? "").find((s) => s.includes(`[${index + 1}]`)) ?? "";
+    sentence = answers.reduce((s, a, i) => s.split(`[${i + 1}]`).join(a), own);
+    texts = [sentence];
+  } else {
+    sentence = q.prompt ?? "";
+    sentenceJa = q.ja ?? null;
+  }
+  return {
+    id: `${set.id}-${index + 1}`,
+    setId: set.id,
+    level,
+    part: set.part,
+    title: set.title ?? null,
+    passage: set.passage ?? null,
+    passageJa: set.passageJa ?? null,
+    blank: set.part === "text" ? index + 1 : null,
+    prompt: q.prompt ?? null,
+    promptJa: q.ja ?? null,
+    choices: shuffle(q.choices),
+    answer: q.answer,
+    explanation: q.explanation,
+    point: q.point ?? null,
+    sentence,
+    sentenceJa,
+    notes: examNotes(q.answer, texts),
+  };
+}
+
+const examIndex = (() => {
+  const out = new Map<string, [ExamLevel, number, number]>();
+  for (const level of EXAM_LEVELS) {
+    EXAM_SETS[level].forEach((set, si) => set.questions.forEach((_, qi) => out.set(`${set.id}-${qi + 1}`, [level, si, qi])));
+  }
+  return out;
+})();
+
+function examQuestion(id: string): ExamQuestion | null {
+  const at = examIndex.get(id);
+  return at ? buildExamQuestion(at[0], EXAM_SETS[at[0]][at[1]], at[2]) : null;
+}
+
+/** Mirrors exam::build_exam. */
+function buildExam(level: ExamLevel): ExamQuestion[] {
+  const list = EXAM_SETS[level];
+  if (!list) throw new Error(`unknown exam level ${level}`);
+  const ofPart = (part: ExamPart) => shuffle(list.map((s, i) => [s, i] as const).filter(([s]) => s.part === part).map(([, i]) => i));
+  const listening = ofPart("listening").slice(0, EXAM.listening);
+  const text = ofPart("text").slice(0, EXAM.textSets);
+  const reading: number[] = [];
+  let readingCount = 0;
+  for (const i of ofPart("reading")) {
+    const n = list[i].questions.length;
+    if (readingCount + n <= EXAM.reading) {
+      reading.push(i);
+      readingCount += n;
+    }
+  }
+  const count = (sets: number[]) => sets.reduce((s, i) => s + list[i].questions.length, 0);
+  const short = ofPart("short").slice(0, Math.max(0, EXAM.size - count(listening) - count(text) - readingCount));
+  return [listening, short, text, reading].flatMap((group) =>
+    group.flatMap((si) => list[si].questions.map((_, qi) => buildExamQuestion(level, list[si], qi))),
+  );
+}
+
+function examPaidToday(level: ExamLevel, passed: boolean): boolean {
+  const t = today();
+  return state.examAttempts.some((a) => a.level === level && a.date === t && a.passed === passed && a.kcal > 0);
+}
+
+/** Mirrors exam::finish. */
+function finishExam(level: ExamLevel, answers: ExamAnswer[]): ExamResult {
+  if (!EXAM_LEVELS.includes(level)) throw new Error(`unknown exam level ${level}`);
+  if (!answers.length) throw new Error("回答がありません");
+  const graded = answers.map((a) => {
+    const q = examQuestion(a.id);
+    if (!q) throw new Error(`unknown exam question ${a.id}`);
+    return { id: a.id, level: q.level, ok: q.answer === a.chosen };
+  });
+  const total = graded.length;
+  const correct = graded.filter((g) => g.ok).length;
+  const passed = examPasses(correct, total);
+  const t = today();
+  const now = nowTs();
+  const reward = passed ? EXAM_REWARD[level] : EXAM.effortKcal;
+  const alreadyPaid = examPaidToday(level, passed);
+  const kcal = alreadyPaid ? 0 : reward;
+  state.examAttempts.push({ level, date: t, total, correct, passed, kcal, finishedAt: now });
+  let reviewAdded = 0;
+  for (const g of graded) {
+    const m = state.examMistakes[g.id];
+    if (g.ok) delete state.examMistakes[g.id];
+    else if (m) m.misses += 1;
+    else {
+      state.examMistakes[g.id] = { level: g.level, addedAt: now, misses: 1 };
+      reviewAdded += 1;
+    }
+  }
+  const d = daily(t);
+  d.kcalEarned += kcal;
+  d.answered += total;
+  d.correct += correct;
+  const { newTicket } = markStudied(t);
+  save();
+  return {
+    level,
+    correct,
+    total,
+    passed,
+    kcalEarned: kcal,
+    reward,
+    alreadyPaid,
+    todayKcal: d.kcalEarned,
+    streak: state.user.currentStreak,
+    newTicket,
+    reviewAdded,
+  };
+}
+
+function examReview(): ExamQuestion[] {
+  return Object.entries(state.examMistakes)
+    .sort(([a, x], [b, y]) => x.addedAt.localeCompare(y.addedAt) || a.localeCompare(b))
+    .slice(0, EXAM.reviewSize)
+    .map(([id]) => examQuestion(id))
+    .filter((q): q is ExamQuestion => q !== null);
+}
+
+/** Mirrors exam::answer_review. */
+function answerExamReview(id: string, chosen: string): ExamReviewResult {
+  const q = examQuestion(id);
+  if (!q) throw new Error(`unknown exam question ${id}`);
+  const correct = q.answer === chosen;
+  const waiting = id in state.examMistakes;
+  const kcal = correct && waiting ? EXAM.reviewKcal : 0;
+  if (correct) delete state.examMistakes[id];
+  else if (waiting) state.examMistakes[id].misses += 1;
+  const t = today();
+  const d = daily(t);
+  d.kcalEarned += kcal;
+  d.answered += 1;
+  d.correct += correct ? 1 : 0;
+  markStudied(t);
+  save();
+  return { correct, kcalEarned: kcal, todayKcal: d.kcalEarned, remaining: Object.keys(state.examMistakes).length };
+}
+
+/** Mirrors exam::overview. */
+function examOverview(): ExamOverview {
+  const mistakes = Object.values(state.examMistakes);
+  const levels: ExamLevelInfo[] = EXAM_LEVELS.map((level) => {
+    const mine = state.examAttempts.filter((a) => a.level === level);
+    const best = mine
+      .slice()
+      .sort((a, b) => b.correct / b.total - a.correct / a.total || b.finishedAt.localeCompare(a.finishedAt))[0];
+    return {
+      level,
+      label: EXAM_LABEL[level],
+      reward: EXAM_REWARD[level],
+      attempts: mine.length,
+      bestCorrect: best ? best.correct : null,
+      bestTotal: best ? best.total : null,
+      passedEver: mine.some((a) => a.passed),
+      paidPassToday: examPaidToday(level, true),
+      paidEffortToday: examPaidToday(level, false),
+      reviewCount: mistakes.filter((m) => m.level === level).length,
+    };
+  });
+  return {
+    levels,
+    reviewCount: mistakes.length,
+    questionCount: EXAM.size,
+    passPercent: EXAM.passPercent,
+    effortKcal: EXAM.effortKcal,
+    reviewKcal: EXAM.reviewKcal,
+  };
+}
+
 function submitAnswer(p: AnswerPayload): AnswerResult {
   const q = questions.find((x) => x.id === p.questionId);
   if (!q) throw new Error(`question ${p.questionId} not found`);
@@ -1221,20 +1519,8 @@ function submitAnswer(p: AnswerPayload): AnswerResult {
   d.answered += 1;
   d.correct += p.correct ? 1 : 0;
 
+  const { firstStudyToday, newTicket } = markStudied(t);
   const u = state.user;
-  let firstStudyToday = false;
-  let newTicket = false;
-  if (u.lastStudyDate !== t) {
-    firstStudyToday = true;
-    u.currentStreak = u.lastStudyDate === datePlus(-1) ? u.currentStreak + 1 : 1;
-    u.longestStreak = Math.max(u.longestStreak, u.currentStreak);
-    u.totalStudyDays += 1;
-    u.lastStudyDate = t;
-    if (u.currentStreak % 7 === 0) {
-      state.tickets.push({ id: state.nextId++, issuedAt: nowTs(), issuedForStreak: u.currentStreak, usedAt: null });
-      newTicket = true;
-    }
-  }
   save();
   return {
     kcalEarned: kcal,
@@ -1424,9 +1710,18 @@ export async function mockInvoke<T>(cmd: string, args: Record<string, unknown>):
           justSaved: settled.saved,
           justIssued: settled.issued,
         },
+        exam: examOverview(),
       };
       return dash as T;
     }
+    case "start_exam":
+      return buildExam(args.level as ExamLevel) as T;
+    case "finish_exam":
+      return finishExam(args.level as ExamLevel, args.answers as ExamAnswer[]) as T;
+    case "get_exam_review":
+      return examReview() as T;
+    case "answer_exam_review":
+      return answerExamReview(String(args.id), String(args.chosen)) as T;
     case "get_session_questions":
       return getSessionQuestions(args.mode as SessionMode, String(args.tier), String(args.category || "all"), Number(args.count)) as T;
     case "submit_answer":

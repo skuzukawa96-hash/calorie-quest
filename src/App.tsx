@@ -3,12 +3,13 @@ import { api, runningInTauri } from "./lib/api";
 import RecipeProvider from "./components/RecipeProvider";
 import { playFanfare } from "./lib/sfx";
 import { loadSpeechCapabilities } from "./lib/speech";
+import Exam from "./screens/Exam";
 import Home from "./screens/Home";
 import Recipe from "./screens/Recipe";
 import Snacks from "./screens/Snacks";
 import Stats from "./screens/Stats";
 import Study from "./screens/Study";
-import type { Dashboard, SessionMode, TierChoice } from "./types";
+import type { Dashboard, ExamLevel, SessionMode, TierChoice } from "./types";
 
 type Tab = "home" | "snacks" | "recipe" | "stats";
 
@@ -18,6 +19,9 @@ const TABS: Array<{ id: Tab; label: string }> = [
   { id: "recipe", label: "🧁 お菓子作りレシピ" },
   { id: "stats", label: "📈 記録" },
 ];
+
+/** 試験: an exam of a level, or the review of exam questions missed */
+type ExamSession = { kind: "exam"; level: ExamLevel } | { kind: "review" };
 
 interface SessionConfig {
   mode: SessionMode;
@@ -31,6 +35,7 @@ export default function App() {
   const [dash, setDash] = useState<Dashboard | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [session, setSession] = useState<SessionConfig | null>(null);
+  const [exam, setExam] = useState<ExamSession | null>(null);
   const [toast, setToast] = useState<string | null>(null);
 
   const showToast = useCallback((msg: string, ms = 3000) => {
@@ -67,6 +72,7 @@ export default function App() {
 
   const go = (t: Tab) => {
     setSession(null);
+    setExam(null);
     setTab(t);
     void refresh();
   };
@@ -82,7 +88,7 @@ export default function App() {
           </button>
           <nav className="tabs">
             {TABS.map((t) => (
-              <button key={t.id} className={tab === t.id && !session ? "active" : ""} onClick={() => go(t.id)}>
+              <button key={t.id} className={tab === t.id && !session && !exam ? "active" : ""} onClick={() => go(t.id)}>
                 {t.label}
               </button>
             ))}
@@ -106,7 +112,16 @@ export default function App() {
               </button>
             </div>
           )}
-          {session && dash ? (
+          {exam && dash ? (
+            <Exam
+              kind={exam.kind}
+              level={exam.kind === "exam" ? exam.level : undefined}
+              overview={dash.exam}
+              onExit={() => go("home")}
+              onProgress={() => void refresh()}
+              toast={showToast}
+            />
+          ) : session && dash ? (
             <Study
               mode={session.mode}
               tier={session.tier}
@@ -121,6 +136,8 @@ export default function App() {
               <Home
                 dash={dash}
                 onStart={(mode, tier, category) => setSession({ mode, tier, category })}
+                onExam={(level) => setExam({ kind: "exam", level })}
+                onExamReview={() => setExam({ kind: "review" })}
                 onChanged={() => void refresh()}
                 goToSnacks={() => go("snacks")}
                 toast={showToast}

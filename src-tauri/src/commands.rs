@@ -7,14 +7,14 @@ use rusqlite::{params, Connection, OptionalExtension};
 use std::collections::HashMap;
 use tauri::State;
 
-type CmdResult<T> = Result<T, String>;
-const USER_ID: i64 = 1;
+pub(crate) type CmdResult<T> = Result<T, String>;
+pub(crate) const USER_ID: i64 = 1;
 /// Study modes the frontend may ask for; anything else is rejected before it reaches SQL.
 pub const MODES: [&str; 4] = ["choice", "typing", "speaking", "listening"];
 /// ホームの「復習をはじめる」。期限の来た復習だけを、それぞれ間違えた形式で出す。
 pub const REVIEW_SESSION: &str = "review";
 
-fn err<E: std::fmt::Display>(e: E) -> String {
+pub(crate) fn err<E: std::fmt::Display>(e: E) -> String {
     e.to_string()
 }
 
@@ -38,7 +38,7 @@ fn load_user(conn: &Connection) -> rusqlite::Result<UserInfo> {
     )
 }
 
-fn load_daily(conn: &Connection, date: &str) -> rusqlite::Result<DailyStats> {
+pub(crate) fn load_daily(conn: &Connection, date: &str) -> rusqlite::Result<DailyStats> {
     let found = conn
         .query_row(
             "SELECT kcal_earned, kcal_consumed, answered, correct FROM daily_stats WHERE user_id = ?1 AND date = ?2",
@@ -951,33 +951,7 @@ pub fn record_answer(conn: &mut Connection, payload: &AnswerPayload) -> Result<A
     )
     .map_err(err)?;
 
-    // Streak bookkeeping happens once per calendar day.
-    let user = load_user(&tx).map_err(err)?;
-    let mut streak = user.current_streak;
-    let mut first_study_today = false;
-    let mut new_ticket = false;
-    if user.last_study_date.as_deref() != Some(today.as_str()) {
-        first_study_today = true;
-        streak = if user.last_study_date.as_deref() == Some(date_plus(-1).as_str()) {
-            user.current_streak + 1
-        } else {
-            1
-        };
-        let longest = user.longest_streak.max(streak);
-        tx.execute(
-            "UPDATE users SET current_streak = ?1, longest_streak = ?2, total_study_days = total_study_days + 1, last_study_date = ?3 WHERE id = ?4",
-            params![streak, longest, today, USER_ID],
-        )
-        .map_err(err)?;
-        if streak % 7 == 0 {
-            tx.execute(
-                "INSERT INTO cheat_tickets (user_id, issued_at, issued_for_streak) VALUES (?1, ?2, ?3)",
-                params![USER_ID, now, streak],
-            )
-            .map_err(err)?;
-            new_ticket = true;
-        }
-    }
+    let Studied { streak, first_study_today, new_ticket } = mark_studied(&tx, &today, &now).map_err(err)?;
 
     let today_stats = load_daily(&tx, &today).map_err(err)?;
     tx.commit().map_err(err)?;
@@ -991,6 +965,37 @@ pub fn record_answer(conn: &mut Connection, payload: &AnswerPayload) -> Result<A
         needs_review: new_needs_review,
         next_due: new_next_due,
     })
+}
+
+/// What studying today did to the streak.
+pub(crate) struct Studied {
+    pub streak: i64,
+    pub first_study_today: bool,
+    /// the streak reached a multiple of 7 and earned a cheat-day ticket
+    pub new_ticket: bool,
+}
+
+/// Streak bookkeeping, once per calendar day: the first answer of a day (a question, or an exam
+/// handed in) extends yesterday's streak or starts a new one.
+pub(crate) fn mark_studied(conn: &Connection, today: &str, now: &str) -> rusqlite::Result<Studied> {
+    let user = load_user(conn)?;
+    if user.last_study_date.as_deref() == Some(today) {
+        return Ok(Studied { streak: user.current_streak, first_study_today: false, new_ticket: false });
+    }
+    let streak = if user.last_study_date.as_deref() == Some(date_plus(-1).as_str()) { user.current_streak + 1 } else { 1 };
+    let longest = user.longest_streak.max(streak);
+    conn.execute(
+        "UPDATE users SET current_streak = ?1, longest_streak = ?2, total_study_days = total_study_days + 1, last_study_date = ?3 WHERE id = ?4",
+        params![streak, longest, today, USER_ID],
+    )?;
+    let new_ticket = streak % 7 == 0;
+    if new_ticket {
+        conn.execute(
+            "INSERT INTO cheat_tickets (user_id, issued_at, issued_for_streak) VALUES (?1, ?2, ?3)",
+            params![USER_ID, now, streak],
+        )?;
+    }
+    Ok(Studied { streak, first_study_today: true, new_ticket })
 }
 
 pub fn redeem_ticket(conn: &Connection) -> Result<RedeemResult, String> {
@@ -1048,6 +1053,7 @@ pub fn load_dashboard(conn: &Connection) -> CmdResult<Dashboard> {
         tickets_available: tickets_available(conn).map_err(err)?,
         kcal_rates: kcal_rates(),
         savings: savings_info(conn, just_saved, just_issued).map_err(err)?,
+        exam: crate::exam::overview(conn).map_err(err)?,
         user,
     })
 }
@@ -1330,7 +1336,8 @@ pub fn reset_progress(state: State<'_, AppState>) -> CmdResult<()> {
          DELETE FROM consumption_log; DELETE FROM cheat_tickets; DELETE FROM snack_tickets;
          UPDATE users SET total_study_days = 0, current_streak = 0, longest_streak = 0, last_study_date = NULL,
            savings_kcal = 0;
-         UPDATE recipe_words SET paid_on = NULL;",
+         UPDATE recipe_words SET paid_on = NULL;
+         DELETE FROM exam_attempts; DELETE FROM exam_mistakes;",
     )
     .map_err(err)
 }

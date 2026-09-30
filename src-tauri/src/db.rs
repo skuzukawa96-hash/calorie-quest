@@ -254,6 +254,26 @@ CREATE TABLE IF NOT EXISTS recipe_words (
   mastered_at TEXT,
   paid_on TEXT
 );
+-- 試験: one row per exam handed in, and the exam questions missed and not yet put right in its review.
+CREATE TABLE IF NOT EXISTS exam_attempts (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL,
+  level TEXT NOT NULL,
+  date TEXT NOT NULL,
+  total INTEGER NOT NULL,
+  correct INTEGER NOT NULL,
+  passed INTEGER NOT NULL,
+  kcal INTEGER NOT NULL,
+  finished_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS exam_mistakes (
+  user_id INTEGER NOT NULL,
+  question_id TEXT NOT NULL,
+  level TEXT NOT NULL,
+  added_at TEXT NOT NULL,
+  misses INTEGER NOT NULL DEFAULT 1,
+  PRIMARY KEY (user_id, question_id)
+);
 CREATE INDEX IF NOT EXISTS idx_history_due ON learning_history (user_id, needs_review, next_due_at);
 CREATE INDEX IF NOT EXISTS idx_log_date ON answer_log (user_id, answered_at);
 ";
@@ -1468,6 +1488,7 @@ mod tests {
                     && n != "word-related.json"
                     && n != "word-pos.json"
                     && n != "word-confusables.json"
+                    && !n.starts_with("exam-")
             })
             .count();
         assert_eq!(
@@ -1971,6 +1992,16 @@ mod tests {
         for g in related_seeds() {
             for m in &g.members {
                 explained.extend(m.example.iter().map(|e| (e.clone(), format!("related {}", m.word))));
+            }
+        }
+        // The exams are read with the hover too: passages, sentences and questions (the choices are
+        // plain buttons). Names are in the glossary as names (キム（人名）).
+        for list in crate::exam::sets().values() {
+            for set in list {
+                explained.extend(set.passage.iter().map(|p| (p.clone(), format!("exam {}", set.id))));
+                for q in &set.questions {
+                    explained.extend(q.prompt.iter().map(|p| (p.clone(), format!("exam {}", set.id))));
+                }
             }
         }
         for (text, source) in explained {

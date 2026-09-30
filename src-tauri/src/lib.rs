@@ -1,5 +1,6 @@
 mod commands;
 mod db;
+mod exam;
 mod models;
 mod recipe;
 mod speech;
@@ -42,6 +43,10 @@ pub fn run() {
             commands::get_word_notes,
             commands::reset_progress,
             commands::log_debug,
+            exam::start_exam,
+            exam::finish_exam,
+            exam::get_exam_review,
+            exam::answer_exam_review,
             recipe::list_recipe_words,
             recipe::add_recipe_word,
             recipe::review_recipe_word,

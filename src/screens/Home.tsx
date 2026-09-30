@@ -14,6 +14,7 @@ import {
   TIERS,
   type CategoryInfo,
   type Dashboard,
+  type ExamLevel,
   type TierChoice,
   type Mode,
   type SessionMode,
@@ -23,6 +24,9 @@ import {
 interface Props {
   dash: Dashboard;
   onStart: (mode: SessionMode, tier: TierChoice, category: string) => void;
+  /** 試験 of a level, and the review of the exam questions missed */
+  onExam: (level: ExamLevel) => void;
+  onExamReview: () => void;
   onChanged: () => void;
   goToSnacks: () => void;
   toast: (msg: string) => void;
@@ -37,7 +41,14 @@ const MODES: Array<{ mode: Mode; icon: ReactNode; title: string; desc: [string, 
   { mode: "listening", icon: "👂", title: "ヒアリング問題", desc: ["英語を聞いて意味を当てる", "会話には英語で応答"] },
 ];
 
-export default function Home({ dash, onStart, onChanged, goToSnacks, toast }: Props) {
+/** What each level of 試験 is, one phrase a line. */
+const EXAM_DESC: Record<ExamLevel, [string, string]> = {
+  basic: ["中学～高校で習う文法と単語", "身近な場面の英語"],
+  toeic600: ["TOEIC 500〜700点が目安", "オフィス・お店・旅行の英語"],
+  toeic800: ["TOEIC 800点が目安", "仮定法・倒置や推測を問う読解"],
+};
+
+export default function Home({ dash, onStart, onExam, onExamReview, onChanged, goToSnacks, toast }: Props) {
   const [tier, setTier] = useState<TierChoice>("word");
   const [category, setCategory] = useState<string>(ALL_CATEGORIES);
   const [redeeming, setRedeeming] = useState(false);
@@ -272,6 +283,59 @@ export default function Home({ dash, onStart, onChanged, goToSnacks, toast }: Pr
           </div>
           {dash.dueReviewCount > 0 && (
             <button className="btn" onClick={() => onStart("review", "mixed", ALL_CATEGORIES)}>
+              復習をはじめる
+            </button>
+          )}
+        </div>
+      </section>
+
+      <section className="card exam-card">
+        <div className="section-head">
+          <h2>📝 試験</h2>
+          <span className="muted small">
+            TOEIC形式・{dash.exam.questionCount}問・正答率{dash.exam.passPercent}%以上で合格
+          </span>
+        </div>
+        <p className="muted exam-intro">
+          応答問題（リスニング）→ 短文穴埋め → 長文穴埋め → 読解問題の順に出題されます。合格すると難易度に応じたカロリー、不合格でも挑戦ボーナス {dash.exam.effortKcal} kcal（どちらも各レベル1日1回）。
+        </p>
+        <div className="mode-grid exam-grid">
+          {dash.exam.levels.map((l) => {
+            const best = l.bestCorrect !== null && l.bestTotal ? `${l.bestCorrect} / ${l.bestTotal}` : null;
+            return (
+              <button key={l.level} className="mode-card exam-level" onClick={() => onExam(l.level)}>
+                <div className="mode-head">
+                  <span className="mode-title">{l.label}</span>
+                  {l.passedEver && <span className="pill mastered">✓ 合格</span>}
+                </div>
+                <div className="mode-desc">
+                  <span>{EXAM_DESC[l.level][0]}</span>
+                  <span>{EXAM_DESC[l.level][1]}</span>
+                </div>
+                <div className="exam-level-foot">
+                  <span className="exam-reward">
+                    合格 +{l.reward} kcal{l.paidPassToday && <span className="muted">（今日は受取済み）</span>}
+                  </span>
+                  <span className="muted">{best ? `ベスト ${best}` : "未受験"}</span>
+                </div>
+                <div className="mode-cta">{dash.exam.questionCount}問に挑戦 →</div>
+              </button>
+            );
+          })}
+        </div>
+        <div className="review-row">
+          <div>
+            <strong>🔁 試験の復習</strong>{" "}
+            {dash.exam.reviewCount > 0 ? (
+              <span>
+                試験で間違えた問題が <b>{dash.exam.reviewCount} 問</b> あります。正解すると1問 <b>+{dash.exam.reviewKcal} kcal</b>、復習から外れます。
+              </span>
+            ) : (
+              <span className="muted">試験で間違えた問題は、ここから復習できます（「学習をはじめる」の復習とは別です）。</span>
+            )}
+          </div>
+          {dash.exam.reviewCount > 0 && (
+            <button className="btn" onClick={onExamReview}>
               復習をはじめる
             </button>
           )}
