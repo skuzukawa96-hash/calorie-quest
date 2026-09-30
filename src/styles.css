@@ -1556,6 +1556,48 @@ main {
   font-weight: 700;
   color: var(--choco);
 }
+/* 成り立ち under a word's answer: prefix / root / suffix chips, then the word */
+.word-parts {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.word-parts-row {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.wp {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  padding: 2px 9px;
+  border-radius: 8px;
+  background: #fff;
+  border: 1px solid var(--line);
+}
+.wp b {
+  color: var(--choco);
+}
+.wp-kind {
+  font-size: 11px;
+  color: var(--muted);
+}
+.wp-prefix {
+  background: #fdf3e8;
+  border-color: #f4d3ae;
+}
+.wp-suffix {
+  background: #eef7f1;
+  border-color: #c6e3cf;
+}
+.wp-sign {
+  color: var(--muted);
+}
+.wp-result b {
+  color: var(--caramel-dark);
+}
 .tips-body.no-diagram {
   grid-template-columns: 1fr;
 }

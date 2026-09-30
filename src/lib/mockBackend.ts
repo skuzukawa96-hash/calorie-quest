@@ -4,6 +4,7 @@ import seedJson from "../../src-tauri/data/questions.json";
 import glossary from "../../src-tauri/data/glossary.json";
 import grammarNotes from "../../src-tauri/data/grammar-notes.json";
 import pronunciations from "../../src-tauri/data/pronunciations.json";
+import wordPartsList from "../../src-tauri/data/word-parts.json";
 import { expandDictionary, type Dictionary } from "./dictionary";
 import { answerWordCount, scoresPerWord } from "./scoring";
 import type {
@@ -28,6 +29,7 @@ import type {
   Ticket,
   UserInfo,
   WeakQuestion,
+  WordPart,
 } from "../types";
 
 interface SeedQuestion {
@@ -131,7 +133,7 @@ function packOrder(path: string): [string, number, string] {
 const seedQuestions: SeedQuestion[] = [
   ...(seedJson as unknown as { questions: SeedQuestion[] }).questions,
   ...Object.entries(packModules)
-    .filter(([path]) => !/\/(questions|glossary|grammar-notes|pronunciations)\.json$/.test(path))
+    .filter(([path]) => !/\/(questions|glossary|grammar-notes|pronunciations|word-parts)\.json$/.test(path))
     .sort(([a], [b]) => {
       const x = packOrder(a);
       const y = packOrder(b);
@@ -542,6 +544,11 @@ function grammarNoteFor(q: Question): GrammarNote | null {
   return note ? { title: note.title, body: note.body, example: note.example } : null;
 }
 
+/** Mirrors db::word_parts: a word's prefix, root and suffix, keyed by its English. */
+const wordPartsByWord = new Map(
+  (wordPartsList as { en: string; parts: WordPart[] }[]).map((w) => [w.en.toLowerCase(), w.parts]),
+);
+
 function buildSessionQuestion(q: Question, mode: Mode, isReview: boolean): SessionQuestion {
   const base = {
     question: q,
@@ -550,6 +557,7 @@ function buildSessionQuestion(q: Question, mode: Mode, isReview: boolean): Sessi
     audioText: audioTextFor(q),
     hideText: false,
     grammarNote: grammarNoteFor(q),
+    wordParts: q.kind === "word" ? (wordPartsByWord.get(q.en.toLowerCase()) ?? null) : null,
   };
   if (mode === "choice") {
     if (q.choices && q.choices.length) {

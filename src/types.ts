@@ -27,6 +27,13 @@ export interface Question {
   point?: string | null;
 }
 
+/** One piece of a word: pre- 「前もって」, paid 「支払った」, -ness 「〜であること」. */
+export interface WordPart {
+  kind: "prefix" | "root" | "suffix";
+  text: string;
+  ja: string;
+}
+
 /** The explanation shown with a grammar answer; one note serves every question on that point. */
 export interface GrammarNote {
   title: string;
@@ -50,6 +57,8 @@ export interface SessionQuestion {
   hideText: boolean;
   /** grammar questions carry the explanation of the point they test */
   grammarNote?: GrammarNote | null;
+  /** a word built from a prefix, root and suffix carries its parts, shown with the answer */
+  wordParts?: WordPart[] | null;
 }
 
 export interface UserInfo {

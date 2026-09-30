@@ -59,6 +59,18 @@ pub struct SessionQuestion {
     pub hide_text: bool,
     /// Grammar questions carry the explanation of the point they test, shown with the answer.
     pub grammar_note: Option<GrammarNote>,
+    /// A word built from a prefix, root and suffix carries its parts ("pre-" 前もって + paid
+    /// 支払った), shown with the answer.
+    pub word_parts: Option<Vec<WordPart>>,
+}
+
+/// One piece of a word: a prefix ("pre"), a root ("paid") or a suffix ("ness"), with its meaning.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WordPart {
+    /// "prefix" / "root" / "suffix"
+    pub kind: String,
+    pub text: String,
+    pub ja: String,
 }
 
 #[derive(Debug, Clone, Serialize)]

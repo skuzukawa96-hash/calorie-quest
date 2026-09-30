@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import GlossedText from "../components/GlossedText";
 import PronunciationTips, { HighlightedText } from "../components/PronunciationTips";
 import { PHONEMES, STRESS_MARK } from "../lib/phonemes";
@@ -39,6 +39,7 @@ import {
   type KcalRates,
   type SessionMode,
   type SessionQuestion,
+  type WordPart,
 } from "../types";
 
 const SESSION_SIZE = 10;
@@ -455,6 +456,9 @@ export default function Study({ mode, difficulty, category, rates, onExit, onPro
                   </button>
                 )}
               </div>
+              {current.wordParts && current.wordParts.length > 0 && (
+                <WordParts parts={current.wordParts} word={current.question.en} meaning={current.question.ja} />
+              )}
               {current.question.kind === "grammar" && (
                 <div className="filled-line">
                   <span className="label">完成した文</span>{" "}
@@ -516,6 +520,35 @@ export default function Study({ mode, difficulty, category, rates, onExit, onPro
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+/* ---------- 成り立ち ---------- */
+
+const PART_LABEL: Record<WordPart["kind"], string> = { prefix: "接頭辞", root: "語根", suffix: "接尾辞" };
+
+/** How a word is built: pre-「前もって」＋ paid「支払った」→ prepaid「前払いの」. */
+function WordParts({ parts, word, meaning }: { parts: WordPart[]; word: string; meaning: string }) {
+  return (
+    <div className="word-parts">
+      <span className="label">成り立ち</span>
+      <span className="word-parts-row">
+        {parts.map((p, i) => (
+          <Fragment key={i}>
+            {i > 0 && <span className="wp-sign">＋</span>}
+            <span className={"wp wp-" + p.kind}>
+              <span className="wp-kind">{PART_LABEL[p.kind]}</span>
+              <b>{p.kind === "prefix" ? `${p.text}-` : p.kind === "suffix" ? `-${p.text}` : p.text}</b>
+              <span>「{p.ja}」</span>
+            </span>
+          </Fragment>
+        ))}
+        <span className="wp-sign">→</span>
+        <span className="wp-result">
+          <b>{word}</b>「{meaning}」
+        </span>
+      </span>
     </div>
   );
 }

@@ -469,6 +469,11 @@ fn build_session_question(
         vec![answer.clone()]
     };
     let grammar_note = grammar_note_for(&q);
+    let word_parts = if q.kind == "word" {
+        db::word_parts().get(&q.en.to_lowercase()).cloned()
+    } else {
+        None
+    };
     Ok(SessionQuestion {
         question: q,
         mode: mode.to_string(),
@@ -481,6 +486,7 @@ fn build_session_question(
         audio_text,
         hide_text,
         grammar_note,
+        word_parts,
     })
 }
 
@@ -1252,6 +1258,27 @@ mod tests {
         let (level, needs, due) = history(&c, qid);
         assert_eq!((level, needs), (1, 1));
         assert_eq!(due.as_deref(), Some(date_plus(3).as_str()));
+    }
+
+    /// A word with a known make-up carries it to the answer; other kinds never do.
+    #[test]
+    fn a_word_question_carries_its_parts() {
+        let c = conn();
+        let id: i64 = c
+            .query_row("SELECT id FROM questions WHERE kind = 'word' AND en = 'telescope'", [], |r| r.get(0))
+            .expect("telescope is a word question");
+        let q = c
+            .query_row(&format!("SELECT {Q_COLS} FROM questions q WHERE q.id = ?1"), params![id], db::row_to_question)
+            .unwrap();
+        let s = build_session_question(&c, q, "choice", false).unwrap();
+        let parts = s.word_parts.expect("telescope has parts");
+        assert_eq!(parts.iter().map(|p| p.text.as_str()).collect::<Vec<_>>(), vec!["tele", "scope"]);
+        assert_eq!(parts[0].kind, "prefix");
+        let phrase = question_id(&c, "p001");
+        let q = c
+            .query_row(&format!("SELECT {Q_COLS} FROM questions q WHERE q.id = ?1"), params![phrase], db::row_to_question)
+            .unwrap();
+        assert!(build_session_question(&c, q, "choice", false).unwrap().word_parts.is_none());
     }
 
     /// A phrase got wrong by typing comes back to be typed: in typing sessions and in the review

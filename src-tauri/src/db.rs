@@ -37,6 +37,10 @@ const GRAMMAR_NOTES_JSON: &str = include_str!("../data/grammar-notes.json");
 /// IPA for the words of speaking questions, from the CMU Pronouncing Dictionary
 /// (`scripts/make_pronunciations.py`; licence in `data/cmudict-LICENSE.txt`).
 const PRONUNCIATIONS_JSON: &str = include_str!("../data/pronunciations.json");
+/// How words of the bank are built: prefix, root and suffix, each with its meaning. Written by
+/// hand for the words where the pieces help remember the whole (a guesser would split "mother"
+/// into moth + -er), so it covers some words, not all.
+const WORD_PARTS_JSON: &str = include_str!("../data/word-parts.json");
 
 /// Every sound `pronunciations.json` is written in, plus the stress mark. The frontend's
 /// `lib/phonemes.ts` explains each of them; a test keeps the data inside this set.
@@ -485,6 +489,22 @@ pub fn grammar_notes() -> &'static HashMap<String, GrammarNoteSeed> {
     })
 }
 
+#[derive(serde::Deserialize)]
+struct WordPartsSeed {
+    en: String,
+    parts: Vec<crate::models::WordPart>,
+}
+
+/// Word question English (lowercase) → its parts, for the explanation under a word's answer.
+pub fn word_parts() -> &'static HashMap<String, Vec<crate::models::WordPart>> {
+    static TABLE: std::sync::OnceLock<HashMap<String, Vec<crate::models::WordPart>>> = std::sync::OnceLock::new();
+    TABLE.get_or_init(|| {
+        let list: Vec<WordPartsSeed> =
+            serde_json::from_str(WORD_PARTS_JSON).expect("data/word-parts.json must be a valid JSON array");
+        list.into_iter().map(|w| (w.en.to_lowercase(), w.parts)).collect()
+    })
+}
+
 /// Word (lowercase) → its sounds, separated by spaces with ˈ before the stressed syllable:
 /// "library" → "ˈ l aɪ b r ɛ r i". Words the CMU dictionary lacks are missing; the app shows
 /// their spelling instead.
@@ -697,6 +717,7 @@ mod tests {
                     && n != "glossary.json"
                     && n != "grammar-notes.json"
                     && n != "pronunciations.json"
+                    && n != "word-parts.json"
             })
             .count();
         assert_eq!(
@@ -837,6 +858,43 @@ mod tests {
             "only {covered} of {} words of speaking questions have a pronunciation",
             words.len()
         );
+    }
+
+    /// Each word split into parts is a word question of the bank, is split into at least two
+    /// meaningful pieces, and its pieces spell the word give or take a letter or two ("beauty" +
+    /// "ful" for beautiful, "write" + "er" for writer): so no entry drifts from its word.
+    #[test]
+    fn word_parts_split_real_words_into_their_pieces() {
+        fn distance(a: &str, b: &str) -> usize {
+            let b: Vec<char> = b.chars().collect();
+            let mut prev: Vec<usize> = (0..=b.len()).collect();
+            for (i, ca) in a.chars().enumerate() {
+                let mut cur = vec![i + 1];
+                for (j, cb) in b.iter().enumerate() {
+                    cur.push((prev[j + 1] + 1).min(cur[j] + 1).min(prev[j] + usize::from(ca != *cb)));
+                }
+                prev = cur;
+            }
+            prev[b.len()]
+        }
+        let words: HashSet<String> =
+            load_seed().questions.iter().filter(|q| q.kind == "word").map(|q| q.en.to_lowercase()).collect();
+        let list: Vec<WordPartsSeed> = serde_json::from_str(WORD_PARTS_JSON).unwrap();
+        assert!(list.len() >= 300, "only {} words have parts", list.len());
+        let mut seen = HashSet::new();
+        for w in &list {
+            let en = w.en.to_lowercase();
+            assert!(seen.insert(en.clone()), "{} is split twice", w.en);
+            assert!(words.contains(&en), "{} is not a word question", w.en);
+            assert!(w.parts.len() >= 2, "{} is split into fewer than two parts", w.en);
+            for p in &w.parts {
+                assert!(["prefix", "root", "suffix"].contains(&p.kind.as_str()), "{}: kind {:?}", w.en, p.kind);
+                assert!(!p.text.trim().is_empty() && !p.ja.trim().is_empty(), "{}: an empty part", w.en);
+            }
+            let joined: String = w.parts.iter().map(|p| p.text.to_lowercase()).collect();
+            assert!(distance(&joined, &en) <= 2, "{}: the parts spell {joined:?}", w.en);
+        }
+        assert_eq!(word_parts().len(), list.len());
     }
 
     /// An explanation's example is a second sentence to learn from. Most of them had been lifted
