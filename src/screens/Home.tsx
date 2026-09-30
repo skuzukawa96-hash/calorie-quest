@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import CalorieBar from "../components/CalorieBar";
 import GoalAdder from "../components/GoalAdder";
 import { DeleteButton, EatButton } from "../components/IconButtons";
+import PencilIcon from "../components/PencilIcon";
 import { api } from "../lib/api";
 import { playCrunch, playFanfare } from "../lib/sfx";
 import {
@@ -27,11 +28,13 @@ interface Props {
   toast: (msg: string) => void;
 }
 
-const MODES: Array<{ mode: Mode; icon: string; title: string; desc: string }> = [
-  { mode: "choice", icon: "🍪", title: "選択問題", desc: "4択でテンポよく。単語の意味や文法の穴埋め。" },
-  { mode: "typing", icon: "🍫", title: "記入問題", desc: "日本語に合う英語をタイピング。スペルを定着。" },
-  { mode: "speaking", icon: "🎤", title: "発音問題", desc: "お手本を聞いてリピート。音声認識でスコア判定。" },
-  { mode: "listening", icon: "👂", title: "ヒアリング問題", desc: "英語を聞いて意味を当てる。会話には英語で応答。" },
+/** Each card: the icon beside the title, then two lines of what it is, one phrase a line. The
+ * pointing finger and the pencil are the ones of the recipe's 選択式 / 記入式 reviews. */
+const MODES: Array<{ mode: Mode; icon: ReactNode; title: string; desc: [string, string] }> = [
+  { mode: "choice", icon: "👆", title: "選択問題", desc: ["4択でテンポよく", "単語の意味や文法の穴埋め"] },
+  { mode: "typing", icon: <PencilIcon />, title: "記入問題", desc: ["日本語に合う英語をタイピング", "スペルを定着"] },
+  { mode: "speaking", icon: "🎤", title: "発音問題", desc: ["お手本を聞いてリピート", "音声認識でスコア判定"] },
+  { mode: "listening", icon: "👂", title: "ヒアリング問題", desc: ["英語を聞いて意味を当てる", "会話には英語で応答"] },
 ];
 
 export default function Home({ dash, onStart, onChanged, goToSnacks, toast }: Props) {
@@ -243,9 +246,14 @@ export default function Home({ dash, onStart, onChanged, goToSnacks, toast }: Pr
         <div className="mode-grid">
           {MODES.map((m) => (
             <button key={m.mode} className="mode-card" onClick={() => onStart(m.mode, tier, effectiveCategory)}>
-              <div className="mode-icon">{m.icon}</div>
-              <div className="mode-title">{m.title}</div>
-              <div className="muted">{m.desc}</div>
+              <div className="mode-head">
+                <span className="mode-icon">{m.icon}</span>
+                <span className="mode-title">{m.title}</span>
+              </div>
+              <div className="mode-desc">
+                <span>{m.desc[0]}</span>
+                <span>{m.desc[1]}</span>
+              </div>
               <div className="mode-cta">10問チャレンジ →</div>
             </button>
           ))}

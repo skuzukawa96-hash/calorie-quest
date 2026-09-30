@@ -1427,31 +1427,64 @@ main {
   grid-template-columns: repeat(4, 1fr);
   gap: 12px;
 }
+/* Four cards grow too narrow for a line of the description below this width. */
+@media (max-width: 880px) {
+  .mode-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
 .mode-card {
   text-align: left;
   background: #fff;
   border: 1px solid var(--line);
   border-radius: 16px;
-  padding: 18px;
+  padding: 14px 14px 12px;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
+  min-width: 0;
   transition: transform 0.12s ease, box-shadow 0.12s ease;
 }
 .mode-card:hover {
   transform: translateY(-2px);
   box-shadow: var(--shadow);
 }
+/* the icon and the title on one line */
+.mode-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
 .mode-icon {
-  font-size: 30px;
+  font-size: 24px;
+  line-height: 1;
+  display: inline-flex;
+}
+/* the pencil as tall as the emoji beside it, so the four cards line up */
+.mode-icon .pencil-icon {
+  width: 1em;
+  height: 1em;
 }
 .mode-title {
   font-weight: 700;
-  font-size: 17px;
+  font-size: 16px;
   color: var(--choco);
+  white-space: nowrap;
+}
+/* two lines, one phrase each, never wrapped */
+.mode-desc {
+  display: flex;
+  flex-direction: column;
+  font-size: 12.5px;
+  line-height: 1.6;
+  letter-spacing: -0.01em;
+  color: var(--muted);
+}
+.mode-desc span {
+  white-space: nowrap;
 }
 .mode-cta {
-  margin-top: 8px;
+  margin-top: 2px;
   color: var(--caramel-dark);
   font-weight: 700;
 }
