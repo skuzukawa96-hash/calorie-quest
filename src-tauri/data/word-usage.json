@@ -488,7 +488,7 @@
 {"word": "likely", "pattern": "be likely to 原形", "ja": "～しそうだ", "example": "It is likely to rain tonight.", "exampleJa": "今夜は雨が降りそうだ。"},
 {"word": "listen", "pattern": "listen to ～", "ja": "～に耳を傾ける、～を聴く", "example": "I listen to music every day.", "exampleJa": "毎日音楽を聴いている。"},
 {"word": "live", "pattern": "live on ～", "ja": "～を食べて（～で）暮らす", "example": "Some birds live on seeds.", "exampleJa": "種を食べて暮らす鳥もいる。"},
-{"word": "located", "pattern": "be located in/at ～", "ja": "～に位置している", "example": "The hotel is located near the station.", "exampleJa": "そのホテルは駅の近くにある。"},
+{"word": "located", "pattern": "be located in/at ～", "ja": "～に位置している", "example": "The hotel is located in the center of the city.", "exampleJa": "そのホテルは街の中心にある。"},
 {"word": "look", "pattern": "look at ～", "ja": "～を見る", "example": "Look at this picture.", "exampleJa": "この写真を見て。"},
 {"word": "look", "pattern": "look for ～", "ja": "～を探す", "example": "I'm looking for my keys.", "exampleJa": "鍵を探している。"},
 {"word": "look", "pattern": "look after ～", "ja": "～の世話をする", "example": "Can you look after my cat?", "exampleJa": "私の猫の世話をしてくれる？"},

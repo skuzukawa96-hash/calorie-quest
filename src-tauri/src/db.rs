@@ -686,8 +686,362 @@ pub fn word_notes(word: &str) -> Option<crate::models::WordNotes> {
         usages: word_usages().get(&key).cloned().unwrap_or_default(),
         origin: idiom_origins().get(&key).cloned(),
         related: related_groups(&key),
+        used: Vec::new(),
     };
     (!notes.is_empty()).then_some(notes)
+}
+
+/// One piece of a usage pattern, for finding the pattern in a sentence.
+#[derive(Debug, Clone, PartialEq)]
+enum PatternPiece {
+    /// an English word, or any of several ("to/with"), as written or inflected
+    Word(Vec<String>),
+    /// -ing: a word ending in -ing
+    Ing,
+    /// what fills the pattern: ～ / A / B / 人 / 形容詞 / 節. After a verb it may be empty in the
+    /// sentence, moved away by a question or the passive ("What did you say to her?", "She was
+    /// promoted to manager"); after any other word something fills it ("so [cold] that").
+    Slot,
+    /// a part in ( ) that may or may not be there ("It is difficult (for 人) to 原形")
+    Optional,
+    /// an object before a particle ("pick [you] up"): one to MAX_SHORT_SLOT_WORDS words, never
+    /// half the sentence ("set my alarm, so I woke up" is not set ～ up)
+    ShortSlot,
+    /// 原形: a verb, after "to" or a word like let
+    Base,
+    /// be / can / would …: a word or two the sentence may or may not have ("I'm afraid of")
+    Gap,
+}
+
+/// Pattern words that a sentence need not have: "be afraid of ～" is found in "I'm afraid of",
+/// "can afford to" in "We can't afford to".
+const OPTIONAL_PATTERN_WORDS: &[&str] = &["be", "is", "am", "are", "feel", "can", "would", "could", "will", "don't"];
+const REFLEXIVES: &[&str] =
+    &["oneself", "myself", "yourself", "himself", "herself", "itself", "ourselves", "yourselves", "themselves"];
+/// Particles that may come before the object as well as after it ("dust A off" / "dusted off
+/// the old books", "pick up ～" / "pick you up").
+const PARTICLES: &[&str] = &["off", "up", "out", "away", "down", "back"];
+/// Words too common to list for their similar words alone ("big" in every other sentence);
+/// they are listed when the sentence uses one of their patterns.
+const TOO_COMMON_FOR_RELATED: &[&str] =
+    &["big", "small", "little", "large", "fast", "sleep", "rest", "close", "cheap", "expensive", "price", "quiet", "wear", "fix", "hurt", "store"];
+/// How many words may fill a slot between two words of a pattern ("compared [the new model] with").
+const MAX_SLOT_WORDS: usize = 6;
+/// Words ending in -ing that are no verb's -ing (the "-thing" words are left out as well).
+const NOT_ING: &[&str] = &["morning", "evening", "ceiling", "during", "string", "spring", "sibling", "pudding", "awning", "darling"];
+/// Words after "to" that read as verbs by their gloss but are places to go ("commute to work").
+const NOUNS_AFTER_TO: &[&str] = &["work", "school", "bed", "class", "church", "court"];
+/// How many words may fill a slot before a particle ("pick [my little brother] up").
+const MAX_SHORT_SLOT_WORDS: usize = 3;
+/// How many words may stand for an optional be / can / would ("It [is] difficult").
+const MAX_GAP_WORDS: usize = 2;
+/// At most this many words of one sentence are explained, in the order they appear.
+const MAX_USED_WORDS: usize = 6;
+
+fn pattern_piece(el: &str) -> Option<PatternPiece> {
+    let el = el.trim_matches(|c: char| c == '?' || c == '.' || c == ',' || c == '!');
+    match el {
+        "" => None,
+        "～" | "…" | "A" | "B" | "人" | "形容詞" | "節" => Some(PatternPiece::Slot),
+        "(…)" => Some(PatternPiece::Optional),
+        "原形" => Some(PatternPiece::Base),
+        "-ing" => Some(PatternPiece::Ing),
+        _ => {
+            let words: Vec<String> = el.split('/').flat_map(crate::util::tokens).collect();
+            if words.is_empty() {
+                None
+            } else if words.iter().any(|w| OPTIONAL_PATTERN_WORDS.contains(&w.as_str())) {
+                Some(PatternPiece::Gap)
+            } else if words == ["oneself"] {
+                Some(PatternPiece::Word(REFLEXIVES.iter().map(|w| w.to_string()).collect()))
+            } else {
+                Some(PatternPiece::Word(words))
+            }
+        }
+    }
+}
+
+fn names(piece: &PatternPiece, headword: &str) -> bool {
+    matches!(piece, PatternPiece::Word(ws) if ws.iter().any(|w| w == headword))
+}
+
+/// The ways a pattern can appear, as pieces. "lend 人 ～ / lend ～ to 人" is two ways. A way that
+/// does not name the word continues the one before it in place of its last piece: "hate -ing /
+/// to 原形" is hate -ing and hate to 原形, "begin to 原形 / -ing" begin to 原形 and begin -ing,
+/// "get used to ～ / -ing" get used to ～ and get used to -ing. Japanese asides （音楽） go;
+/// a part in ( ) may or may not be there.
+fn pattern_ways(pattern: &str, headword: &str) -> Vec<Vec<PatternPiece>> {
+    let mut plain = String::new();
+    let (mut aside, mut optional) = (0, 0);
+    for c in pattern.chars() {
+        match c {
+            '（' => aside += 1,
+            '）' => aside -= 1,
+            '(' => {
+                optional += 1;
+                if optional == 1 && aside == 0 {
+                    plain.push_str(" (…) ");
+                }
+            }
+            ')' => optional -= 1,
+            _ if aside == 0 && optional == 0 => plain.push(c),
+            _ => {}
+        }
+    }
+    let mut ways: Vec<Vec<PatternPiece>> = Vec::new();
+    for way in plain.split(" / ") {
+        let pieces: Vec<PatternPiece> = way.split_whitespace().filter_map(pattern_piece).collect();
+        if pieces.iter().any(|p| names(p, headword)) {
+            ways.push(pieces);
+        } else if let Some(before) = ways.last() {
+            let mut joined = before.clone();
+            let last = joined.pop();
+            if last == Some(PatternPiece::Base)
+                && pieces.first() == Some(&PatternPiece::Ing)
+                && joined.last() == Some(&PatternPiece::Word(vec!["to".to_string()]))
+            {
+                joined.pop();
+            }
+            joined.extend(pieces);
+            ways.push(joined);
+        }
+    }
+    let particle = |p: &[String]| p.iter().all(|x| PARTICLES.contains(&x.as_str()));
+    let swapped: Vec<Vec<PatternPiece>> = ways
+        .iter()
+        .filter_map(|w| match w.as_slice() {
+            [head @ .., PatternPiece::Slot, PatternPiece::Word(p)] if particle(p) => {
+                let mut v = head.to_vec();
+                v.push(PatternPiece::Word(p.clone()));
+                v.push(PatternPiece::Slot);
+                Some(v)
+            }
+            [head @ .., verb, PatternPiece::Word(p), PatternPiece::Slot] if particle(p) && names(verb, headword) => {
+                let mut v = head.to_vec();
+                v.extend([verb.clone(), PatternPiece::Slot, PatternPiece::Word(p.clone())]);
+                Some(v)
+            }
+            _ => None,
+        })
+        .collect();
+    ways.extend(swapped);
+    // What stands before a particle or an -ing is short: "pick [you] up", "caught [him] sleeping".
+    for way in &mut ways {
+        for i in 0..way.len().saturating_sub(1) {
+            let short = match &way[i + 1] {
+                PatternPiece::Word(p) => particle(p),
+                PatternPiece::Ing => true,
+                _ => false,
+            };
+            if way[i] == PatternPiece::Slot && short {
+                way[i] = PatternPiece::ShortSlot;
+            }
+        }
+    }
+    ways
+}
+
+/// Words that make the next word a noun: "the results in a chart" is no result in ～, "a rise in
+/// prices" no rise. (this / that stand alone too: "This tastes like chicken.")
+const DETERMINERS: &[&str] = &["the", "a", "an", "my", "your", "his", "its", "our", "their", "every", "each"];
+
+/// Whether `word` is how `token` is read here. A form made by -er, -est or -ly is another word:
+/// "speaker" is no speak, "layer" no lay, "completely" no complete.
+fn reads_as(token: &str, word: &str) -> bool {
+    token == word || !(token.ends_with("er") || token.ends_with("est") || token.ends_with("ly"))
+}
+
+/// Verbs in their dictionary form, told by a first gloss that ends like a Japanese verb (会う,
+/// 走る, 〜できる): a "to" before one is an infinitive, not the preposition of be nice to 人
+/// ("Nice to meet you").
+fn base_verbs() -> &'static std::collections::HashSet<String> {
+    static TABLE: std::sync::OnceLock<std::collections::HashSet<String>> = std::sync::OnceLock::new();
+    TABLE.get_or_init(|| {
+        let verb_like = |ja: &str| {
+            let first = ja.split(['、', '，', ',']).next().unwrap_or("");
+            let mut plain = String::new();
+            let mut depth = 0;
+            for c in first.chars() {
+                match c {
+                    '（' | '(' => depth += 1,
+                    '）' | ')' => depth -= 1,
+                    _ if depth == 0 => plain.push(c),
+                    _ => {}
+                }
+            }
+            plain.trim().ends_with(['う', 'く', 'ぐ', 'す', 'つ', 'ぬ', 'ぶ', 'む', 'る'])
+        };
+        let glossary: HashMap<String, String> =
+            serde_json::from_str(GLOSSARY_JSON).expect("data/glossary.json must be a valid JSON object");
+        let words = load_seed().questions.into_iter().filter(|q| q.kind == "word").map(|q| (q.en.to_lowercase(), q.ja));
+        glossary
+            .into_iter()
+            .chain(words)
+            .filter(|(en, ja)| !en.contains(' ') && verb_like(ja))
+            .map(|(en, _)| en)
+            .collect()
+    })
+}
+
+/// Whether finding `pieces` says anything: a pattern that is the word and what fills it
+/// ("have 人 原形") would be found wherever the word is. Kept all the same when it warns about a
+/// preposition ("discuss ～" about は付けない), which is worth knowing wherever the word is; a
+/// note on "the" (play ～ the は付けない) is not about the word's company and is not.
+fn pattern_is_telling(pieces: &[PatternPiece], headword: &str, ja: &str) -> bool {
+    (ja.contains("付けない") && !ja.contains("the は"))
+        || pieces.iter().any(|p| match p {
+            PatternPiece::Ing => true,
+            PatternPiece::Word(ws) => !ws.iter().any(|w| w == headword),
+            _ => false,
+        })
+}
+
+/// Where `pieces` are found in the sentence, in order: the position of the word right after the
+/// headword when there is one (None when the headword is followed by a slot or ends the
+/// pattern). Words next to each other in the pattern are next to each other in the sentence;
+/// an optional be / can between them may take up to MAX_GAP_WORDS words, a slot up to
+/// MAX_SLOT_WORDS (or none: moved away by a question or the passive).
+fn pieces_found(pieces: &[PatternPiece], headword: &str, tokens: &[String], lemmas: &[Vec<String>]) -> Option<bool> {
+    struct Search<'a> {
+        headword: &'a str,
+        tokens: &'a [String],
+        lemmas: &'a [Vec<String>],
+        verbs: &'a std::collections::HashSet<String>,
+    }
+    impl Search<'_> {
+        fn hit(&self, piece: &PatternPiece, j: usize) -> bool {
+            match piece {
+                PatternPiece::Word(ws) => ws.iter().any(|w| &self.tokens[j] == w || self.lemmas[j].contains(w)),
+                PatternPiece::Ing => {
+                    let t = &self.tokens[j];
+                    t.len() > 4 && t.ends_with("ing") && !t.ends_with("thing") && !NOT_ING.contains(&t.as_str())
+                }
+                _ => false,
+            }
+        }
+
+        /// `gap`: how few and how many words may stand between the previous word and the next.
+        fn go(
+            &self,
+            pieces: &[PatternPiece],
+            last: Option<usize>,
+            gap: (usize, usize),
+            after_head: &mut Option<bool>,
+            head_seen: bool,
+        ) -> bool {
+            let Some((first, rest)) = pieces.split_first() else { return true };
+            let after_verb = last.is_some_and(|l| self.lemmas[l].iter().any(|w| self.verbs.contains(w)));
+            let slot = match first {
+                PatternPiece::Slot | PatternPiece::Base => Some((usize::from(!after_verb), MAX_SLOT_WORDS)),
+                PatternPiece::Optional => Some((0, MAX_SLOT_WORDS)),
+                PatternPiece::ShortSlot => Some((1, MAX_SHORT_SLOT_WORDS)),
+                _ => None,
+            };
+            if let Some((lo, hi)) = slot {
+                if head_seen && after_head.is_none() {
+                    *after_head = Some(false);
+                }
+                return self.go(rest, last, (gap.0 + lo, gap.1 + hi), after_head, false);
+            }
+            if *first == PatternPiece::Gap {
+                return self.go(rest, last, (gap.0, gap.1 + MAX_GAP_WORDS), after_head, head_seen);
+            }
+            let range = match last {
+                None => 0..self.tokens.len(),
+                Some(l) => (l + 1 + gap.0)..(l + 2 + gap.1).min(self.tokens.len()),
+            };
+            for j in range {
+                if !self.hit(first, j) {
+                    continue;
+                }
+                let is_head = names(first, self.headword);
+                // The word itself, first of the pattern, after "the" / "a" is a noun.
+                if is_head && last.is_none() && j > 0 && DETERMINERS.contains(&self.tokens[j - 1].as_str()) {
+                    continue;
+                }
+                if is_head && !reads_as(&self.tokens[j], self.headword) {
+                    continue;
+                }
+                // "to" before a verb is its infinitive, not a preposition taking ～ or 人:
+                // "Nice to meet you" is not be nice to 人, "used to play" not be used to ～.
+                if matches!(first, PatternPiece::Word(ws) if ws.iter().any(|w| w == "to"))
+                    && matches!(rest.first(), Some(PatternPiece::Slot | PatternPiece::ShortSlot))
+                    && self
+                        .tokens
+                        .get(j + 1)
+                        .is_some_and(|t| self.verbs.contains(t) && !NOUNS_AFTER_TO.contains(&t.as_str()))
+                {
+                    continue;
+                }
+                let mut seen_after = *after_head;
+                if head_seen && seen_after.is_none() {
+                    seen_after = Some(true);
+                }
+                if self.go(rest, Some(j), (0, 0), &mut seen_after, is_head) {
+                    *after_head = seen_after;
+                    return true;
+                }
+            }
+            false
+        }
+    }
+    let search = Search { headword, tokens, lemmas, verbs: base_verbs() };
+    let mut after_head = None;
+    search.go(pieces, None, (0, 0), &mut after_head, false).then(|| after_head == Some(true))
+}
+
+/// The words of a sentence worth explaining: those whose pattern the sentence uses (only the
+/// ones it uses: "compared his life to" is compare A to B), then words easily confused with
+/// others that have no patterns to find (creepy, alike). When a word is followed by the word of
+/// one of its patterns ("afraid of"), a pattern with something else after it ("I'm afraid
+/// (that) ～") is not what the sentence says. In the order they appear, at most MAX_USED_WORDS.
+pub fn used_words(texts: &[String]) -> Vec<crate::models::UsedWord> {
+    let mut out: Vec<crate::models::UsedWord> = Vec::new();
+    for text in texts {
+        let tokens = crate::util::tokens(text);
+        let lemmas: Vec<Vec<String>> = tokens.iter().map(|t| crate::util::lemmas(t)).collect();
+        for (i, candidates) in lemmas.iter().enumerate() {
+            for word in candidates {
+                if out.iter().any(|u| &u.word == word) {
+                    continue;
+                }
+                // Read as the word, not as a noun after "the" ("a rise in prices").
+                let as_word = reads_as(&tokens[i], word) && !(i > 0 && DETERMINERS.contains(&tokens[i - 1].as_str()));
+                let found: Vec<(crate::models::WordUsage, bool)> = word_usages()
+                    .get(word)
+                    .map(|all| {
+                        all.iter()
+                            .filter_map(|u| {
+                                let hits: Vec<bool> = pattern_ways(&u.pattern, word)
+                                    .iter()
+                                    .filter(|p| pattern_is_telling(p, word, &u.ja))
+                                    .filter_map(|p| pieces_found(p, word, &tokens, &lemmas))
+                                    .collect();
+                                (!hits.is_empty()).then(|| (u.clone(), hits.contains(&true)))
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                let close = found.iter().any(|(_, c)| *c);
+                let usages: Vec<crate::models::WordUsage> =
+                    found.into_iter().filter(|(_, c)| *c || !close).map(|(u, _)| u).collect();
+                let related = related_groups(word);
+                let only_related = usages.is_empty()
+                    && as_word
+                    && !related.is_empty()
+                    && !word_usages().contains_key(word)
+                    && !TOO_COMMON_FOR_RELATED.contains(&word.as_str());
+                if usages.is_empty() && !only_related {
+                    continue;
+                }
+                let nuance = related.iter().flat_map(|g| &g.members).find(|m| m.is_self).map(|m| m.nuance.clone());
+                out.push(crate::models::UsedWord { word: word.clone(), nuance, usages, related });
+                break;
+            }
+        }
+    }
+    out.truncate(MAX_USED_WORDS);
+    out
 }
 
 /// Word (lowercase) → its sounds, separated by spaces with ˈ before the stressed syllable:
@@ -1503,6 +1857,60 @@ mod tests {
         let search = related_groups("search");
         let look = search.iter().flat_map(|g| &g.members).find(|m| m.word == "look").unwrap();
         assert_eq!(look.usages.iter().map(|u| u.pattern.as_str()).collect::<Vec<_>>(), vec!["look for ～"]);
+    }
+
+    fn found(sentence: &str) -> Vec<(String, Vec<String>)> {
+        used_words(&[sentence.to_string()])
+            .into_iter()
+            .map(|u| (u.word, u.usages.into_iter().map(|x| x.pattern).collect()))
+            .collect()
+    }
+
+    /// A sentence lists the patterns it uses, not every pattern of its words.
+    #[test]
+    fn a_sentence_shows_the_patterns_it_uses() {
+        let f = found("He compared his life to a journey.");
+        assert!(f.contains(&("compare".to_string(), vec!["compare A to B".to_string()])), "{f:?}");
+        let f = found("We compared the new model with the previous model.");
+        assert!(f.contains(&("compare".to_string(), vec!["compare A with B".to_string()])), "{f:?}");
+        let f = found("The rain stopped us from going out.");
+        assert!(f.contains(&("stop".to_string(), vec!["stop 人 from -ing".to_string()])), "{f:?}");
+        let f = found("I'm afraid of spiders.");
+        assert!(f.contains(&("afraid".to_string(), vec!["be afraid of ～".to_string()])), "{f:?}");
+        let f = found("It is dangerous to swim here.");
+        assert!(f.iter().any(|(w, p)| w == "dangerous" && p.len() == 1), "{f:?}");
+        // A warning about a preposition is shown wherever the word is.
+        assert!(found("We discussed the plan.").iter().any(|(w, _)| w == "discuss"));
+        // "have 人 原形" would be found wherever have is: have alone says nothing.
+        assert!(!found("I have a dog.").iter().any(|(w, _)| w == "have"));
+        // A word with similar words and no pattern is listed for them; a too common one is not.
+        let creepy = used_words(&["That old house is creepy.".to_string()]);
+        assert!(creepy.iter().any(|u| u.word == "creepy" && u.usages.is_empty() && !u.related.is_empty()));
+        assert!(!found("It is a big house.").iter().any(|(w, _)| w == "big"));
+    }
+
+    /// Every pattern that can be found is found in its own sentence: the finder and the data
+    /// agree on what the notation means.
+    #[test]
+    fn every_pattern_is_found_in_its_own_sentence() {
+        let mut missed = Vec::new();
+        for (word, usages) in word_usages() {
+            for u in usages {
+                let ways = pattern_ways(&u.pattern, word);
+                // The sentence may use a way that is only the word and what fills it ("bring me a
+                // glass" for bring ～ to 人 / bring 人 ～), which is never looked for.
+                if ways.is_empty() || !ways.iter().all(|p| pattern_is_telling(p, word, &u.ja)) {
+                    continue;
+                }
+                let tokens = crate::util::tokens(&u.example);
+                let lemmas: Vec<Vec<String>> = tokens.iter().map(|t| crate::util::lemmas(t)).collect();
+                if !ways.iter().any(|p| pieces_found(p, word, &tokens, &lemmas).is_some()) {
+                    missed.push(format!("{word}: {} / {}", u.pattern, u.example));
+                }
+            }
+        }
+        missed.sort();
+        assert!(missed.is_empty(), "{} patterns not found in their sentence:\n{}", missed.len(), missed.join("\n"));
     }
 
     /// An origin is written for an idiom of the bank, as a finished sentence.

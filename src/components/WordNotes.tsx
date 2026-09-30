@@ -2,7 +2,7 @@ import { Fragment, useState } from "react";
 import GlossedText from "./GlossedText";
 import type { Dictionary } from "../lib/dictionary";
 import { isTtsSupported, speak } from "../lib/speech";
-import type { RelatedGroup, WordNotes, WordPart, WordUsage } from "../types";
+import type { RelatedGroup, UsedWord, WordNotes, WordPart, WordUsage } from "../types";
 
 const PART_LABEL: Record<WordPart["kind"], string> = { prefix: "接頭辞", root: "語根", suffix: "接尾辞" };
 
@@ -124,7 +124,7 @@ export default function WordNotesPanel({
   /** show meanings on hover (the study screen's 単語の意味 toggle) */
   gloss: boolean;
 }) {
-  const { parts, examples, usages, origin, related } = notes;
+  const { parts, examples, usages, origin, related, used } = notes;
   // Keyed by the word, so the next question starts closed without remounting the panel.
   const [openFor, setOpenFor] = useState<string | null>(null);
   const relatedOpen = openFor === word;
@@ -172,6 +172,40 @@ export default function WordNotesPanel({
           <div>{origin}</div>
         </div>
       )}
+      {used.length > 0 && (
+        <div className="usage-line">
+          <span className="label">文中の用法</span>
+          {used.map((w) => (
+            // Keyed by the question's English too, so each question starts with 類似表現 closed.
+            <UsedWordItem key={`${word}|${w.word}`} w={w} dict={dict} gloss={gloss} />
+          ))}
+        </div>
+      )}
     </>
+  );
+}
+
+/**
+ * A word of the sentence on screen: the patterns of it that the sentence uses, how it differs
+ * from similar words, and 類似表現 to open them.
+ */
+function UsedWordItem({ w, dict, gloss }: { w: UsedWord; dict: Dictionary | null; gloss: boolean }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="used-word">
+      <div className="usage-title">
+        <b className="used-word-name">{w.word}</b>
+        {w.nuance && <span className="related-nuance">{w.nuance}</span>}
+        {w.related.length > 0 && (
+          <button type="button" className="related-toggle" aria-expanded={open} onClick={() => setOpen(!open)}>
+            類似表現 {open ? "▾" : "▸"}
+          </button>
+        )}
+      </div>
+      {open && <RelatedWords groups={w.related} dict={dict} gloss={gloss} />}
+      {w.usages.map((u, i) => (
+        <UsageItem key={i} u={u} word={w.word} dict={dict} gloss={gloss} />
+      ))}
+    </div>
   );
 }

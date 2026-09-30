@@ -80,6 +80,9 @@ pub struct WordNotes {
     pub origin: Option<String>,
     /// similar or easily confused words (lend / borrow / rent), each with how it differs
     pub related: Vec<RelatedGroup>,
+    /// for a sentence (grammar, idiom, phrase, example, dialogue): the words in it whose pattern
+    /// it uses ("compared his life to" → compare A to B), or that are easily confused with others
+    pub used: Vec<UsedWord>,
 }
 
 impl WordNotes {
@@ -89,7 +92,18 @@ impl WordNotes {
             && self.usages.is_empty()
             && self.origin.is_none()
             && self.related.is_empty()
+            && self.used.is_empty()
     }
+}
+
+/// A word of a sentence with the patterns of it that the sentence uses.
+#[derive(Debug, Clone, Serialize)]
+pub struct UsedWord {
+    pub word: String,
+    /// how it differs from similar words, when it has any
+    pub nuance: Option<String>,
+    pub usages: Vec<WordUsage>,
+    pub related: Vec<RelatedGroup>,
 }
 
 /// Words that are easily confused with each other ("怖い・恐れる": afraid / scared / creepy …).

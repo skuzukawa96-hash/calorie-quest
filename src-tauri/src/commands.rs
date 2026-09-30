@@ -476,7 +476,7 @@ fn build_session_question(
         vec![answer.clone()]
     };
     let grammar_note = grammar_note_for(&q);
-    let notes = if q.kind == "word" || q.kind == "idiom" { db::word_notes(&q.en) } else { None };
+    let notes = notes_for(&q, &audio_text);
     Ok(SessionQuestion {
         question: q,
         mode: mode.to_string(),
@@ -491,6 +491,24 @@ fn build_session_question(
         grammar_note,
         notes,
     })
+}
+
+/// What the answer explains beyond the meaning. A word: how it is built, sentences, patterns and
+/// similar words. Anything else is a sentence: the words in it whose patterns it uses (and, for
+/// an idiom, where it comes from).
+fn notes_for(q: &Question, audio_text: &str) -> Option<WordNotes> {
+    if q.kind == "word" {
+        return db::word_notes(&q.en);
+    }
+    let texts: Vec<String> = match q.kind.as_str() {
+        "grammar" => vec![audio_text.to_string()],
+        "idiom" => std::iter::once(q.en.clone()).chain(q.example.clone()).collect(),
+        "dialogue" => q.prompt.iter().cloned().chain(std::iter::once(q.en.clone())).collect(),
+        _ => vec![q.en.clone()],
+    };
+    let mut notes = if q.kind == "idiom" { db::word_notes(&q.en).unwrap_or_default() } else { WordNotes::default() };
+    notes.used = db::used_words(&texts);
+    (!notes.is_empty()).then_some(notes)
 }
 
 /// The explanation to show with a grammar answer. Questions of other kinds have no point, and an
@@ -1290,7 +1308,8 @@ mod tests {
         let q = c
             .query_row(&format!("SELECT {Q_COLS} FROM questions q WHERE q.id = ?1"), params![phrase], db::row_to_question)
             .unwrap();
-        assert!(build_session_question(&c, q, "choice", false).unwrap().notes.is_none());
+        let notes = build_session_question(&c, q, "choice", false).unwrap().notes;
+        assert!(notes.map_or(true, |n| n.parts.is_empty() && n.examples.is_empty()), "a phrase has no parts or examples of its own");
     }
 
     /// A phrase got wrong by typing comes back to be typed: in typing sessions and in the review

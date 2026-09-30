@@ -10,7 +10,7 @@ import wordExamples from "../../src-tauri/data/word-examples.json";
 import wordUsages from "../../src-tauri/data/word-usage.json";
 import idiomOrigins from "../../src-tauri/data/idiom-origins.json";
 import relatedSeeds from "../../src-tauri/data/word-related.json";
-import { expandDictionary, type Dictionary } from "./dictionary";
+import { expandDictionary, lemmas, tokenize, type Dictionary } from "./dictionary";
 import { answerWordCount, scoresPerWord } from "./scoring";
 import type {
   AnswerPayload,
@@ -35,6 +35,7 @@ import type {
   Stats,
   Ticket,
   Tier,
+  UsedWord,
   UserInfo,
   WeakQuestion,
   WordNotes,
@@ -637,21 +638,247 @@ function wordNotes(word: string): WordNotes | null {
     usages: (usagesByWord.get(key) ?? []) as WordUsage[],
     origin: originByIdiom.get(key) ?? null,
     related: relatedGroups(key),
+    used: [],
   };
-  const empty =
-    !notes.parts.length && !notes.examples.length && !notes.usages.length && !notes.origin && !notes.related.length;
-  return empty ? null : notes;
+  return notesAreEmpty(notes) ? null : notes;
+}
+
+function notesAreEmpty(n: WordNotes): boolean {
+  return !n.parts.length && !n.examples.length && !n.usages.length && !n.origin && !n.related.length && !n.used.length;
+}
+
+/* ---------- Patterns found in a sentence (mirrors db::used_words) ---------- */
+
+type Piece =
+  | { kind: "word"; words: string[] }
+  | { kind: "ing" }
+  | { kind: "slot" }
+  | { kind: "optional" }
+  | { kind: "shortSlot" }
+  | { kind: "base" }
+  | { kind: "gap" };
+
+const OPTIONAL_PATTERN_WORDS = ["be", "is", "am", "are", "feel", "can", "would", "could", "will", "don't"];
+const REFLEXIVES = ["oneself", "myself", "yourself", "himself", "herself", "itself", "ourselves", "yourselves", "themselves"];
+const PARTICLES = ["off", "up", "out", "away", "down", "back"];
+const TOO_COMMON_FOR_RELATED = [
+  "big", "small", "little", "large", "fast", "sleep", "rest", "close", "cheap", "expensive", "price", "quiet", "wear", "fix", "hurt", "store",
+];
+const NOT_ING = ["morning", "evening", "ceiling", "during", "string", "spring", "sibling", "pudding", "awning", "darling"];
+const NOUNS_AFTER_TO = ["work", "school", "bed", "class", "church", "court"];
+const DETERMINERS = ["the", "a", "an", "my", "your", "his", "its", "our", "their", "every", "each"];
+const MAX_SLOT_WORDS = 6;
+const MAX_SHORT_SLOT_WORDS = 3;
+const MAX_GAP_WORDS = 2;
+const MAX_USED_WORDS = 6;
+
+/** Mirrors db::base_verbs: words whose first gloss ends like a Japanese verb (会う, 走る). */
+const baseVerbs: Set<string> = (() => {
+  const verbLike = (ja: string) => {
+    const first = (ja.split(/[、，,]/)[0] ?? "").replace(/（[^）]*）|\([^)]*\)/g, "").trim();
+    return /[うくぐすつぬぶむる]$/.test(first);
+  };
+  const out = new Set<string>();
+  for (const [en, ja] of Object.entries(glossary as Record<string, string>)) {
+    if (!en.includes(" ") && verbLike(ja)) out.add(en);
+  }
+  for (const q of seedQuestions) {
+    if (q.kind === "word" && !q.en.includes(" ") && verbLike(q.ja)) out.add(q.en.toLowerCase());
+  }
+  return out;
+})();
+
+function patternPiece(raw: string): Piece | null {
+  const el = raw.replace(/^[?.,!]+|[?.,!]+$/g, "");
+  if (!el) return null;
+  if (["～", "…", "A", "B", "人", "形容詞", "節"].includes(el)) return { kind: "slot" };
+  if (el === "(…)") return { kind: "optional" };
+  if (el === "原形") return { kind: "base" };
+  if (el === "-ing") return { kind: "ing" };
+  const words = el.split("/").flatMap(tokenize);
+  if (!words.length) return null;
+  if (words.some((w) => OPTIONAL_PATTERN_WORDS.includes(w))) return { kind: "gap" };
+  if (words.length === 1 && words[0] === "oneself") return { kind: "word", words: REFLEXIVES };
+  return { kind: "word", words };
+}
+
+const names = (p: Piece | undefined, headword: string) => p?.kind === "word" && p.words.includes(headword);
+const samePiece = (a: Piece | undefined, b: Piece | undefined) => JSON.stringify(a) === JSON.stringify(b);
+const isParticle = (p: Piece | undefined): p is { kind: "word"; words: string[] } =>
+  p?.kind === "word" && p.words.every((x) => PARTICLES.includes(x));
+
+function patternWays(pattern: string, headword: string): Piece[][] {
+  let plain = "";
+  let aside = 0;
+  let optional = 0;
+  for (const c of pattern) {
+    if (c === "（") aside++;
+    else if (c === "）") aside--;
+    else if (c === "(") {
+      optional++;
+      if (optional === 1 && aside === 0) plain += " (…) ";
+    } else if (c === ")") optional--;
+    else if (aside === 0 && optional === 0) plain += c;
+  }
+  const ways: Piece[][] = [];
+  for (const way of plain.split(" / ")) {
+    const pieces = way.split(/\s+/).map(patternPiece).filter((p): p is Piece => p !== null);
+    if (pieces.some((p) => names(p, headword))) {
+      ways.push(pieces);
+    } else if (ways.length) {
+      const joined = ways[ways.length - 1].slice();
+      const last = joined.pop();
+      if (last?.kind === "base" && pieces[0]?.kind === "ing" && samePiece(joined[joined.length - 1], { kind: "word", words: ["to"] })) {
+        joined.pop();
+      }
+      ways.push([...joined, ...pieces]);
+    }
+  }
+  const swapped: Piece[][] = [];
+  for (const w of ways) {
+    const n = w.length;
+    if (n >= 2 && w[n - 2].kind === "slot" && isParticle(w[n - 1])) {
+      swapped.push([...w.slice(0, n - 2), w[n - 1], w[n - 2]]);
+    } else if (n >= 3 && names(w[n - 3], headword) && isParticle(w[n - 2]) && w[n - 1].kind === "slot") {
+      swapped.push([...w.slice(0, n - 2), w[n - 1], w[n - 2]]);
+    }
+  }
+  const all = [...ways, ...swapped];
+  // What stands before a particle or an -ing is short: "pick [you] up", "caught [him] sleeping".
+  for (const way of all) {
+    for (let i = 0; i + 1 < way.length; i++) {
+      const next = way[i + 1];
+      if (way[i].kind === "slot" && (isParticle(next) || next.kind === "ing")) way[i] = { kind: "shortSlot" };
+    }
+  }
+  return all;
+}
+
+/** Mirrors db::reads_as: "speaker" is no speak, "completely" no complete. */
+const readsAs = (token: string, word: string) =>
+  token === word || !(token.endsWith("er") || token.endsWith("est") || token.endsWith("ly"));
+
+function patternIsTelling(pieces: Piece[], headword: string, ja: string): boolean {
+  return (
+    (ja.includes("付けない") && !ja.includes("the は")) ||
+    pieces.some((p) => p.kind === "ing" || (p.kind === "word" && !p.words.includes(headword)))
+  );
+}
+
+/** Mirrors db::pieces_found: null when not found, else whether a word follows the headword. */
+function piecesFound(pieces: Piece[], headword: string, tokens: string[], lemmaList: string[][]): boolean | null {
+  let result: boolean | null = null;
+  const hit = (p: Piece, j: number) => {
+    const t = tokens[j];
+    if (p.kind === "word") return p.words.some((w) => t === w || lemmaList[j].includes(w));
+    if (p.kind === "ing") return t.length > 4 && t.endsWith("ing") && !t.endsWith("thing") && !NOT_ING.includes(t);
+    return false;
+  };
+  const go = (i: number, last: number | null, gap: [number, number], afterHead: boolean | null, headSeen: boolean): boolean => {
+    if (i === pieces.length) {
+      result = afterHead === true;
+      return true;
+    }
+    const first = pieces[i];
+    const afterVerb = last !== null && lemmaList[last].some((w) => baseVerbs.has(w));
+    const slot: [number, number] | null =
+      first.kind === "slot" || first.kind === "base"
+        ? [afterVerb ? 0 : 1, MAX_SLOT_WORDS]
+        : first.kind === "optional"
+          ? [0, MAX_SLOT_WORDS]
+          : first.kind === "shortSlot"
+            ? [1, MAX_SHORT_SLOT_WORDS]
+            : null;
+    if (slot) {
+      return go(i + 1, last, [gap[0] + slot[0], gap[1] + slot[1]], headSeen && afterHead === null ? false : afterHead, false);
+    }
+    if (first.kind === "gap") return go(i + 1, last, [gap[0], gap[1] + MAX_GAP_WORDS], afterHead, headSeen);
+    const from = last === null ? 0 : last + 1 + gap[0];
+    const to = last === null ? tokens.length : Math.min(last + 2 + gap[1], tokens.length);
+    const next = pieces[i + 1];
+    for (let j = from; j < to; j++) {
+      if (!hit(first, j)) continue;
+      const isHead = names(first, headword);
+      if (isHead && last === null && j > 0 && DETERMINERS.includes(tokens[j - 1])) continue;
+      if (isHead && !readsAs(tokens[j], headword)) continue;
+      if (
+        first.kind === "word" &&
+        first.words.includes("to") &&
+        (next?.kind === "slot" || next?.kind === "shortSlot") &&
+        j + 1 < tokens.length &&
+        baseVerbs.has(tokens[j + 1]) &&
+        !NOUNS_AFTER_TO.includes(tokens[j + 1])
+      ) {
+        continue;
+      }
+      const seen = headSeen && afterHead === null ? true : afterHead;
+      if (go(i + 1, j, [0, 0], seen, isHead)) return true;
+    }
+    return false;
+  };
+  return go(0, null, [0, 0], null, false) ? result : null;
+}
+
+/** Mirrors db::used_words: the words of a sentence whose patterns it uses, or that are easily confused. */
+function usedWords(texts: string[]): UsedWord[] {
+  const out: UsedWord[] = [];
+  for (const text of texts) {
+    const tokens = tokenize(text);
+    const lemmaList = tokens.map(lemmas);
+    lemmaList.forEach((candidates, i) => {
+      for (const word of candidates) {
+        if (out.some((u) => u.word === word)) continue;
+        const asWord = readsAs(tokens[i], word) && !(i > 0 && DETERMINERS.includes(tokens[i - 1]));
+        const found: [WordUsage, boolean][] = [];
+        for (const u of (usagesByWord.get(word) ?? []) as WordUsage[]) {
+          const hits = patternWays(u.pattern, word)
+            .filter((p) => patternIsTelling(p, word, u.ja))
+            .map((p) => piecesFound(p, word, tokens, lemmaList))
+            .filter((h): h is boolean => h !== null);
+          if (hits.length) found.push([u, hits.includes(true)]);
+        }
+        const close = found.some(([, c]) => c);
+        const usages = found.filter(([, c]) => c || !close).map(([u]) => u);
+        const related = relatedGroups(word);
+        const onlyRelated =
+          !usages.length && asWord && related.length > 0 && !usagesByWord.has(word) && !TOO_COMMON_FOR_RELATED.includes(word);
+        if (!usages.length && !onlyRelated) continue;
+        const nuance = related.flatMap((g) => g.members).find((m) => m.isSelf)?.nuance ?? null;
+        out.push({ word, nuance, usages, related });
+        break;
+      }
+    });
+  }
+  return out.slice(0, MAX_USED_WORDS);
+}
+
+/** Mirrors notes_for in commands.rs. */
+function notesFor(q: Question, audioText: string): WordNotes | null {
+  if (q.kind === "word") return wordNotes(q.en);
+  const texts =
+    q.kind === "grammar"
+      ? [audioText]
+      : q.kind === "idiom"
+        ? [q.en, ...(q.example ? [q.example] : [])]
+        : q.kind === "dialogue"
+          ? [...(q.prompt ? [q.prompt] : []), q.en]
+          : [q.en];
+  const base: WordNotes =
+    (q.kind === "idiom" ? wordNotes(q.en) : null) ?? { parts: [], examples: [], usages: [], origin: null, related: [], used: [] };
+  const notes = { ...base, used: usedWords(texts) };
+  return notesAreEmpty(notes) ? null : notes;
 }
 
 function buildSessionQuestion(q: Question, mode: Mode, isReview: boolean): SessionQuestion {
+  const audioText = audioTextFor(q);
   const base = {
     question: q,
     mode,
     isReview,
-    audioText: audioTextFor(q),
+    audioText,
     hideText: false,
     grammarNote: grammarNoteFor(q),
-    notes: q.kind === "word" || q.kind === "idiom" ? wordNotes(q.en) : null,
+    notes: notesFor(q, audioText),
   };
   if (mode === "choice") {
     if (q.choices && q.choices.length) {

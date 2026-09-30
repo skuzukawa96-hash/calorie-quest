@@ -881,6 +881,19 @@ main {
 .related-word .usage + .usage {
   padding-top: 6px;
 }
+/* 文中の用法: one block per word of the sentence */
+.used-word + .used-word {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+.used-word-name {
+  color: var(--choco);
+  font-size: 15px;
+}
+.used-word .usage-title {
+  flex-wrap: wrap;
+}
 
 .q-category {
   display: inline-block;

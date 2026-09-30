@@ -66,6 +66,20 @@ export interface WordNotes {
   origin?: string | null;
   /** similar or easily confused words (lend / borrow / rent), each with how it differs */
   related: RelatedGroup[];
+  /**
+   * for a sentence (grammar, idiom, phrase, example, dialogue): its words whose pattern it uses
+   * ("compared his life to" → compare A to B), or that are easily confused with others
+   */
+  used: UsedWord[];
+}
+
+/** A word of a sentence with the patterns of it that the sentence uses. */
+export interface UsedWord {
+  word: string;
+  /** how it differs from similar words, when it has any */
+  nuance?: string | null;
+  usages: WordUsage[];
+  related: RelatedGroup[];
 }
 
 /** Words easily confused with each other, shown under 用法 behind 類似表現. */
