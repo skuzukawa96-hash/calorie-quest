@@ -1,8 +1,8 @@
-import { Fragment } from "react";
+import { Fragment, useState } from "react";
 import GlossedText from "./GlossedText";
 import type { Dictionary } from "../lib/dictionary";
 import { isTtsSupported, speak } from "../lib/speech";
-import type { WordNotes, WordPart } from "../types";
+import type { RelatedGroup, WordNotes, WordPart, WordUsage } from "../types";
 
 const PART_LABEL: Record<WordPart["kind"], string> = { prefix: "接頭辞", root: "語根", suffix: "接尾辞" };
 
@@ -17,6 +17,64 @@ function SpeakButton({ text }: { text: string }) {
     >
       🔊
     </button>
+  );
+}
+
+/** One pattern: [compare A with B：AとBを比較する], then a sentence using it with its Japanese. */
+function UsageItem({ u, word, dict, gloss }: { u: WordUsage; word: string; dict: Dictionary | null; gloss: boolean }) {
+  return (
+    <div className="usage">
+      <div className="usage-head">
+        <span className="usage-bracket">
+          <b>{u.pattern}</b>
+          <span className="usage-sep">：</span>
+          {u.ja}
+        </span>
+      </div>
+      <div className="example-en">
+        <GlossedText text={u.example} dict={dict} enabled={gloss} highlight={word} contextJa={u.exampleJa} />
+        <SpeakButton text={u.example} />
+      </div>
+      <div className="muted">{u.exampleJa}</div>
+    </div>
+  );
+}
+
+/**
+ * 類似表現, opened from beside 用法: each group of easily confused words, every word with how it
+ * differs (afraid「（人が）恐れている」, creepy「（物・場所が）不気味でぞっとする」) and how it is used.
+ * The word on screen is marked and shows only its nuance; its patterns are right above.
+ */
+function RelatedWords({ groups, dict, gloss }: { groups: RelatedGroup[]; dict: Dictionary | null; gloss: boolean }) {
+  return (
+    <div className="related">
+      {groups.map((g, gi) => (
+        <div key={gi} className="related-group">
+          <div className="related-title">{g.title}</div>
+          {g.members.map((m) => (
+            <div key={m.word} className={"related-word" + (m.isSelf ? " self" : "")}>
+              <div className="related-head">
+                <b>{m.word}</b>
+                <span className="related-nuance">{m.nuance}</span>
+                {m.isSelf && <span className="related-self">この語</span>}
+              </div>
+              {m.usages.map((u, i) => (
+                <UsageItem key={i} u={u} word={m.word} dict={dict} gloss={gloss} />
+              ))}
+              {m.example && (
+                <div className="usage">
+                  <div className="example-en">
+                    <GlossedText text={m.example.en} dict={dict} enabled={gloss} highlight={m.word} contextJa={m.example.ja} />
+                    <SpeakButton text={m.example.en} />
+                  </div>
+                  <div className="muted">{m.example.ja}</div>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -66,7 +124,10 @@ export default function WordNotesPanel({
   /** show meanings on hover (the study screen's 単語の意味 toggle) */
   gloss: boolean;
 }) {
-  const { parts, examples, usages, origin } = notes;
+  const { parts, examples, usages, origin, related } = notes;
+  // Keyed by the word, so the next question starts closed without remounting the panel.
+  const [openFor, setOpenFor] = useState<string | null>(null);
+  const relatedOpen = openFor === word;
   return (
     <>
       {parts.length > 0 && <WordParts parts={parts} word={word} meaning={meaning} />}
@@ -84,24 +145,24 @@ export default function WordNotesPanel({
           ))}
         </div>
       )}
-      {usages.length > 0 && (
+      {(usages.length > 0 || related.length > 0) && (
         <div className="usage-line">
-          <span className="label">用法</span>
+          <div className="usage-title">
+            {usages.length > 0 && <span className="label">用法</span>}
+            {related.length > 0 && (
+              <button
+                type="button"
+                className="related-toggle"
+                aria-expanded={relatedOpen}
+                onClick={() => setOpenFor(relatedOpen ? null : word)}
+              >
+                類似表現 {relatedOpen ? "▾" : "▸"}
+              </button>
+            )}
+          </div>
+          {relatedOpen && <RelatedWords groups={related} dict={dict} gloss={gloss} />}
           {usages.map((u, i) => (
-            <div key={i} className="usage">
-              <div className="usage-head">
-                <span className="usage-bracket">
-                  <b>{u.pattern}</b>
-                  <span className="usage-sep">：</span>
-                  {u.ja}
-                </span>
-              </div>
-              <div className="example-en">
-                <GlossedText text={u.example} dict={dict} enabled={gloss} highlight={word} contextJa={u.exampleJa} />
-                <SpeakButton text={u.example} />
-              </div>
-              <div className="muted">{u.exampleJa}</div>
-            </div>
+            <UsageItem key={i} u={u} word={word} dict={dict} gloss={gloss} />
           ))}
         </div>
       )}

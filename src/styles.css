@@ -809,6 +809,78 @@ main {
 .speak-btn {
   padding: 0 4px;
 }
+/* 類似表現: a small toggle beside 用法 that opens the easily confused words */
+.usage-title {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.related-toggle {
+  font: inherit;
+  font-size: 12px;
+  color: var(--mint);
+  background: var(--mint-bg);
+  border: 1px solid #c6e3cf;
+  border-radius: 999px;
+  padding: 1px 10px;
+  cursor: pointer;
+}
+.related-toggle:hover {
+  border-color: var(--mint);
+}
+.related {
+  margin: 6px 0 10px;
+  padding: 8px 12px;
+  background: #fff;
+  border: 1px dashed #c6e3cf;
+  border-radius: 10px;
+}
+.related-group + .related-group {
+  margin-top: 12px;
+}
+.related-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--mint);
+  margin-bottom: 4px;
+}
+.related-word {
+  padding: 6px 8px;
+  border-radius: 8px;
+}
+.related-word + .related-word {
+  margin-top: 4px;
+}
+.related-word.self {
+  background: var(--mint-bg);
+}
+.related-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+}
+.related-head b {
+  color: var(--choco);
+}
+.related-nuance {
+  font-size: 13.5px;
+  color: var(--text);
+}
+.related-self {
+  font-size: 11px;
+  color: var(--mint);
+  border: 1px solid var(--mint);
+  border-radius: 999px;
+  padding: 0 7px;
+}
+.related-word .usage {
+  margin-top: 4px;
+  padding-left: 10px;
+}
+.related-word .usage + .usage {
+  padding-top: 6px;
+}
 
 .q-category {
   display: inline-block;

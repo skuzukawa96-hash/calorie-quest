@@ -78,12 +78,38 @@ pub struct WordNotes {
     pub usages: Vec<WordUsage>,
     /// for an idiom whose origin is known: where it comes from
     pub origin: Option<String>,
+    /// similar or easily confused words (lend / borrow / rent), each with how it differs
+    pub related: Vec<RelatedGroup>,
 }
 
 impl WordNotes {
     pub fn is_empty(&self) -> bool {
-        self.parts.is_empty() && self.examples.is_empty() && self.usages.is_empty() && self.origin.is_none()
+        self.parts.is_empty()
+            && self.examples.is_empty()
+            && self.usages.is_empty()
+            && self.origin.is_none()
+            && self.related.is_empty()
     }
+}
+
+/// Words that are easily confused with each other ("怖い・恐れる": afraid / scared / creepy …).
+#[derive(Debug, Clone, Serialize)]
+pub struct RelatedGroup {
+    pub title: String,
+    pub members: Vec<RelatedWord>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RelatedWord {
+    pub word: String,
+    /// how it differs from the others: 「（物・場所が）不気味でぞっとする」
+    pub nuance: String,
+    /// the word whose answer is on screen; its patterns are shown above, so it carries none here
+    pub is_self: bool,
+    pub usages: Vec<WordUsage>,
+    /// a sentence using it, for a word without patterns
+    pub example: Option<ExampleSentence>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

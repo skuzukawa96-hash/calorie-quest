@@ -64,6 +64,25 @@ export interface WordNotes {
   usages: WordUsage[];
   /** for an idiom whose origin is known: where it comes from */
   origin?: string | null;
+  /** similar or easily confused words (lend / borrow / rent), each with how it differs */
+  related: RelatedGroup[];
+}
+
+/** Words easily confused with each other, shown under 用法 behind 類似表現. */
+export interface RelatedGroup {
+  title: string;
+  members: RelatedWord[];
+}
+
+export interface RelatedWord {
+  word: string;
+  /** how it differs from the others: 「（物・場所が）不気味でぞっとする」 */
+  nuance: string;
+  /** the word whose answer is on screen; its patterns are already shown above */
+  isSelf: boolean;
+  usages: WordUsage[];
+  /** a sentence using it, for a word without patterns */
+  example?: ExampleSentence | null;
 }
 
 /** The explanation shown with a grammar answer; one note serves every question on that point. */

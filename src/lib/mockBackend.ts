@@ -9,6 +9,7 @@ import tierOverrides from "../../src-tauri/data/tiers.json";
 import wordExamples from "../../src-tauri/data/word-examples.json";
 import wordUsages from "../../src-tauri/data/word-usage.json";
 import idiomOrigins from "../../src-tauri/data/idiom-origins.json";
+import relatedSeeds from "../../src-tauri/data/word-related.json";
 import { expandDictionary, type Dictionary } from "./dictionary";
 import { answerWordCount, scoresPerWord } from "./scoring";
 import type {
@@ -22,6 +23,7 @@ import type {
   ExampleSentence,
   GrammarNote,
   Level,
+  RelatedGroup,
   Mode,
   Question,
   RecipeAddResult,
@@ -152,7 +154,7 @@ const seedQuestions: SeedQuestion[] = [
   ...Object.entries(packModules)
     .filter(
       ([path]) =>
-        !/\/(questions|glossary|grammar-notes|pronunciations|word-parts|tiers|word-examples|word-usage|idiom-origins)\.json$/.test(
+        !/\/(questions|glossary|grammar-notes|pronunciations|word-parts|tiers|word-examples|word-usage|idiom-origins|word-related)\.json$/.test(
           path,
         ),
     )
@@ -587,6 +589,45 @@ const originByIdiom = new Map(
   Object.entries(idiomOrigins as Record<string, string>).map(([k, v]) => [k.toLowerCase(), v]),
 );
 
+interface RelatedSeed {
+  title: string;
+  members: {
+    word: string;
+    nuance: string;
+    patterns?: string[];
+    hideUsages?: boolean;
+    example?: string;
+    exampleJa?: string;
+  }[];
+}
+
+/** Mirrors db::related_groups: the groups `key` belongs to, each member with how it is used. */
+function relatedGroups(key: string): RelatedGroup[] {
+  return (relatedSeeds as RelatedSeed[])
+    .filter((g) => g.members.some((m) => m.word.toLowerCase() === key))
+    .map((g) => ({
+      title: g.title,
+      members: g.members.map((m) => {
+        const word = m.word.toLowerCase();
+        const isSelf = word === key;
+        const usages =
+          isSelf || m.hideUsages
+            ? []
+            : ((usagesByWord.get(word) ?? []) as WordUsage[]).filter(
+                (u) => !m.patterns?.length || m.patterns.includes(u.pattern),
+              );
+        let example: ExampleSentence | null = null;
+        if (!isSelf && usages.length === 0) {
+          example =
+            m.example && m.exampleJa
+              ? { en: m.example, ja: m.exampleJa }
+              : (((examplesByWord.get(word) ?? [])[0] as ExampleSentence | undefined) ?? null);
+        }
+        return { word: m.word, nuance: m.nuance, isSelf, usages, example };
+      }),
+    }));
+}
+
 /** Mirrors db::word_notes: everything the data says about a word or an idiom, or null. */
 function wordNotes(word: string): WordNotes | null {
   const key = word.trim().toLowerCase();
@@ -595,8 +636,10 @@ function wordNotes(word: string): WordNotes | null {
     examples: (examplesByWord.get(key) ?? []) as ExampleSentence[],
     usages: (usagesByWord.get(key) ?? []) as WordUsage[],
     origin: originByIdiom.get(key) ?? null,
+    related: relatedGroups(key),
   };
-  const empty = !notes.parts.length && !notes.examples.length && !notes.usages.length && !notes.origin;
+  const empty =
+    !notes.parts.length && !notes.examples.length && !notes.usages.length && !notes.origin && !notes.related.length;
   return empty ? null : notes;
 }
 

@@ -50,6 +50,9 @@ const WORD_EXAMPLES_JSON: &str = include_str!("../data/word-examples.json");
 const WORD_USAGE_JSON: &str = include_str!("../data/word-usage.json");
 /// Where an idiom comes from, written only for the idioms whose origin is known.
 const IDIOM_ORIGINS_JSON: &str = include_str!("../data/idiom-origins.json");
+/// Groups of similar or easily confused words (lend / borrow / rent, afraid / scared / creepy),
+/// each word with how it differs. Shown under 用法 behind 類似表現.
+const WORD_RELATED_JSON: &str = include_str!("../data/word-related.json");
 /// Which tab an example sentence (kind phrase / sentence) belongs to when it is not 例文: key →
 /// idiom (it uses an idiom figuratively), phrase (said as is in everyday conversation) or grammar
 /// (a clear grammar point). Sorted once, sentence by sentence; every other question's tab follows
@@ -601,6 +604,77 @@ pub fn idiom_origins() -> &'static HashMap<String, String> {
     })
 }
 
+#[derive(serde::Deserialize)]
+struct RelatedSeed {
+    title: String,
+    members: Vec<RelatedMemberSeed>,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RelatedMemberSeed {
+    word: String,
+    nuance: String,
+    /// which of the word's patterns to show here ("look for ～" of look), all when empty
+    #[serde(default)]
+    patterns: Vec<String>,
+    /// show the sentence instead of the word's patterns, none of which is about this sense
+    /// (lose as なくす has only "lose to ～", a match lost)
+    #[serde(default)]
+    hide_usages: bool,
+    example: Option<String>,
+    example_ja: Option<String>,
+}
+
+fn related_seeds() -> &'static Vec<RelatedSeed> {
+    static TABLE: std::sync::OnceLock<Vec<RelatedSeed>> = std::sync::OnceLock::new();
+    TABLE.get_or_init(|| {
+        serde_json::from_str(WORD_RELATED_JSON).expect("data/word-related.json must be a valid JSON array")
+    })
+}
+
+/// The groups `key` (lowercase) belongs to, each member with the patterns or the sentence that
+/// shows how it is used. The member that is `key` itself carries only its nuance.
+pub fn related_groups(key: &str) -> Vec<crate::models::RelatedGroup> {
+    related_seeds()
+        .iter()
+        .filter(|g| g.members.iter().any(|m| m.word.to_lowercase() == key))
+        .map(|g| crate::models::RelatedGroup {
+            title: g.title.clone(),
+            members: g
+                .members
+                .iter()
+                .map(|m| {
+                    let word = m.word.to_lowercase();
+                    let is_self = word == key;
+                    let usages: Vec<crate::models::WordUsage> = if is_self || m.hide_usages {
+                        Vec::new()
+                    } else {
+                        word_usages()
+                            .get(&word)
+                            .map(|all| {
+                                all.iter()
+                                    .filter(|u| m.patterns.is_empty() || m.patterns.contains(&u.pattern))
+                                    .cloned()
+                                    .collect()
+                            })
+                            .unwrap_or_default()
+                    };
+                    let example = if is_self || !usages.is_empty() {
+                        None
+                    } else {
+                        match (&m.example, &m.example_ja) {
+                            (Some(en), Some(ja)) => Some(crate::models::ExampleSentence { en: en.clone(), ja: ja.clone() }),
+                            _ => word_examples().get(&word).and_then(|list| list.first().cloned()),
+                        }
+                    };
+                    crate::models::RelatedWord { word: m.word.clone(), nuance: m.nuance.clone(), is_self, usages, example }
+                })
+                .collect(),
+        })
+        .collect()
+}
+
 /// Everything the data says about a word or an idiom beyond its meaning, or None when it says
 /// nothing. Looked up by the English alone, so a word saved to the recipe gets the same notes as
 /// the word question it may have come from.
@@ -611,6 +685,7 @@ pub fn word_notes(word: &str) -> Option<crate::models::WordNotes> {
         examples: word_examples().get(&key).cloned().unwrap_or_default(),
         usages: word_usages().get(&key).cloned().unwrap_or_default(),
         origin: idiom_origins().get(&key).cloned(),
+        related: related_groups(&key),
     };
     (!notes.is_empty()).then_some(notes)
 }
@@ -832,6 +907,7 @@ mod tests {
                     && n != "word-examples.json"
                     && n != "word-usage.json"
                     && n != "idiom-origins.json"
+                    && n != "word-related.json"
             })
             .count();
         assert_eq!(
@@ -1305,6 +1381,11 @@ mod tests {
         for (w, list) in word_usages() {
             explained.extend(list.iter().map(|u| (u.example.clone(), format!("usage of {w}"))));
         }
+        for g in related_seeds() {
+            for m in &g.members {
+                explained.extend(m.example.iter().map(|e| (e.clone(), format!("related {}", m.word))));
+            }
+        }
         for (text, source) in explained {
             let words = crate::util::tokens(&text);
             let mut in_phrase = vec![false; words.len()];
@@ -1380,6 +1461,48 @@ mod tests {
                 assert!(!u.ja.trim().is_empty() && !u.example_ja.trim().is_empty(), "{w}: {} lacks Japanese", u.pattern);
             }
         }
+    }
+
+    /// A group of similar words names words of the dictionary, says how each differs, and has
+    /// something to show for every member: its patterns, or a sentence using it.
+    #[test]
+    fn related_words_are_explained_and_shown_in_use() {
+        let conn = init_in_memory().unwrap();
+        let dict = dictionary(&conn).unwrap();
+        assert!(related_seeds().len() > 50, "only {} groups", related_seeds().len());
+        for g in related_seeds() {
+            assert!(g.members.len() >= 2, "{}: a group of one", g.title);
+            let mut seen = HashSet::new();
+            for m in &g.members {
+                let w = m.word.to_lowercase();
+                assert!(seen.insert(w.clone()), "{}: {w} twice", g.title);
+                assert!(dict.contains_key(&w), "{}: {w} is not in the dictionary", g.title);
+                assert!(!m.nuance.trim().is_empty(), "{}: {w} has no nuance", g.title);
+                let usages = word_usages().get(&w).cloned().unwrap_or_default();
+                for p in &m.patterns {
+                    assert!(usages.iter().any(|u| &u.pattern == p), "{}: {w} has no pattern {p}", g.title);
+                }
+                if let Some(e) = &m.example {
+                    assert!(uses_word(e, &w), "{}: the sentence for {w} does not use it: {e}", g.title);
+                    assert!(m.example_ja.as_deref().is_some_and(|j| !j.trim().is_empty()), "{}: {w} lacks Japanese", g.title);
+                }
+                assert!(!m.hide_usages || m.example.is_some(), "{}: {w} hides its patterns but has no sentence", g.title);
+                assert!(
+                    !usages.is_empty() || m.example.is_some() || word_examples().contains_key(&w),
+                    "{}: nothing shows how {w} is used",
+                    g.title
+                );
+            }
+        }
+        // Seen from lend: its own line has only the nuance, the others their patterns.
+        let groups = related_groups("lend");
+        let lend = &groups[0];
+        assert!(lend.members.iter().any(|m| m.word == "lend" && m.is_self && m.usages.is_empty()));
+        assert!(lend.members.iter().any(|m| m.word == "borrow" && !m.usages.is_empty()));
+        // A pattern list narrows what is shown: look is here for look for ～ only.
+        let search = related_groups("search");
+        let look = search.iter().flat_map(|g| &g.members).find(|m| m.word == "look").unwrap();
+        assert_eq!(look.usages.iter().map(|u| u.pattern.as_str()).collect::<Vec<_>>(), vec!["look for ～"]);
     }
 
     /// An origin is written for an idiom of the bank, as a finished sentence.
