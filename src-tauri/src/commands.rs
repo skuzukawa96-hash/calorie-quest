@@ -316,11 +316,173 @@ fn kcal_rates() -> KcalRates {
 
 /* ---------- core logic (testable without Tauri) ---------- */
 
+/// The senses of a gloss, so 聞く and 聞く、聞こえる share one: split at 、 and the like, notes in
+/// parentheses dropped ("(肉に)汁をかける" is 汁をかける).
+fn senses(ja: &str) -> Vec<String> {
+    ja.split(['、', '，', ',', ';', '；', '/', '／'])
+        .map(|s| {
+            let mut plain = String::new();
+            let mut depth = 0;
+            for c in s.chars() {
+                match c {
+                    '（' | '(' => depth += 1,
+                    '）' | ')' => depth -= 1,
+                    _ if depth == 0 => plain.push(c),
+                    _ => {}
+                }
+            }
+            plain.trim().to_string()
+        })
+        .filter(|s| !s.is_empty())
+        .collect()
+}
+
+fn share_a_sense(a: &str, b: &str) -> bool {
+    let sb = senses(b);
+    senses(a).iter().any(|s| sb.contains(s))
+}
+
+/// Whether two glosses may mean nearly the same: a sense in common, a kanji in common (始める /
+/// 開始する, 大きい / 巨大な) or kana senses that begin alike (ぶつかる / ぶつける). Wrong options are
+/// kept away from the answer's meaning this way, so that none is a second right answer or one
+/// only near, like 激怒した for angry (怒った). Suffix-like kanji (～的な, ～性, ～化) do not count.
+fn meanings_close(a: &str, b: &str) -> bool {
+    let kanji = |s: &str| -> std::collections::HashSet<char> {
+        s.chars()
+            .filter(|c| ('\u{4E00}'..='\u{9FFF}').contains(c) && !['的', '性', '化'].contains(c))
+            .collect()
+    };
+    if !kanji(a).is_disjoint(&kanji(b)) {
+        return true;
+    }
+    let is_kana = |c: char| ('\u{3041}'..='\u{30FF}').contains(&c);
+    let sb = senses(b);
+    senses(a).iter().any(|x| {
+        sb.iter().any(|y| {
+            x == y || {
+                let common = x.chars().zip(y.chars()).take_while(|(p, q)| p == q).count();
+                common >= 2 && x.chars().next().is_some_and(is_kana)
+            }
+        })
+    })
+}
+
+fn levenshtein(a: &str, b: &str) -> usize {
+    let b: Vec<char> = b.chars().collect();
+    let mut row: Vec<usize> = (0..=b.len()).collect();
+    for (i, ca) in a.chars().enumerate() {
+        let mut prev = row[0];
+        row[0] = i + 1;
+        for (j, cb) in b.iter().enumerate() {
+            let cur = row[j + 1];
+            row[j + 1] = if ca == *cb { prev } else { 1 + prev.min(row[j]).min(row[j + 1]) };
+            prev = cur;
+        }
+    }
+    row[b.len()]
+}
+
+/// Words a learner may take for one another by their spelling: house / horse, desert / dessert,
+/// adapt / adopt. One letter apart (two for long words), single words of four letters or more.
+fn spelled_alike(a: &str, b: &str) -> bool {
+    let (a, b) = (a.to_lowercase(), b.to_lowercase());
+    if a == b || a.contains([' ', '-']) || b.contains([' ', '-']) {
+        return false;
+    }
+    let (la, lb) = (a.chars().count(), b.chars().count());
+    if la.min(lb) < 4 || la.abs_diff(lb) > 2 {
+        return false;
+    }
+    let d = levenshtein(&a, &b);
+    d == 1 || (d == 2 && la.min(lb) >= 7)
+}
+
+/// A word question's wrong meanings, all of its part of speech: 勝つ (win) against 野球 and
+/// ハイキング is no question, the nouns rule themselves out. Words it is a near synonym of (its
+/// 類似表現 groups) are left out. Up to two come from the words it is
+/// confused with (its set in word-confusables.json, then words spelt alike: 負ける for win, 馬 for
+/// house), the rest from its own group, then its genre, then any word of the part of speech, single
+/// words before compounds when it is one. None when the question has no part of speech.
+fn word_distractors(conn: &Connection, q: &Question) -> rusqlite::Result<Option<Vec<String>>> {
+    struct Candidate {
+        en: String,
+        ja: String,
+        group: String,
+        category: String,
+        tier: String,
+    }
+    let pos: Option<String> =
+        conn.query_row("SELECT pos FROM questions WHERE id = ?1", params![q.id], |r| r.get(0))?;
+    let Some(pos) = pos else {
+        return Ok(None);
+    };
+    let mut stmt = conn.prepare_cached(
+        "SELECT en, ja, word_group, category, tier FROM questions \
+         WHERE kind = 'word' AND pos = ?1 AND id != ?2 AND ja != ?3",
+    )?;
+    let mut candidates: Vec<Candidate> = stmt
+        .query_map(params![pos, q.id, q.ja], |r| {
+            Ok(Candidate { en: r.get(0)?, ja: r.get(1)?, group: r.get(2)?, category: r.get(3)?, tier: r.get(4)? })
+        })?
+        .collect::<Result<_, _>>()?;
+    shuffle(&mut candidates);
+
+    let confused: Vec<String> = db::confusables().get(&q.en.to_lowercase()).cloned().unwrap_or_default();
+    // Words of its 類似表現 groups are near in meaning (学ぶ is no wrong answer for study), unless
+    // the pair is one of the confusable ones set side by side on purpose (lend / borrow).
+    let near: Vec<String> = db::related_words(&q.en.to_lowercase())
+        .into_iter()
+        .filter(|w| !confused.contains(w))
+        .collect();
+    let mut picked: Vec<String> = Vec::new();
+    // One sense per English word: change is not asked against both of charge's (請求する, 充電する).
+    let mut picked_en: Vec<String> = Vec::new();
+    // `checked`: the pair was set side by side by hand (a confusable set: 上がる / 上げる for rise and
+    // raise), so only a shared sense rules it out. Anything else must keep clear of the meaning,
+    // even in the word's own group: 激怒した is no wrong answer for angry (怒った).
+    let mut take = |fits: &dyn Fn(&Candidate) -> bool, checked: bool, up_to: usize| {
+        for c in &candidates {
+            if picked.len() >= up_to {
+                break;
+            }
+            // The same English in another sense (pass: 通り過ぎる / 合格する) is no wrong answer.
+            if !fits(c)
+                || c.en.eq_ignore_ascii_case(&q.en)
+                || near.contains(&c.en.to_lowercase())
+                || picked_en.contains(&c.en.to_lowercase())
+                || share_a_sense(&c.ja, &q.ja)
+                || picked.iter().any(|p| share_a_sense(p, &c.ja))
+                || (!checked && meanings_close(&c.ja, &q.ja))
+            {
+                continue;
+            }
+            picked.push(c.ja.clone());
+            picked_en.push(c.en.to_lowercase());
+        }
+    };
+    take(&|c| confused.contains(&c.en.to_lowercase()), true, 2);
+    take(&|c| spelled_alike(&c.en, &q.en), false, 2);
+    take(&|c| c.group == q.group, false, 3);
+    take(&|c| c.category == q.category, false, 3);
+    take(&|c| c.tier == q.tier, false, 3);
+    take(&|_| true, false, 3);
+    // A part of speech too small to keep clear of the meaning: a shared sense is still out.
+    take(&|_| true, true, 3);
+    Ok(Some(picked))
+}
+
 /// Three plausible wrong translations, taken from the tightest semantic circle that has enough
 /// members: same fine-grained group → same genre → same kind → anything. Picking from the same
 /// group is what makes the quiz worth doing: for "salt" the alternatives are other seasonings,
-/// not a random animal.
+/// not a random animal. Word questions keep to their part of speech (`word_distractors`).
 fn japanese_distractors(conn: &Connection, q: &Question) -> rusqlite::Result<Vec<String>> {
+    if q.kind == "word" {
+        if let Some(opts) = word_distractors(conn, q)? {
+            if opts.len() >= 3 {
+                return Ok(opts);
+            }
+        }
+    }
     let mut opts: Vec<String> = Vec::new();
 
     let mut fill = |sql: &str, field: &str| -> rusqlite::Result<()> {
@@ -1665,25 +1827,112 @@ mod tests {
         assert_eq!(counts.iter().map(|p| p.total).sum::<i64>(), singles, "every word counts under one part of speech");
     }
 
+    fn question_by_key(c: &Connection, key: &str) -> Question {
+        let qid = question_id(c, key);
+        c.query_row(&format!("SELECT {Q_COLS} FROM questions q WHERE q.id = ?1"), params![qid], db::row_to_question)
+            .unwrap()
+    }
+
+    /// Meaning (Japanese) → the parts of speech of the word questions that have it.
+    fn pos_of_meanings(c: &Connection) -> HashMap<String, Vec<String>> {
+        let mut stmt = c.prepare("SELECT ja, pos FROM questions WHERE kind = 'word'").unwrap();
+        let rows: Vec<(String, String)> =
+            stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?))).unwrap().collect::<Result<_, _>>().unwrap();
+        let mut out: HashMap<String, Vec<String>> = HashMap::new();
+        for (ja, pos) in rows {
+            out.entry(ja).or_default().push(pos);
+        }
+        out
+    }
+
     #[test]
     fn distractors_come_from_the_same_semantic_group() {
         let c = conn();
-        let qid = question_id(&c, "w072"); // salt / 塩, group 調味料
-        let q = c
-            .query_row(&format!("SELECT {Q_COLS} FROM questions q WHERE q.id = ?1"), params![qid], db::row_to_question)
-            .unwrap();
+        let q = question_by_key(&c, "w072"); // salt / 塩, group 調味料
         assert_eq!(q.group, "調味料");
         let group_meanings: Vec<String> = {
             let mut stmt = c.prepare("SELECT ja FROM questions WHERE word_group = ?1").unwrap();
             stmt.query_map(params![q.group], |r| r.get(0)).unwrap().collect::<Result<_, _>>().unwrap()
         };
-        // Repeat: the picks are random, every draw must stay inside the group.
+        let meanings = pos_of_meanings(&c);
+        // Repeat: the picks are random. A word spelt like salt may come in, the rest are seasonings.
         for _ in 0..20 {
             let opts = japanese_distractors(&c, &q).unwrap();
             assert_eq!(opts.len(), 3);
+            assert!(opts.iter().filter(|o| group_meanings.contains(o)).count() >= 2, "{opts:?}");
             for o in &opts {
-                assert!(group_meanings.contains(o), "'{o}' is not a 調味料 meaning");
+                assert!(meanings[o].iter().any(|p| p == "noun"), "'{o}' is not a noun's meaning");
                 assert_ne!(o, &q.ja);
+            }
+        }
+    }
+
+    /// win (勝つ) was once asked against 野球 / ハイキング / サーフィン: a verb among nouns answers
+    /// itself. Its options are verbs, and lose, the word it is confused with, is among them.
+    #[test]
+    fn a_verb_is_asked_against_verbs_and_the_word_it_is_confused_with() {
+        let c = conn();
+        let meanings = pos_of_meanings(&c);
+        let win = c
+            .query_row("SELECT key FROM questions WHERE kind = 'word' AND en = 'win'", [], |r| r.get::<_, String>(0))
+            .unwrap();
+        let q = question_by_key(&c, &win);
+        let lose: String =
+            c.query_row("SELECT ja FROM questions WHERE kind = 'word' AND en = 'lose'", [], |r| r.get(0)).unwrap();
+        for _ in 0..10 {
+            let opts = japanese_distractors(&c, &q).unwrap();
+            assert_eq!(opts.len(), 3);
+            assert!(opts.contains(&lose), "{opts:?}");
+            for o in &opts {
+                assert!(meanings[o].iter().any(|p| p == "verb"), "'{o}' is not a verb's meaning ({opts:?})");
+            }
+        }
+    }
+
+    /// Every word question, whatever its part of speech, is asked against three meanings of words of
+    /// that part of speech, none of which shares a sense with the answer or with another option.
+    #[test]
+    fn word_options_keep_to_the_part_of_speech() {
+        let c = conn();
+        let meanings = pos_of_meanings(&c);
+        let mut stmt = c.prepare("SELECT key, pos FROM questions WHERE kind = 'word' ORDER BY id").unwrap();
+        let keys: Vec<(String, String)> =
+            stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?))).unwrap().collect::<Result<_, _>>().unwrap();
+        let mut bad = Vec::new();
+        // Every verb, adjective and adverb, and a spread of the nouns (there are thousands).
+        for (i, (key, pos)) in keys.iter().enumerate() {
+            if pos == "noun" && i % 9 != 0 {
+                continue;
+            }
+            let q = question_by_key(&c, key);
+            let opts = japanese_distractors(&c, &q).unwrap();
+            let wrong_pos = opts.iter().any(|o| !meanings.get(o).is_some_and(|ps| ps.contains(pos)));
+            let clash = opts.iter().any(|o| share_a_sense(o, &q.ja))
+                || opts.iter().enumerate().any(|(i, a)| opts[i + 1..].iter().any(|b| share_a_sense(a, b)));
+            if opts.len() != 3 || wrong_pos || clash {
+                bad.push(format!("{} {} ({pos}): {opts:?}", q.en, q.ja));
+            }
+        }
+        assert!(bad.is_empty(), "{} word questions with bad options:\n{}", bad.len(), bad.join("\n"));
+    }
+
+    /// Prints the options of a few words, to look over by eye:
+    /// `cargo test show_word_options -- --ignored --nocapture`, or WORDS="win,happy" for others.
+    #[test]
+    #[ignore]
+    fn show_word_options() {
+        let c = conn();
+        let words = std::env::var("WORDS").unwrap_or_else(|_| "win,salt,happy,quickly,house,buy,angry,bored,run".into());
+        for w in words.split(',') {
+            let keys: Vec<String> = {
+                let mut stmt = c.prepare("SELECT key FROM questions WHERE kind = 'word' AND en = ?1").unwrap();
+                stmt.query_map(params![w.trim()], |r| r.get(0)).unwrap().collect::<Result<_, _>>().unwrap()
+            };
+            for key in keys {
+                let q = question_by_key(&c, &key);
+                for _ in 0..3 {
+                    println!("{} {} [{}] → {:?}", q.en, q.ja, q.group, japanese_distractors(&c, &q).unwrap());
+                }
             }
         }
     }

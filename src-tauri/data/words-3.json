@@ -114,7 +114,7 @@
   {"key":"w616","kind":"word","difficulty":"low","category":"気持ち・性格","group":"感情","en":"confident","ja":"自信のある","modes":["choice","typing","speaking"]},
   {"key":"w617","kind":"word","difficulty":"low","category":"気持ち・性格","group":"感情","en":"disappointed","ja":"がっかりした","modes":["choice","typing","speaking"]},
   {"key":"w618","kind":"word","difficulty":"low","category":"気持ち・性格","group":"感情","en":"curious","ja":"好奇心の強い","modes":["choice","typing","speaking"]},
-  {"key":"w619","kind":"word","difficulty":"low","category":"気持ち・性格","group":"感情","en":"embarrassed","ja":"恥ずかしい","modes":["choice","typing","speaking"]},
+  {"key":"w619","kind":"word","difficulty":"low","category":"気持ち・性格","group":"感情","en":"embarrassed","ja":"（人が）恥ずかしい思いをした","modes":["choice","typing","speaking"]},
   {"key":"w620","kind":"word","difficulty":"low","category":"気持ち・性格","group":"性格","en":"serious","ja":"まじめな、深刻な","modes":["choice","typing","speaking"]},
   {"key":"w621","kind":"word","difficulty":"low","category":"気持ち・性格","group":"性格","en":"generous","ja":"気前のよい","modes":["choice","typing","speaking"]},
   {"key":"w622","kind":"word","difficulty":"low","category":"気持ち・性格","group":"性格","en":"patient","ja":"忍耐強い","modes":["choice","typing","speaking"]},

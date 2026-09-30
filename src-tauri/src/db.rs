@@ -63,6 +63,11 @@ const TIERS_JSON: &str = include_str!("../data/tiers.json");
 /// what the whole means (average deviation a noun, sign up a verb, duty-free an adjective). The 英単語
 /// tab narrows by it; the recipe sorts and filters its words by it.
 const WORD_POS_JSON: &str = include_str!("../data/word-pos.json");
+/// Sets of words a learner mixes up although they mean different things: opposites (win / lose),
+/// the two sides of one act (lend / borrow), -ed and -ing (bored / boring), look-alikes (desert /
+/// dessert). A word question's wrong options come from its set first, so the quiz asks for the
+/// difference instead of offering options that rule themselves out.
+const WORD_CONFUSABLES_JSON: &str = include_str!("../data/word-confusables.json");
 
 pub const TIERS: [&str; 6] = ["word", "compound", "grammar", "idiom", "phrase", "example"];
 pub const PARTS_OF_SPEECH: [&str; 4] = ["noun", "verb", "adjective", "adverb"];
@@ -71,6 +76,28 @@ pub const PARTS_OF_SPEECH: [&str; 4] = ["noun", "verb", "adjective", "adverb"];
 pub fn word_pos() -> &'static HashMap<String, String> {
     static TABLE: std::sync::OnceLock<HashMap<String, String>> = std::sync::OnceLock::new();
     TABLE.get_or_init(|| serde_json::from_str(WORD_POS_JSON).expect("data/word-pos.json must be a valid JSON object"))
+}
+
+/// English (lowercase) → the other words of every set in word-confusables.json it belongs to.
+pub fn confusables() -> &'static HashMap<String, Vec<String>> {
+    static TABLE: std::sync::OnceLock<HashMap<String, Vec<String>>> = std::sync::OnceLock::new();
+    TABLE.get_or_init(|| {
+        let sets: Vec<Vec<String>> =
+            serde_json::from_str(WORD_CONFUSABLES_JSON).expect("data/word-confusables.json must be a JSON array of arrays");
+        let mut out: HashMap<String, Vec<String>> = HashMap::new();
+        for set in sets {
+            let set: Vec<String> = set.iter().map(|w| w.to_lowercase()).collect();
+            for w in &set {
+                let others = out.entry(w.clone()).or_default();
+                for o in &set {
+                    if o != w && !others.contains(o) {
+                        others.push(o.clone());
+                    }
+                }
+            }
+        }
+        out
+    })
 }
 
 fn tier_overrides() -> &'static HashMap<String, String> {
@@ -651,6 +678,21 @@ fn related_seeds() -> &'static Vec<RelatedSeed> {
     })
 }
 
+/// The other words of every 類似表現 group `key` (lowercase) is in: near synonyms (study / learn,
+/// big / large / huge) and pairs told apart there (lend / borrow).
+pub fn related_words(key: &str) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for g in related_seeds().iter().filter(|g| g.members.iter().any(|m| m.word.to_lowercase() == key)) {
+        for m in &g.members {
+            let w = m.word.to_lowercase();
+            if w != key && !out.contains(&w) {
+                out.push(w);
+            }
+        }
+    }
+    out
+}
+
 /// The groups `key` (lowercase) belongs to, each member with the patterns or the sentence that
 /// shows how it is used. The member that is `key` itself carries only its nuance.
 pub fn related_groups(key: &str) -> Vec<crate::models::RelatedGroup> {
@@ -811,8 +853,9 @@ const TOO_COMMON_FOR_RELATED: &[&str] =
 const MAX_SLOT_WORDS: usize = 6;
 /// Words ending in -ing that are no verb's -ing (the "-thing" words are left out as well).
 const NOT_ING: &[&str] = &["morning", "evening", "ceiling", "during", "string", "spring", "sibling", "pudding", "awning", "darling"];
-/// Words after "to" that read as verbs by their gloss but are places to go ("commute to work").
-const NOUNS_AFTER_TO: &[&str] = &["work", "school", "bed", "class", "church", "court"];
+/// Words after "to" that read as verbs by their gloss but are places to go ("commute to work") or
+/// nouns there ("due to rain", "from store to store").
+const NOUNS_AFTER_TO: &[&str] = &["work", "school", "bed", "class", "church", "court", "rain", "store"];
 /// Adverbs that may stand between two words of a pattern ("get along well with", "is very good
 /// at"), besides the words ending in -ly ("listen carefully to").
 const ADVERBS: &[&str] = &[
@@ -1199,12 +1242,30 @@ pub fn dictionary(conn: &Connection) -> rusqlite::Result<HashMap<String, String>
         // phrase: "doggy bag" means 持ち帰り用の袋, but "doggy" on its own does not, so the words
         // inside it are never given the phrase's meaning. The frontend finds phrases in a sentence
         // and shows their meaning alongside each word's own.
-        let mut stmt = conn.prepare("SELECT en, ja FROM questions WHERE kind IN ('word', 'idiom')")?;
+        let mut stmt = conn.prepare("SELECT en, ja FROM questions WHERE kind IN ('word', 'idiom') ORDER BY id")?;
         let rows = stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?;
+        let mut asked: HashMap<String, Vec<String>> = HashMap::new();
         for row in rows {
             let (en, ja) = row?;
-            // Question data wins over the glossary: it is the vocabulary being studied.
-            map.insert(en.to_lowercase(), ja);
+            let senses = asked.entry(en.to_lowercase()).or_default();
+            for s in ja.split('、') {
+                if !senses.iter().any(|x| x == s) {
+                    senses.push(s.to_string());
+                }
+            }
+        }
+        // Question data comes first: it is the vocabulary being studied. A word asked in two senses
+        // (right: 右 / 正しい) keeps both, and senses only the glossary has (like: 〜のような) follow,
+        // so a word in a sentence shows every meaning it may have there.
+        for (key, mut senses) in asked {
+            if let Some(extra) = map.get(&key) {
+                for s in extra.split('、') {
+                    if !senses.iter().any(|x| x == s) {
+                        senses.push(s.to_string());
+                    }
+                }
+            }
+            map.insert(key, senses.join("、"));
         }
     }
 
@@ -1380,6 +1441,7 @@ mod tests {
                     && n != "idiom-origins.json"
                     && n != "word-related.json"
                     && n != "word-pos.json"
+                    && n != "word-confusables.json"
             })
             .count();
         assert_eq!(
@@ -2065,6 +2127,41 @@ mod tests {
         }
         missed.sort();
         assert!(missed.is_empty(), "{} patterns not found in their sentence:\n{}", missed.len(), missed.join("\n"));
+    }
+
+    /// Every word of a confusable set is asked as a word question, and two of one part of speech
+    /// never share a sense: each is offered as a wrong answer for the other.
+    #[test]
+    fn confusable_words_are_asked_and_mean_different_things() {
+        let senses = |ja: &str| -> Vec<String> {
+            ja.split('、')
+                .map(|s| s.split(['（', '）']).enumerate().filter(|(i, _)| i % 2 == 0).map(|(_, p)| p).collect::<String>())
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect()
+        };
+        let mut by_en: HashMap<String, Vec<(String, String)>> = HashMap::new();
+        for q in load_seed().questions.into_iter().filter(|q| q.kind == "word") {
+            let pos = word_pos()[&q.key].clone();
+            by_en.entry(q.en.to_lowercase()).or_default().push((q.ja, pos));
+        }
+        let sets: Vec<Vec<String>> = serde_json::from_str(WORD_CONFUSABLES_JSON).unwrap();
+        assert!(sets.len() > 50, "only {} sets", sets.len());
+        for set in &sets {
+            assert!(set.len() >= 2, "{set:?}: a set of one");
+            for (i, a) in set.iter().enumerate() {
+                let qa = by_en.get(&a.to_lowercase()).unwrap_or_else(|| panic!("{a} ({set:?}) is not asked as a word"));
+                for b in &set[i + 1..] {
+                    let qb = &by_en[&b.to_lowercase()];
+                    for (ja_a, pos_a) in qa {
+                        for (ja_b, pos_b) in qb.iter().filter(|(_, p)| p == pos_a) {
+                            let (sa, sb) = (senses(ja_a), senses(ja_b));
+                            assert!(!sa.iter().any(|s| sb.contains(s)), "{a} ({ja_a}) and {b} ({ja_b}) share a meaning ({pos_b})");
+                        }
+                    }
+                }
+            }
+        }
     }
 
     /// A saved word is sorted by what it is: a bank word by its question (watch by the meaning

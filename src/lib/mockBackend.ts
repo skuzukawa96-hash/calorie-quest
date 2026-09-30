@@ -11,6 +11,7 @@ import wordUsages from "../../src-tauri/data/word-usage.json";
 import idiomOrigins from "../../src-tauri/data/idiom-origins.json";
 import wordPos from "../../src-tauri/data/word-pos.json";
 import relatedSeeds from "../../src-tauri/data/word-related.json";
+import confusableSets from "../../src-tauri/data/word-confusables.json";
 import { expandDictionary, lemmas, tokenize, type Dictionary } from "./dictionary";
 import { answerWordCount, scoresPerWord } from "./scoring";
 import type {
@@ -170,7 +171,7 @@ const seedQuestions: SeedQuestion[] = [
   ...Object.entries(packModules)
     .filter(
       ([path]) =>
-        !/\/(questions|glossary|grammar-notes|pronunciations|word-parts|tiers|word-examples|word-usage|idiom-origins|word-related|word-pos)\.json$/.test(
+        !/\/(questions|glossary|grammar-notes|pronunciations|word-parts|tiers|word-examples|word-usage|idiom-origins|word-related|word-pos|word-confusables)\.json$/.test(
           path,
         ),
     )
@@ -366,8 +367,127 @@ function ticketsAvailable(): number {
   return state.tickets.filter((t) => !t.usedAt).length;
 }
 
+/** Mirrors commands::senses: 聞く、聞こえる is 聞く and 聞こえる; notes in parentheses dropped. */
+function glossSenses(ja: string): string[] {
+  return ja
+    .split(/[、，,;；/／]/)
+    .map((s) => s.replace(/（[^）]*）|\([^)]*\)/g, "").trim())
+    .filter(Boolean);
+}
+
+function shareASense(a: string, b: string): boolean {
+  const sb = glossSenses(b);
+  return glossSenses(a).some((s) => sb.includes(s));
+}
+
+/** Mirrors commands::meanings_close: a sense, a kanji or the first two kana in common. */
+function meaningsClose(a: string, b: string): boolean {
+  const kanji = (s: string) => new Set([...s].filter((c) => /[\u4e00-\u9fff]/.test(c) && !"的性化".includes(c)));
+  const kb = kanji(b);
+  if ([...kanji(a)].some((c) => kb.has(c))) return true;
+  const sb = glossSenses(b);
+  return glossSenses(a).some((x) =>
+    sb.some((y) => {
+      if (x === y) return true;
+      let common = 0;
+      while (common < x.length && common < y.length && x[common] === y[common]) common++;
+      return common >= 2 && /[\u3041-\u30ff]/.test(x[0]);
+    }),
+  );
+}
+
+function levenshtein(a: string, b: string): number {
+  const row = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 0; i < a.length; i++) {
+    let prev = row[0];
+    row[0] = i + 1;
+    for (let j = 0; j < b.length; j++) {
+      const cur = row[j + 1];
+      row[j + 1] = a[i] === b[j] ? prev : 1 + Math.min(prev, row[j], row[j + 1]);
+      prev = cur;
+    }
+  }
+  return row[b.length];
+}
+
+/** Mirrors commands::spelled_alike: house / horse, desert / dessert. */
+function spelledAlike(a: string, b: string): boolean {
+  const [x, y] = [a.toLowerCase(), b.toLowerCase()];
+  if (x === y || /[ -]/.test(x) || /[ -]/.test(y)) return false;
+  if (Math.min(x.length, y.length) < 4 || Math.abs(x.length - y.length) > 2) return false;
+  const d = levenshtein(x, y);
+  return d === 1 || (d === 2 && Math.min(x.length, y.length) >= 7);
+}
+
+/** Mirrors db::confusables: English (lowercase) → the other words of its sets. */
+const confusables = (() => {
+  const out = new Map<string, string[]>();
+  for (const set of confusableSets as string[][]) {
+    const words = set.map((w) => w.toLowerCase());
+    for (const w of words) {
+      const others = out.get(w) ?? [];
+      for (const o of words) if (o !== w && !others.includes(o)) others.push(o);
+      out.set(w, others);
+    }
+  }
+  return out;
+})();
+
+/** Mirrors db::related_words: the other words of every 類似表現 group of `key`. */
+function relatedWords(key: string): string[] {
+  const out: string[] = [];
+  for (const g of relatedSeeds as Array<{ members: Array<{ word: string }> }>) {
+    if (!g.members.some((m) => m.word.toLowerCase() === key)) continue;
+    for (const m of g.members) {
+      const w = m.word.toLowerCase();
+      if (w !== key && !out.includes(w)) out.push(w);
+    }
+  }
+  return out;
+}
+
+/** Mirrors commands::word_distractors: wrong meanings of the same part of speech. */
+function wordDistractors(q: Question): string[] | null {
+  const pos = posOf[q.key];
+  if (!pos) return null;
+  const candidates = shuffle(questions.filter((o) => o.kind === "word" && posOf[o.key] === pos && o.id !== q.id && o.ja !== q.ja));
+  const confused = confusables.get(q.en.toLowerCase()) ?? [];
+  const near = relatedWords(q.en.toLowerCase()).filter((w) => !confused.includes(w));
+  const picked: string[] = [];
+  const pickedEn: string[] = [];
+  const take = (fits: (c: Question) => boolean, checked: boolean, upTo: number) => {
+    for (const c of candidates) {
+      if (picked.length >= upTo) break;
+      if (
+        !fits(c) ||
+        c.en.toLowerCase() === q.en.toLowerCase() ||
+        near.includes(c.en.toLowerCase()) ||
+        pickedEn.includes(c.en.toLowerCase()) ||
+        shareASense(c.ja, q.ja) ||
+        picked.some((p) => shareASense(p, c.ja)) ||
+        (!checked && meaningsClose(c.ja, q.ja))
+      )
+        continue;
+      picked.push(c.ja);
+      pickedEn.push(c.en.toLowerCase());
+    }
+  };
+  take((c) => confused.includes(c.en.toLowerCase()), true, 2);
+  take((c) => spelledAlike(c.en, q.en), false, 2);
+  take((c) => c.group === q.group, false, 3);
+  take((c) => c.category === q.category, false, 3);
+  take((c) => c.tier === q.tier, false, 3);
+  take(() => true, false, 3);
+  take(() => true, true, 3);
+  return picked;
+}
+
 /** Three wrong translations from the tightest semantic circle available; mirrors the Rust side. */
 function japaneseDistractors(q: Question): string[] {
+  if (q.kind === "word") {
+    const opts = wordDistractors(q);
+    if (opts && opts.length >= 3) return opts;
+  }
   const out: string[] = [];
   const pools = [
     questions.filter((o) => o.id !== q.id && o.kind === q.kind && o.group === q.group && o.ja !== q.ja),
@@ -680,7 +800,7 @@ const TOO_COMMON_FOR_RELATED = [
   "big", "small", "little", "large", "fast", "sleep", "rest", "close", "cheap", "expensive", "price", "quiet", "wear", "fix", "hurt", "store", "very", "really",
 ];
 const NOT_ING = ["morning", "evening", "ceiling", "during", "string", "spring", "sibling", "pudding", "awning", "darling"];
-const NOUNS_AFTER_TO = ["work", "school", "bed", "class", "church", "court"];
+const NOUNS_AFTER_TO = ["work", "school", "bed", "class", "church", "court", "rain", "store"];
 const DETERMINERS = ["the", "a", "an", "my", "your", "his", "its", "our", "their", "every", "each"];
 const ADVERBS = [
   "well", "very", "really", "so", "too", "just", "also", "still", "even", "never", "always", "often", "sometimes",
@@ -1154,9 +1274,19 @@ let dictionaryCache: Dictionary | null = null;
 function mockDictionary(): Dictionary {
   if (dictionaryCache) return dictionaryCache;
   const base: Dictionary = { ...(glossary as unknown as Dictionary) };
-  // Multi-word vocabulary and idioms go in whole, as phrases; mirrors db::dictionary.
+  // Multi-word vocabulary and idioms go in whole, as phrases; mirrors db::dictionary: every sense
+  // a word is asked in, then those only the glossary has.
+  const asked = new Map<string, string[]>();
   for (const q of questions) {
-    if (q.kind === "word" || q.kind === "idiom") base[q.en.toLowerCase()] = q.ja;
+    if (q.kind !== "word" && q.kind !== "idiom") continue;
+    const key = q.en.toLowerCase();
+    const senses = asked.get(key) ?? [];
+    for (const s of q.ja.split("、")) if (!senses.includes(s)) senses.push(s);
+    asked.set(key, senses);
+  }
+  for (const [key, senses] of asked) {
+    for (const s of (base[key] ?? "").split("、")) if (s && !senses.includes(s)) senses.push(s);
+    base[key] = senses.join("、");
   }
   const texts = questions.flatMap((q) => [q.en, q.prompt ?? "", q.example ?? "", ...(q.choices ?? [])]);
   dictionaryCache = expandDictionary(base, texts);

@@ -92,6 +92,25 @@ function highlightedPieces(wordPiece: number[], words: string[], target: string 
   return out;
 }
 
+/** The senses of a gloss: 聞く、聞こえる is 聞く and 聞こえる, notes in parentheses dropped. */
+function senses(gloss: string): string[] {
+  return gloss
+    .split(/[、，,;；/／]/)
+    .map((s) => s.replace(/（[^）]*）|\([^)]*\)/g, "").trim())
+    .filter(Boolean);
+}
+
+/**
+ * Whether showing `gloss` would give away `answer`: it is the answer, or has one of its senses (a
+ * word's gloss lists every sense it has, the answer only the one asked).
+ */
+function givesAway(gloss: string, answer: string | null | undefined): boolean {
+  if (!answer) return false;
+  if (gloss === answer) return true;
+  const a = senses(answer);
+  return senses(gloss).some((s) => a.includes(s));
+}
+
 /**
  * Renders an English sentence where every word the dictionary knows shows its meaning on hover
  * (or tap), every English word is read aloud when clicked, and right-clicking one saves it to
@@ -125,7 +144,7 @@ export default function GlossedText({ text, dict, enabled, className, withhold, 
       for (const s of phraseSpans(words, phraseIndexFor(dict))) {
         const gloss = dict[s.key];
         if (!gloss) continue;
-        const k = spans.push({ key: s.key, gloss, hidden: gloss === withhold, idiom: isIdiom(dict, s.key) }) - 1;
+        const k = spans.push({ key: s.key, gloss, hidden: givesAway(gloss, withhold), idiom: isIdiom(dict, s.key) }) - 1;
         for (let i = wordPiece[s.start]; i <= wordPiece[s.end - 1]; i++) spanOf[i] = k;
       }
     }
@@ -200,7 +219,7 @@ export default function GlossedText({ text, dict, enabled, className, withhold, 
           );
         }
         const own = enabled && dict ? lookup(dict, part) : undefined;
-        const gloss = own && own !== withhold ? own : undefined;
+        const gloss = own && !givesAway(own, withhold) ? own : undefined;
         const phrase = span !== null ? spans[span] : undefined;
         if (!gloss && !phrase && !canSpeak && !addToRecipe) {
           return mark ? <span key={i} className={mark.trim()}>{part}</span> : <span key={i}>{part}</span>;

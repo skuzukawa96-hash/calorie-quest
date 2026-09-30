@@ -126,7 +126,7 @@
   {"key":"w1428","kind":"word","difficulty":"low","category":"自然・天気","group":"植物","en":"stem","ja":"茎","modes":["choice","typing","speaking"]},
   {"key":"w1429","kind":"word","difficulty":"low","category":"自然・天気","group":"植物","en":"seed","ja":"種","modes":["choice","typing","speaking"]},
   {"key":"w1430","kind":"word","difficulty":"low","category":"自然・天気","group":"植物","en":"bark","ja":"樹皮","modes":["choice","typing","speaking"]},
-  {"key":"w1431","kind":"word","difficulty":"low","category":"自然・天気","group":"植物","en":"blossom","ja":"花、開花する","modes":["choice","typing","speaking"]},
+  {"key":"w1431","kind":"word","difficulty":"low","category":"自然・天気","group":"植物","en":"blossom","ja":"（木に咲く）花","modes":["choice","typing","speaking"]},
   {"key":"w1432","kind":"word","difficulty":"low","category":"自然・天気","group":"植物","en":"weed","ja":"雑草","modes":["choice","typing","speaking"]},
   {"key":"w1433","kind":"word","difficulty":"low","category":"自然・天気","group":"植物","en":"thorn","ja":"とげ","modes":["choice","typing","speaking"]},
   {"key":"w1434","kind":"word","difficulty":"low","category":"自然・天気","group":"植物","en":"sprout","ja":"芽","modes":["choice","typing","speaking"]},
