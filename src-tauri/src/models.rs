@@ -450,8 +450,12 @@ pub struct RecipeWord {
     pub last_reviewed_at: Option<String>,
     /// Set once the learner has marked the word as learned; such words may be cleared out.
     pub mastered_at: Option<String>,
-    /// noun / verb / adjective / adverb / idiom (`db::recipe_pos`), for sorting and filtering
+    /// noun / verb / adjective / adverb / idiom (`db::recipe_pos`), or usage for a pattern, for
+    /// sorting and filtering
     pub pos: String,
+    /// word (a word, a phrase or an idiom) / usage (a pattern such as "compare A with B", saved
+    /// from 用法; it holds 人 / 原形 / -ing and is not read aloud)
+    pub kind: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -466,6 +470,9 @@ pub struct RecipeWordInput {
     pub example: String,
     #[serde(default)]
     pub example_ja: String,
+    /// "usage" for a pattern saved from 用法; anything else is a word
+    #[serde(default)]
+    pub kind: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]

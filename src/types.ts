@@ -441,16 +441,26 @@ export interface RecipeWord {
   lastReviewedAt?: string | null;
   /** set once the word is marked learned; learned words can be cleared out */
   masteredAt?: string | null;
-  /** its part of speech, or idiom (db::recipe_pos), for sorting and filtering the list */
+  /** its part of speech, or idiom (db::recipe_pos), or usage for a pattern, for sorting and filtering the list */
   pos: RecipePos;
+  /** word (a word, phrase or idiom) / usage (a pattern saved from 用法, never read aloud) */
+  kind: RecipeKind;
 }
 
-/** How a recipe word is sorted: by part of speech, idioms last. */
-export type RecipePos = PartOfSpeech | "idiom";
-export const RECIPE_POS: RecipePos[] = ["noun", "verb", "adjective", "adverb", "idiom"];
-export const RECIPE_POS_LABEL: Record<RecipePos, string> = { ...POS_LABEL, idiom: "慣用句" };
+/**
+ * What a recipe entry is: a word, a phrase or an idiom, or a pattern of 用法 ("compare A with B",
+ * "be afraid of ～"). A pattern holds 人 / 原形 / -ing / ～, which no voice can read.
+ */
+export type RecipeKind = "word" | "usage";
 
-export type RecipeWordInput = Pick<RecipeWord, "word" | "meaning" | "form" | "example" | "exampleJa">;
+/** How a recipe word is sorted: by part of speech, then idioms, then patterns. */
+export type RecipePos = PartOfSpeech | "idiom" | "usage";
+export const RECIPE_POS: RecipePos[] = ["noun", "verb", "adjective", "adverb", "idiom", "usage"];
+export const RECIPE_POS_LABEL: Record<RecipePos, string> = { ...POS_LABEL, idiom: "慣用句", usage: "用法" };
+
+export type RecipeWordInput = Pick<RecipeWord, "word" | "meaning" | "form" | "example" | "exampleJa"> & {
+  kind?: RecipeKind;
+};
 
 /** added: new entry / exists: already listed / restored: was learned, now back in review */
 export type RecipeAddStatus = "added" | "exists" | "restored";

@@ -18,7 +18,8 @@ fn err<E: std::fmt::Display>(e: E) -> String {
 /// The single player, as in `commands.rs`.
 const USER_ID: i64 = 1;
 
-const COLS: &str = "id, word, meaning, form, example, example_ja, added_at, reviews, last_reviewed_at, mastered_at";
+const COLS: &str =
+    "id, word, meaning, form, example, example_ja, added_at, reviews, last_reviewed_at, mastered_at, kind";
 
 /// Long enough for any expression in the bank ("keep your fingers crossed"), short enough that a
 /// stray selection of a whole paragraph is refused rather than saved as one "word".
@@ -27,9 +28,12 @@ const MAX_WORD_CHARS: usize = 60;
 fn row_to_word(r: &Row) -> rusqlite::Result<RecipeWord> {
     let word: String = r.get(1)?;
     let meaning: String = r.get(2)?;
+    let kind: String = r.get(10)?;
     Ok(RecipeWord {
         id: r.get(0)?,
-        pos: crate::db::recipe_pos(&word, &meaning),
+        // A pattern is sorted as a pattern, whatever its verb is.
+        pos: if kind == "usage" { "usage".to_string() } else { crate::db::recipe_pos(&word, &meaning) },
+        kind,
         word,
         meaning,
         form: r.get(3)?,
@@ -93,12 +97,23 @@ pub fn add(conn: &Connection, input: &RecipeWordInput) -> CmdResult<RecipeAddRes
         return Ok(RecipeAddResult { status, entry: load(conn, found.id)? });
     }
 
+    let kind = if input.kind == "usage" { "usage" } else { "word" };
     conn.execute(
-        "INSERT INTO recipe_words (word, meaning, form, example, example_ja, added_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-        params![word, input.meaning.trim(), input.form.trim(), example, input.example_ja.trim(), now_ts()],
+        "INSERT INTO recipe_words (word, meaning, form, example, example_ja, added_at, kind) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+        params![word, input.meaning.trim(), input.form.trim(), example, input.example_ja.trim(), now_ts(), kind],
     )
     .map_err(err)?;
     Ok(RecipeAddResult { status: RecipeAddStatus::Added, entry: load(conn, conn.last_insert_rowid())? })
+}
+
+/// The meanings of every pattern of 用法, for the wrong options when a pattern saved to the recipe
+/// is reviewed: a meaning like 「AとBを比較する」 among nouns would give itself away.
+pub fn usage_meanings() -> Vec<String> {
+    let mut out: Vec<String> =
+        crate::db::word_usages().values().flat_map(|us| us.iter().map(|u| u.ja.clone())).collect();
+    out.sort();
+    out.dedup();
+    out
 }
 
 /// One word reviewed in `mode` ("choice": its meaning picked from four, "typing": the English
@@ -218,6 +233,11 @@ pub fn set_recipe_mastered(state: State<'_, AppState>, id: i64, mastered: bool) 
 }
 
 #[tauri::command]
+pub fn get_usage_meanings() -> Vec<String> {
+    usage_meanings()
+}
+
+#[tauri::command]
 pub fn delete_recipe_words(state: State<'_, AppState>, ids: Vec<i64>) -> CmdResult<usize> {
     let conn = state.db.lock().map_err(err)?;
     delete(&conn, &ids)
@@ -237,7 +257,30 @@ mod tests {
             form: "heard".into(),
             example: example.into(),
             example_ja: if example.is_empty() { String::new() } else { "訳".into() },
+            kind: String::new(),
         }
+    }
+
+    /// A pattern right-clicked in 用法 is saved as one entry, kept apart from words: sorted as a
+    /// pattern, and a word of the same spelling would be another entry.
+    #[test]
+    fn a_pattern_is_saved_as_a_usage() {
+        let c = db::init_in_memory().unwrap();
+        let usage = RecipeWordInput {
+            word: "compare A with B".into(),
+            meaning: "AとBを比較する".into(),
+            form: String::new(),
+            example: "We compared the new model with the old one.".into(),
+            example_ja: "新型を旧型と比較した。".into(),
+            kind: "usage".into(),
+        };
+        let r = add(&c, &usage).unwrap();
+        assert_eq!(r.status, RecipeAddStatus::Added);
+        assert_eq!((r.entry.kind.as_str(), r.entry.pos.as_str()), ("usage", "usage"));
+        assert_eq!(r.entry.word, "compare A with B");
+        let word = add(&c, &input("compare", "")).unwrap().entry;
+        assert_eq!((word.kind.as_str(), word.pos.as_str()), ("word", "verb"));
+        assert!(usage_meanings().contains(&"～を訪れる（to は付けない）".to_string()));
     }
 
     #[test]

@@ -3,6 +3,7 @@
 // in App does the saving and says what happened.
 import { createContext, useContext } from "react";
 import { tokenize } from "./dictionary";
+import type { RecipeKind } from "../types";
 
 export interface RecipeCandidate {
   /** dictionary form, or a whole phrase */
@@ -15,6 +16,8 @@ export interface RecipeCandidate {
   exampleJa: string;
   /** the phrase the word sits in, offered as a second entry ("doggy" in "doggy bag") */
   phrase?: { word: string; meaning: string };
+  /** usage: a pattern right-clicked in 用法, saved whole and never read aloud */
+  kind?: RecipeKind;
 }
 
 export type AddToRecipe = (candidate: RecipeCandidate) => void;

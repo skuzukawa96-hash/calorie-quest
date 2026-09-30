@@ -52,6 +52,7 @@ pub fn run() {
             recipe::review_recipe_word,
             recipe::set_recipe_mastered,
             recipe::delete_recipe_words,
+            recipe::get_usage_meanings,
             speech::speech_capabilities,
             speech::native_synthesize,
             speech::native_recognize,

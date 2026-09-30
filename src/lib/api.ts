@@ -82,6 +82,8 @@ export const api = {
     call<RecipeReviewResult>("review_recipe_word", { id, remembered, mode }),
   setRecipeMastered: (id: number, mastered: boolean) => call<RecipeWord>("set_recipe_mastered", { id, mastered }),
   deleteRecipeWords: (ids: number[]) => call<number>("delete_recipe_words", { ids }),
+  /** the meanings of every pattern of 用法: wrong options for a pattern saved to the recipe */
+  getUsageMeanings: () => call<string[]>("get_usage_meanings"),
   logDebug: (message: string) => call<void>("log_debug", { message }).catch(() => undefined),
 
   // Native speech (Tauri only; the mock backend reports "unavailable").

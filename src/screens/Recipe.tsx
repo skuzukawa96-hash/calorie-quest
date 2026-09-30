@@ -177,7 +177,7 @@ function dictionaryMeanings(dict: Dictionary): string[] {
  * option is right. Two come from the learner's own recipe when it has them, the rest from the
  * dictionary, preferring glosses of a similar length so the answer does not stand out.
  */
-function meaningOptions(word: RecipeWord, words: RecipeWord[], dict: Dictionary | null): string[] {
+function meaningOptions(word: RecipeWord, words: RecipeWord[], dict: Dictionary | null, usagePool: string[]): string[] {
   const picked: string[] = [];
   const taken = new Set(senses(word.meaning));
   const len = word.meaning.length;
@@ -192,7 +192,16 @@ function meaningOptions(word: RecipeWord, words: RecipeWord[], dict: Dictionary 
       ss.forEach((s) => taken.add(s));
     }
   };
-  const own = words.filter((w) => w.id !== word.id && w.meaning).map((w) => w.meaning);
+  // A pattern's meaning (「AとBを比較する」) is asked against other patterns': among nouns it would
+  // stand out.
+  if (word.kind === "usage") {
+    const ownUsages = words.filter((w) => w.id !== word.id && w.kind === "usage" && w.meaning).map((w) => w.meaning);
+    take(ownUsages, 2, near);
+    take(usagePool, 3, near);
+    take(usagePool, 3);
+    return shuffled([...picked, word.meaning]);
+  }
+  const own = words.filter((w) => w.id !== word.id && w.kind !== "usage" && w.meaning).map((w) => w.meaning);
   take(own, 2, near);
   if (dict) {
     take(dictionaryMeanings(dict), 3, near);
@@ -217,9 +226,25 @@ function normalizeAnswer(text: string): string {
  * The saved word or the form it was found in is right, and so is any other English the dictionary
  * glosses exactly the same way ("large" when "big" 大きい was saved).
  */
+/**
+ * A pattern with what fills it taken out, for typing it back: "compare A with B" → "compare with",
+ * "be afraid of ～" → "afraid of". Written in full or without the fillers, it is the same.
+ */
+function patternCore(text: string): string {
+  const bare = text
+    .replace(/[（(][^）)]*[）)]/g, " ")
+    .replace(/～|~|…|人|原形|形容詞|節|-ing/g, " ")
+    .replace(/\b[ABab]\b/g, " ");
+  return normalizeAnswer(bare).replace(/^be /, "");
+}
+
 function typedRight(word: RecipeWord, typed: string, dict: Dictionary | null): boolean {
   const t = normalizeAnswer(typed);
   if (!t) return false;
+  if (word.kind === "usage") {
+    const core = patternCore(typed);
+    return t === normalizeAnswer(word.word) || (core !== "" && core === patternCore(word.word));
+  }
   if ([word.word, word.form].some((w) => w && normalizeAnswer(w) === t)) return true;
   return !!dict && !!word.meaning && (dict[t] ?? lookup(dict, t)) === word.meaning;
 }
@@ -254,6 +279,8 @@ function withGap(word: RecipeWord): string | null {
 export default function Recipe({ onProgress, toast }: Props) {
   const [words, setWords] = useState<RecipeWord[] | null>(null);
   const [dict, setDict] = useState<Dictionary | null>(null);
+  /** the meanings of every pattern of 用法, the wrong options for a pattern in review */
+  const [usagePool, setUsagePool] = useState<string[]>([]);
   const [filter, setFilter] = useState<Filter>("all");
   const [reviewing, setReviewing] = useState<{ target: Target; mode: RecipeReviewMode; queue: RecipeWord[] } | null>(null);
   /** each round of review starts from a fresh component */
@@ -292,6 +319,10 @@ export default function Recipe({ onProgress, toast }: Props) {
     reload().catch((e) => toast(String(e)));
     let alive = true;
     loadDictionary().then((d) => alive && setDict(d));
+    api
+      .getUsageMeanings()
+      .then((p) => alive && setUsagePool(p))
+      .catch(() => undefined);
     const off = onRecipeChanged(() => void reload().catch(() => undefined));
     return () => {
       alive = false;
@@ -337,6 +368,7 @@ export default function Recipe({ onProgress, toast }: Props) {
           queue={reviewing.queue}
           words={words}
           dict={dict}
+          usagePool={usagePool}
           onAgain={(left) => {
             setRound((r) => r + 1);
             // Missed words are back in review now, even those that had been learned.
@@ -581,18 +613,21 @@ export default function Recipe({ onProgress, toast }: Props) {
                         }}
                       >
                         <span className="recipe-word">{w.word}</span>
-                        <button
-                          className="btn-link speak-btn recipe-speak"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            say(w.word);
-                          }}
-                          disabled={!isTtsSupported()}
-                          title="読み上げる"
-                          aria-label={`${w.word} を読み上げる`}
-                        >
-                          🔊
-                        </button>
+                        {/* A pattern (人 / 原形 / ～) has no voice to read it with. */}
+                        {w.kind !== "usage" && (
+                          <button
+                            className="btn-link speak-btn recipe-speak"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              say(w.word);
+                            }}
+                            disabled={!isTtsSupported()}
+                            title="読み上げる"
+                            aria-label={`${w.word} を読み上げる`}
+                          >
+                            🔊
+                          </button>
+                        )}
                         <span className={"recipe-meaning" + (w.meaning ? "" : " muted")}>{w.meaning || NO_MEANING}</span>
                         {w.masteredAt && (
                           <span className="recipe-check" title="習得済み" aria-label="習得済み">
@@ -674,6 +709,7 @@ function RecipeReview({
   queue,
   words,
   dict,
+  usagePool,
   onAgain,
   onDone,
   onProgress,
@@ -686,6 +722,7 @@ function RecipeReview({
   /** the whole recipe, whose meanings serve as wrong options */
   words: RecipeWord[];
   dict: Dictionary | null;
+  usagePool: string[];
   onAgain: (left: RecipeWord[]) => void;
   onDone: () => void;
   onProgress: () => void;
@@ -705,11 +742,12 @@ function RecipeReview({
   const current = queue[idx];
   const finished = idx >= queue.length;
   // Drawn once per card: a word saved mid-review reloads the recipe, and that must not reshuffle
-  // the options under the learner. Only the dictionary arriving late redraws (the first card).
+  // the options under the learner. Only the dictionary or the patterns' meanings arriving late
+  // redraw (the first card).
   const options = useMemo(
-    () => (current && mode === "choice" ? meaningOptions(current, words, dict) : []),
+    () => (current && mode === "choice" ? meaningOptions(current, words, dict, usagePool) : []),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [current, mode, dict === null],
+    [current, mode, dict === null, usagePool.length === 0],
   );
   const gapped = useMemo(() => (current ? withGap(current) : null), [current]);
   // The same explanation a word question shows under its answer: how the word is built, sentences
@@ -731,7 +769,10 @@ function RecipeReview({
   useEffect(() => {
     if (!current) return;
     // Writing the English: hearing it first would give the answer away.
-    if (mode === "choice") say(current.word);
+    // A pattern (人 / 原形 / ～) is not read aloud.
+    if (mode === "choice") {
+      if (current.kind !== "usage") say(current.word);
+    }
     else input.current?.focus();
   }, [current, mode]);
   useEffect(() => {
@@ -761,7 +802,7 @@ function RecipeReview({
           paidNote: correct && !r.counted && firstToday("paid"),
         });
         if (r.kcalEarned > 0) onProgress();
-        if (mode === "typing") window.setTimeout(() => say(current.word), 380);
+        if (mode === "typing" && current.kind !== "usage") window.setTimeout(() => say(current.word), 380);
       } catch (e) {
         toast(String(e));
       } finally {
@@ -915,7 +956,11 @@ function RecipeReview({
       {mode === "choice" ? (
         <div className="flash" key={current.id}>
           <div className="prompt-label">この英語の意味は？</div>
-          <button className="flash-word" onClick={() => say(current.word)} title="クリックで発音">
+          <button
+            className="flash-word"
+            onClick={() => current.kind !== "usage" && say(current.word)}
+            title={current.kind === "usage" ? undefined : "クリックで発音"}
+          >
             {current.word}
           </button>
           {example}
@@ -952,6 +997,9 @@ function RecipeReview({
         >
           <div className="prompt-label">この意味の英語は？</div>
           <div className="flash-meaning">{current.meaning}</div>
+          {current.kind === "usage" && (
+            <div className="muted small">用法の「～・人・A・B・原形・-ing」などの部分は書かなくてもかまいません</div>
+          )}
           {answered ? example : gapped && <div className="flash-example">{gapped}</div>}
           {current.exampleJa && <div className="muted">{current.exampleJa}</div>}
           <input
@@ -994,9 +1042,11 @@ function RecipeReview({
             <div>
               <span className="label">正解</span> <strong>{current.word}</strong>
               {shownForm(current) && <span className="muted">（{shownForm(current)}）</span>}　{current.meaning}
-              <button className="btn-link" onClick={() => say(current.word)} disabled={!isTtsSupported()}>
-                🔊 もう一度聞く
-              </button>
+              {current.kind !== "usage" && (
+                <button className="btn-link" onClick={() => say(current.word)} disabled={!isTtsSupported()}>
+                  🔊 もう一度聞く
+                </button>
+              )}
             </div>
             {notes?.word === current.word && notes.notes && (
               <WordNotesPanel notes={notes.notes} word={current.word} meaning={current.meaning} dict={dict} gloss />

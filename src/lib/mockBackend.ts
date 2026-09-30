@@ -41,6 +41,7 @@ import type {
   PartOfSpeech,
   Question,
   RecipeAddResult,
+  RecipeKind,
   RecipePos,
   RecipeWord,
   RecipeWordInput,
@@ -1598,7 +1599,7 @@ function mockDictionary(): Dictionary {
 /* ---------- お菓子作りレシピ (mirrors recipe.rs) ---------- */
 
 /** A recipe word as the mock keeps it; its part of speech is worked out when it is handed out. */
-type StoredRecipeWord = Omit<RecipeWord, "pos">;
+type StoredRecipeWord = Omit<RecipeWord, "pos" | "kind"> & { kind?: RecipeKind };
 
 /** Mirrors db::pos_from_gloss: 走る a verb, 美しい an adjective, ゆっくりと an adverb, else a noun. */
 function posFromGloss(ja: string): PartOfSpeech {
@@ -1630,7 +1631,12 @@ function recipePos(word: string, meaning: string): RecipePos {
   return posFromGloss(meaning);
 }
 
-const withPos = (w: StoredRecipeWord): RecipeWord => ({ ...w, pos: recipePos(w.word, w.meaning) });
+const withPos = (w: StoredRecipeWord): RecipeWord => ({
+  ...w,
+  kind: w.kind ?? "word",
+  // Mirrors recipe::row_to_word: a pattern is sorted as a pattern.
+  pos: w.kind === "usage" ? "usage" : recipePos(w.word, w.meaning),
+});
 
 function recipeWord(id: number): StoredRecipeWord {
   const w = state.recipe.find((x) => x.id === id);
@@ -1666,6 +1672,7 @@ function addRecipeWord(input: RecipeWordInput): RecipeAddResult {
     reviews: 0,
     lastReviewedAt: null,
     masteredAt: null,
+    kind: input.kind === "usage" ? "usage" : "word",
   };
   state.recipe.push(entry);
   save();
@@ -1872,6 +1879,9 @@ export async function mockInvoke<T>(cmd: string, args: Record<string, unknown>):
       save();
       return withPos(w) as T;
     }
+    case "get_usage_meanings":
+      // Mirrors recipe::usage_meanings.
+      return [...new Set((wordUsages as WordUsage[]).map((u) => u.ja))].sort() as T;
     case "delete_recipe_words": {
       const ids = new Set((args.ids as number[]).map(Number));
       const before = state.recipe.length;

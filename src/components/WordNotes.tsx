@@ -1,6 +1,7 @@
 import { Fragment, useState } from "react";
 import GlossedText from "./GlossedText";
 import type { Dictionary } from "../lib/dictionary";
+import { useAddToRecipe } from "../lib/recipe";
 import { isTtsSupported, speak } from "../lib/speech";
 import type { RelatedGroup, UsedWord, WordNotes, WordPart, WordUsage } from "../types";
 
@@ -22,11 +23,34 @@ function SpeakButton({ text }: { text: string }) {
 
 /** One pattern: [compare A with B：AとBを比較する], then a sentence using it with its Japanese. */
 function UsageItem({ u, word, dict, gloss }: { u: WordUsage; word: string; dict: Dictionary | null; gloss: boolean }) {
+  // Right-clicking the pattern saves it whole to the recipe, like a phrase: "compare A with B" is
+  // what is worth learning, not "compare" alone. It is not read aloud (人, 原形, ～ have no sound).
+  const addToRecipe = useAddToRecipe();
   return (
     <div className="usage">
       <div className="usage-head">
         <span className="usage-bracket">
-          <b>{u.pattern}</b>
+          <b
+            title={addToRecipe ? "右クリックでこの用法をレシピに登録" : undefined}
+            onContextMenu={
+              addToRecipe
+                ? (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    addToRecipe({
+                      word: u.pattern,
+                      meaning: u.ja,
+                      form: "",
+                      example: u.example,
+                      exampleJa: u.exampleJa,
+                      kind: "usage",
+                    });
+                  }
+                : undefined
+            }
+          >
+            {u.pattern}
+          </b>
           <span className="usage-sep">：</span>
           {u.ja}
         </span>
