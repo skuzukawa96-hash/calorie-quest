@@ -366,18 +366,17 @@ main {
   margin: 2px 0 10px;
 }
 .chip.chip-main {
-  font-size: 14px;
-  font-weight: 700;
-  padding: 6px 16px;
-  border-radius: 10px;
-  border: 1.5px solid var(--choco-light);
-  background: var(--cream-2);
-  color: var(--choco);
+  font-weight: 600;
+  padding: 4px 14px;
+  border-radius: 8px;
+  border: 1px solid #f3c5d4;
+  background: #fff5f8;
+  color: #a4506f;
 }
 .chip.chip-main.active {
-  background: var(--choco);
-  border-color: var(--choco);
-  color: #fff;
+  background: #f8cadb;
+  border-color: #ec9fbc;
+  color: #7d2f4d;
 }
 /* the genres, a step below */
 .category-genres {
