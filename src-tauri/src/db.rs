@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use std::path::Path;
 
 pub const Q_COLS: &str =
-    "q.id, q.key, q.kind, q.difficulty, q.en, q.ja, q.modes, q.choices, q.prompt, q.hint, q.audio_path, q.category, q.word_group, q.example, q.example_ja, q.point";
+    "q.id, q.key, q.kind, q.difficulty, q.en, q.ja, q.modes, q.choices, q.prompt, q.hint, q.audio_path, q.category, q.word_group, q.example, q.example_ja, q.point, q.tier";
 
 /// How many columns `Q_COLS` selects. A query that appends its own columns after `{Q_COLS}` reads
 /// them from here on: a hard-coded index went stale when `point` joined the list, and the 記録
@@ -41,6 +41,34 @@ const PRONUNCIATIONS_JSON: &str = include_str!("../data/pronunciations.json");
 /// hand for the words where the pieces help remember the whole (a guesser would split "mother"
 /// into moth + -er), so it covers some words, not all.
 const WORD_PARTS_JSON: &str = include_str!("../data/word-parts.json");
+/// Which tab an example sentence (kind phrase / sentence) belongs to when it is not 例文: key →
+/// idiom (it uses an idiom figuratively), phrase (said as is in everyday conversation) or grammar
+/// (a clear grammar point). Sorted once, sentence by sentence; every other question's tab follows
+/// from its kind.
+const TIERS_JSON: &str = include_str!("../data/tiers.json");
+
+pub const TIERS: [&str; 5] = ["word", "grammar", "idiom", "phrase", "example"];
+
+fn tier_overrides() -> &'static HashMap<String, String> {
+    static TABLE: std::sync::OnceLock<HashMap<String, String>> = std::sync::OnceLock::new();
+    TABLE.get_or_init(|| serde_json::from_str(TIERS_JSON).expect("data/tiers.json must be a valid JSON object"))
+}
+
+/// The home screen's tab for a question: 英単語 / 文法 / 慣用句 / フレーズ / 例文.
+pub fn tier_of(kind: &str, key: &str) -> String {
+    if let Some(t) = tier_overrides().get(key) {
+        return t.clone();
+    }
+    match kind {
+        "word" => "word",
+        "grammar" => "grammar",
+        "idiom" => "idiom",
+        // Conversation: the listening replies and the phrases to learn by heart.
+        "dialogue" | "expression" => "phrase",
+        _ => "example",
+    }
+    .to_string()
+}
 
 /// Every sound `pronunciations.json` is written in, plus the stress mark. The frontend's
 /// `lib/phonemes.ts` explains each of them; a test keeps the data inside this set.
@@ -79,7 +107,8 @@ CREATE TABLE IF NOT EXISTS questions (
   word_group TEXT NOT NULL DEFAULT '',
   example TEXT,
   example_ja TEXT,
-  point TEXT
+  point TEXT,
+  tier TEXT NOT NULL DEFAULT ''
 );
 CREATE TABLE IF NOT EXISTS learning_history (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -252,6 +281,7 @@ fn setup(conn: Connection) -> rusqlite::Result<Connection> {
     ensure_column(&conn, "questions", "example", "TEXT")?;
     ensure_column(&conn, "questions", "example_ja", "TEXT")?;
     ensure_column(&conn, "questions", "point", "TEXT")?;
+    ensure_column(&conn, "questions", "tier", "TEXT NOT NULL DEFAULT ''")?;
     ensure_column(&conn, "users", "savings_kcal", "INTEGER NOT NULL DEFAULT 0")?;
     ensure_column(&conn, "consumption_log", "ticket_id", "INTEGER")?;
     // A day's leftover kcal moves to savings once the day is over; `saved_kcal` records how much,
@@ -351,13 +381,14 @@ fn seed_questions(conn: &Connection) -> rusqlite::Result<()> {
     let tx = conn.unchecked_transaction()?;
     {
         let mut stmt = tx.prepare(
-            "INSERT INTO questions (key, kind, difficulty, en, ja, modes, choices, prompt, hint, audio_path, category, word_group, example, example_ja, point)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)
+            "INSERT INTO questions (key, kind, difficulty, en, ja, modes, choices, prompt, hint, audio_path, category, word_group, example, example_ja, point, tier)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)
              ON CONFLICT(key) DO UPDATE SET kind = excluded.kind, difficulty = excluded.difficulty,
                en = excluded.en, ja = excluded.ja, modes = excluded.modes, choices = excluded.choices,
                prompt = excluded.prompt, hint = excluded.hint, audio_path = excluded.audio_path,
                category = excluded.category, word_group = excluded.word_group,
-               example = excluded.example, example_ja = excluded.example_ja, point = excluded.point",
+               example = excluded.example, example_ja = excluded.example_ja, point = excluded.point,
+               tier = excluded.tier",
         )?;
         for q in &seed.questions {
             let modes = serde_json::to_string(&q.modes).unwrap_or_else(|_| "[]".into());
@@ -368,7 +399,7 @@ fn seed_questions(conn: &Connection) -> rusqlite::Result<()> {
             let group = if q.group.is_empty() { &q.category } else { &q.group };
             stmt.execute(params![
                 q.key, q.kind, q.difficulty, q.en, q.ja, modes, choices, q.prompt, q.hint, q.audio_path, q.category,
-                group, q.example, q.example_ja, q.point
+                group, q.example, q.example_ja, q.point, tier_of(&q.kind, &q.key)
             ])?;
         }
     }
@@ -411,6 +442,7 @@ pub fn row_to_question(row: &Row) -> rusqlite::Result<Question> {
         example: row.get(13)?,
         example_ja: row.get(14)?,
         point: row.get(15)?,
+        tier: row.get(16)?,
     })
 }
 
@@ -621,7 +653,7 @@ mod tests {
             assert!(!q.group.is_empty(), "{} has no group", q.key);
             assert!(["low", "mid", "high"].contains(&q.difficulty.as_str()), "{} bad difficulty", q.key);
             assert!(
-                ["word", "phrase", "grammar", "idiom", "sentence", "dialogue"].contains(&q.kind.as_str()),
+                ["word", "phrase", "grammar", "idiom", "sentence", "dialogue", "expression"].contains(&q.kind.as_str()),
                 "{} bad kind",
                 q.key
             );
@@ -718,6 +750,7 @@ mod tests {
                     && n != "grammar-notes.json"
                     && n != "pronunciations.json"
                     && n != "word-parts.json"
+                    && n != "tiers.json"
             })
             .count();
         assert_eq!(
@@ -858,6 +891,31 @@ mod tests {
             "only {covered} of {} words of speaking questions have a pronunciation",
             words.len()
         );
+    }
+
+    /// Every question lands in one of the five tabs. The hand-sorted example sentences name real
+    /// sentence keys, and only move them to 文法 / 慣用句 / フレーズ (例文 is the default).
+    #[test]
+    fn every_question_has_a_tab() {
+        let seed = load_seed();
+        let by_key: HashMap<&str, &SeedQuestion> = seed.questions.iter().map(|q| (q.key.as_str(), q)).collect();
+        for (key, tier) in tier_overrides() {
+            let q = by_key.get(key.as_str()).unwrap_or_else(|| panic!("tiers.json names {key}, which is no question"));
+            assert!(q.kind == "phrase" || q.kind == "sentence", "{key} is a {}, not an example sentence", q.kind);
+            assert!(["grammar", "idiom", "phrase"].contains(&tier.as_str()), "{key}: tier {tier}");
+        }
+        let mut counts: HashMap<String, usize> = HashMap::new();
+        for q in &seed.questions {
+            let tier = tier_of(&q.kind, &q.key);
+            assert!(TIERS.contains(&tier.as_str()), "{} has tier {tier}", q.key);
+            *counts.entry(tier).or_default() += 1;
+        }
+        for tier in TIERS {
+            assert!(counts.get(tier).copied().unwrap_or(0) >= 200, "the {tier} tab is nearly empty: {counts:?}");
+        }
+        let conn = init_in_memory().unwrap();
+        let blank: i64 = conn.query_row("SELECT COUNT(*) FROM questions WHERE tier = ''", [], |r| r.get(0)).unwrap();
+        assert_eq!(blank, 0, "seeding fills every question's tab");
     }
 
     /// Each word split into parts is a word question of the bank, is split into at least two
@@ -1177,3 +1235,4 @@ mod tests {
         assert!(uncovered.is_empty(), "words without a gloss: {}", uncovered.join(", "));
     }
 }
+

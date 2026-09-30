@@ -220,6 +220,7 @@ export function answerWordCount(answer: string): number {
 }
 
 /** 中難易度の記入問題は1語 1 kcal、ヒント1語ごとに −1 kcal（`srs::scores_per_word`）。 */
-export function scoresPerWord(difficulty: string, mode: string): boolean {
-  return difficulty === "mid" && mode === "typing";
+/** Mirrors srs::scores_per_word: typing a sentence (例文・長文・フレーズ) pays 1 kcal a word. */
+export function scoresPerWord(kind: string, mode: string): boolean {
+  return mode === "typing" && (kind === "phrase" || kind === "sentence" || kind === "expression");
 }

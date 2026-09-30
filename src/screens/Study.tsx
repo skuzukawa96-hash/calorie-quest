@@ -31,14 +31,13 @@ import {
 import {
   ALL_CATEGORIES,
   categoryIcon,
-  DIFFICULTY_LABEL,
-  LEVEL_SHORT,
+  TIER_LABEL,
   MODE_LABEL,
   type AnswerResult,
-  type Difficulty,
   type KcalRates,
   type SessionMode,
   type SessionQuestion,
+  type TierChoice,
   type WordPart,
 } from "../types";
 
@@ -50,7 +49,8 @@ const TYPING_HINT_KEY = "cq-typing-hint";
 interface Props {
   /** one mode for every question, or "review": each due review in the mode it was missed in */
   mode: SessionMode;
-  difficulty: Difficulty;
+  /** a tab, or "mixed" */
+  tier: TierChoice;
   /** genre name or "all" */
   category: string;
   rates: KcalRates;
@@ -100,7 +100,9 @@ function recipeContext(q: SessionQuestion, text: string): { context: string; con
   if (kind === "grammar") return { context: q.audioText, contextJa: ja };
   if (kind === "idiom" && example) return { context: example, contextJa: exampleJa };
   // A phrase or sentence is its own example, and a dialogue's heard line is what `ja` translates.
-  if (text === q.question.en && (kind === "phrase" || kind === "sentence")) return { context: text, contextJa: ja };
+  if (text === q.question.en && (kind === "phrase" || kind === "sentence" || kind === "expression")) {
+    return { context: text, contextJa: ja };
+  }
   if (kind === "dialogue" && text === q.audioText) return { context: text, contextJa: ja };
   return { context: text };
 }
@@ -110,7 +112,7 @@ function isMultiWord(q: SessionQuestion): boolean {
   return q.audioText.trim().includes(" ");
 }
 
-export default function Study({ mode, difficulty, category, rates, onExit, onProgress, toast }: Props) {
+export default function Study({ mode, tier, category, rates, onExit, onProgress, toast }: Props) {
   const [questions, setQuestions] = useState<SessionQuestion[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [idx, setIdx] = useState(0);
@@ -156,14 +158,14 @@ export default function Study({ mode, difficulty, category, rates, onExit, onPro
     setFeedback(null);
     setTally({ correct: 0, kcal: 0, reviews: 0 });
     api
-      .getSessionQuestions(mode, difficulty, category, SESSION_SIZE)
+      .getSessionQuestions(mode, tier, category, SESSION_SIZE)
       .then((qs) => alive && setQuestions(qs))
       .catch((e) => alive && setLoadError(String(e)));
     return () => {
       alive = false;
       stopSpeaking();
     };
-  }, [mode, difficulty, category, runId]);
+  }, [mode, tier, category, runId]);
 
   const current = questions?.[idx];
   const finished = questions !== null && idx >= questions.length;
@@ -301,13 +303,13 @@ export default function Study({ mode, difficulty, category, rates, onExit, onPro
         </button>
         <div className="study-meta">
           <span className="pill">{MODE_LABEL[qMode]}</span>
-          <span className="pill">{DIFFICULTY_LABEL[difficulty]}</span>
+          <span className="pill">{TIER_LABEL[tier]}</span>
           {category !== ALL_CATEGORIES && (
             <span className="pill">
               {categoryIcon(category)} {category}
             </span>
           )}
-          <span className="pill level">難易度 {LEVEL_SHORT[current.question.difficulty]}</span>
+          {tier === "mixed" && <span className="pill level">{TIER_LABEL[current.question.tier]}</span>}
           {current.isReview && <span className="pill review">🔁 復習 ×{rates.reviewMultiplier}</span>}
           {qMode !== "speaking" && (
             <button
@@ -640,7 +642,7 @@ function TypingCard({
 
   const hintWords = q.answer.split(" ");
   // フレーズの記入問題は1語 1 kcal、開示した語1つにつき −1 kcal。ほかは開示1語ごとに半分。
-  const perWord = scoresPerWord(q.question.difficulty, q.mode);
+  const perWord = scoresPerWord(q.question.kind, q.mode);
   const worth = answerWordCount(q.answer);
 
   return (

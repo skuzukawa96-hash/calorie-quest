@@ -5,7 +5,6 @@ import type {
   ConsumptionEntry,
   DailyStats,
   Dashboard,
-  Difficulty,
   NativeRecognition,
   RecipeAddResult,
   RecipeReviewMode,
@@ -15,6 +14,7 @@ import type {
   RedeemResult,
   SessionMode,
   SessionQuestion,
+  TierChoice,
   Snack,
   SpeechCapabilities,
   Stats,
@@ -40,8 +40,8 @@ async function call<T>(cmd: string, args: Record<string, unknown> = {}): Promise
 
 export const api = {
   getDashboard: () => call<Dashboard>("get_dashboard"),
-  getSessionQuestions: (mode: SessionMode, difficulty: Difficulty, category: string, count: number) =>
-    call<SessionQuestion[]>("get_session_questions", { mode, difficulty, category, count }),
+  getSessionQuestions: (mode: SessionMode, tier: TierChoice, category: string, count: number) =>
+    call<SessionQuestion[]>("get_session_questions", { mode, tier, category, count }),
   submitAnswer: (payload: AnswerPayload) => call<AnswerResult>("submit_answer", { payload }),
   listSnacks: () => call<Snack[]>("list_snacks"),
   addSnack: (name: string, calories: number, icon: string) =>

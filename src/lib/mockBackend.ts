@@ -5,6 +5,7 @@ import glossary from "../../src-tauri/data/glossary.json";
 import grammarNotes from "../../src-tauri/data/grammar-notes.json";
 import pronunciations from "../../src-tauri/data/pronunciations.json";
 import wordPartsList from "../../src-tauri/data/word-parts.json";
+import tierOverrides from "../../src-tauri/data/tiers.json";
 import { expandDictionary, type Dictionary } from "./dictionary";
 import { answerWordCount, scoresPerWord } from "./scoring";
 import type {
@@ -27,6 +28,7 @@ import type {
   Snack,
   Stats,
   Ticket,
+  Tier,
   UserInfo,
   WeakQuestion,
   WordPart,
@@ -103,7 +105,16 @@ interface SnackTicket {
   consumptionId: number | null;
 }
 
-const RATES = { low: 2, mid: 4, high: 10, reviewMultiplier: 1.5, cheatDayBonus: 300 };
+const RATES = { low: 2, mid: 4, high: 10, choice: 4, idiomTyping: 6, reviewMultiplier: 1.5, cheatDayBonus: 300 };
+
+/** Mirrors db::tier_of: the hand-sorted example sentences, else the kind decides the tab. */
+function tierOf(kind: string, key: string): Tier {
+  const sorted = (tierOverrides as Record<string, Tier>)[key];
+  if (sorted) return sorted;
+  if (kind === "word" || kind === "grammar" || kind === "idiom") return kind;
+  if (kind === "dialogue" || kind === "expression") return "phrase";
+  return "example";
+}
 const INTERVALS = [1, 3, 7, 14, 30];
 // v2 keys history by question key. v1 keyed it by array position, and those numbers no longer
 // mean anything, so a v1 blob is dropped rather than read back onto the wrong questions.
@@ -133,7 +144,7 @@ function packOrder(path: string): [string, number, string] {
 const seedQuestions: SeedQuestion[] = [
   ...(seedJson as unknown as { questions: SeedQuestion[] }).questions,
   ...Object.entries(packModules)
-    .filter(([path]) => !/\/(questions|glossary|grammar-notes|pronunciations|word-parts)\.json$/.test(path))
+    .filter(([path]) => !/\/(questions|glossary|grammar-notes|pronunciations|word-parts|tiers)\.json$/.test(path))
     .sort(([a], [b]) => {
       const x = packOrder(a);
       const y = packOrder(b);
@@ -148,6 +159,7 @@ const questions: Question[] = seedQuestions.map(
     key: q.key,
     kind: q.kind,
     difficulty: q.difficulty as Level,
+    tier: tierOf(q.kind, q.key),
     category: q.category ?? "",
     group: q.group ?? q.category ?? "",
     en: q.en,
@@ -635,7 +647,7 @@ function reviewModeFor(q: Question, missedIn: Mode | null | undefined): Mode {
   return q.modes[0] ?? "choice";
 }
 
-function getSessionQuestions(mode: SessionMode, difficulty: string, category: string, count: number): SessionQuestion[] {
+function getSessionQuestions(mode: SessionMode, tier: string, category: string, count: number): SessionQuestion[] {
   const t = today();
   const isDue = (q: Question) => !!state.history[q.key]?.needsReview && (state.history[q.key].nextDue ?? "9999") <= t;
   const byDue = (a: Question, b: Question) =>
@@ -643,7 +655,7 @@ function getSessionQuestions(mode: SessionMode, difficulty: string, category: st
   if (mode === "review") {
     // Mirrors review_session: every due review, each in the mode it was missed in; nothing fresh.
     const due = questions
-      .filter((q) => isDue(q) && (difficulty === "mixed" || q.difficulty === difficulty) && (category === "all" || q.category === category))
+      .filter((q) => isDue(q) && (tier === "mixed" || q.tier === tier) && (category === "all" || q.category === category))
       .sort(byDue)
       .slice(0, count);
     return shuffle(due.map((q) => buildSessionQuestion(q, reviewModeFor(q, state.history[q.key].reviewMode), true)));
@@ -652,7 +664,7 @@ function getSessionQuestions(mode: SessionMode, difficulty: string, category: st
     mode === "listening" ? q.modes.includes("listening") || q.modes.includes("speaking") : q.modes.includes(mode);
   const fits = (q: Question) =>
     hasMode(q) &&
-    (difficulty === "mixed" || q.difficulty === difficulty) &&
+    (tier === "mixed" || q.tier === tier) &&
     (category === "all" || q.category === category);
   const maxReviews = Math.ceil(count * 0.6);
   // A review joins only sessions of the mode it was missed in.
@@ -680,12 +692,16 @@ function submitAnswer(p: AnswerPayload): AnswerResult {
   const lowScore = p.mode === "speaking" && (p.score ?? 100) < 70;
   const base = RATES[q.difficulty];
   const hints = Math.max(0, p.hintsUsed ?? 0);
-  // srs.rs と同じ: フレーズの記入問題は1語 1 kcal、開示1語ごとに −1。ほかは開示1語ごとに半分。
-  const perWord = scoresPerWord(q.difficulty, p.mode);
+  // srs.rs と同じ: 文の記入問題は1語 1 kcal、開示1語ごとに −1。ほかは開示1語ごとに半分。
+  const perWord = scoresPerWord(q.kind, p.mode);
   let kcal = 0;
   if (p.correct) {
     if (perWord) kcal = Math.max(0, answerWordCount(q.en) - hints);
-    else kcal = p.mode === "speaking" ? Math.round((base * Math.min(100, Math.max(0, p.score ?? 100))) / 100) : base;
+    else if (p.mode === "speaking") kcal = Math.round((base * Math.min(100, Math.max(0, p.score ?? 100))) / 100);
+    // srs::kcal_for: choice pays 4 for anything but a word, an idiom typed 6; the rest by level.
+    else if (p.mode === "choice" && q.kind !== "word") kcal = RATES.choice;
+    else if (p.mode === "typing" && q.kind === "idiom") kcal = RATES.idiomTyping;
+    else kcal = base;
     if (isDueReview) kcal = Math.round(kcal * RATES.reviewMultiplier);
   } else if (perWord && p.mistakes !== undefined) {
     // srs::per_word_kcal: a slip costs the word it was in, not the whole answer.
@@ -852,11 +868,11 @@ export async function mockInvoke<T>(cmd: string, args: Record<string, unknown>):
         if (!q.category) continue;
         let c = categories.find((x) => x.name === q.category);
         if (!c) {
-          c = { name: q.category, total: 0, low: 0, mid: 0, high: 0 };
+          c = { name: q.category, total: 0, word: 0, grammar: 0, idiom: 0, phrase: 0, example: 0 };
           categories.push(c);
         }
         c.total += 1;
-        c[q.difficulty] += 1;
+        c[q.tier] += 1;
       }
       const dash: Dashboard = {
         user: { ...state.user },
@@ -879,7 +895,7 @@ export async function mockInvoke<T>(cmd: string, args: Record<string, unknown>):
       return dash as T;
     }
     case "get_session_questions":
-      return getSessionQuestions(args.mode as SessionMode, String(args.difficulty), String(args.category || "all"), Number(args.count)) as T;
+      return getSessionQuestions(args.mode as SessionMode, String(args.tier), String(args.category || "all"), Number(args.count)) as T;
     case "submit_answer":
       return submitAnswer(args.payload as AnswerPayload) as T;
     case "list_snacks":

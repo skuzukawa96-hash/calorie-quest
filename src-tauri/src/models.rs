@@ -5,10 +5,12 @@ use serde::{Deserialize, Serialize};
 pub struct Question {
     pub id: i64,
     pub key: String,
-    /// word | phrase | grammar | idiom | sentence
+    /// word | phrase | grammar | idiom | sentence | dialogue | expression
     pub kind: String,
-    /// low | mid | high
+    /// low | mid | high: sets the listening and speaking rate (2 / 4 / 10 kcal)
     pub difficulty: String,
+    /// The home screen's tab: word 英単語 | grammar 文法 | idiom 慣用句 | phrase フレーズ | example 例文
+    pub tier: String,
     /// Genre (食べ物, 旅行・交通, 文法, ...); empty when unknown.
     pub category: String,
     /// Fine-grained semantic field (果物, 乗り物, 感情, ...) used to pick believable distractors.
@@ -112,6 +114,9 @@ pub struct KcalRates {
     pub low: i64,
     pub mid: i64,
     pub high: i64,
+    /// any choice question but a word
+    pub choice: i64,
+    pub idiom_typing: i64,
     pub review_multiplier: f64,
     pub cheat_day_bonus: i64,
 }
@@ -121,9 +126,12 @@ pub struct KcalRates {
 pub struct CategoryInfo {
     pub name: String,
     pub total: i64,
-    pub low: i64,
-    pub mid: i64,
-    pub high: i64,
+    /// questions per tab
+    pub word: i64,
+    pub grammar: i64,
+    pub idiom: i64,
+    pub phrase: i64,
+    pub example: i64,
 }
 
 #[derive(Debug, Serialize)]

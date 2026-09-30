@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../lib/api";
-import { LEVEL_SHORT, type Stats as StatsData } from "../types";
+import { TIER_LABEL, type Stats as StatsData } from "../types";
 
 interface Props {
   onChanged: () => void;
@@ -88,7 +88,7 @@ export default function Stats({ onChanged, toast }: Props) {
             <thead>
               <tr>
                 <th>問題</th>
-                <th>難易度</th>
+                <th>分類</th>
                 <th>間違い</th>
                 <th>発音スコア</th>
                 <th>次の出題</th>
@@ -102,7 +102,7 @@ export default function Stats({ onChanged, toast }: Props) {
                     <div>{w.question.en}</div>
                     <div className="muted small">{w.question.ja}</div>
                   </td>
-                  <td>{LEVEL_SHORT[w.question.difficulty]}</td>
+                  <td>{TIER_LABEL[w.question.tier] ?? ""}</td>
                   <td>{w.wrongCount} 回</td>
                   <td>{w.lastScore != null ? Math.round(w.lastScore) : "—"}</td>
                   <td>{w.nextDue ?? "卒業"}</td>

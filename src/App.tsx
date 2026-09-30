@@ -8,7 +8,7 @@ import Recipe from "./screens/Recipe";
 import Snacks from "./screens/Snacks";
 import Stats from "./screens/Stats";
 import Study from "./screens/Study";
-import type { Dashboard, Difficulty, SessionMode } from "./types";
+import type { Dashboard, SessionMode, TierChoice } from "./types";
 
 type Tab = "home" | "snacks" | "recipe" | "stats";
 
@@ -21,7 +21,7 @@ const TABS: Array<{ id: Tab; label: string }> = [
 
 interface SessionConfig {
   mode: SessionMode;
-  difficulty: Difficulty;
+  tier: TierChoice;
   /** genre name or "all" */
   category: string;
 }
@@ -109,7 +109,7 @@ export default function App() {
           {session && dash ? (
             <Study
               mode={session.mode}
-              difficulty={session.difficulty}
+              tier={session.tier}
               category={session.category}
               rates={dash.kcalRates}
               onExit={() => go("home")}
@@ -120,7 +120,7 @@ export default function App() {
             dash ? (
               <Home
                 dash={dash}
-                onStart={(mode, difficulty, category) => setSession({ mode, difficulty, category })}
+                onStart={(mode, tier, category) => setSession({ mode, tier, category })}
                 onChanged={() => void refresh()}
                 goToSnacks={() => go("snacks")}
                 toast={showToast}

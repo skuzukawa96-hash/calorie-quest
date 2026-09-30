@@ -7,9 +7,11 @@ import { playCrunch, playFanfare } from "../lib/sfx";
 import {
   ALL_CATEGORIES,
   categoryIcon,
-  DIFFICULTY_LABEL,
+  TIER_LABEL,
+  TIERS,
+  type CategoryInfo,
   type Dashboard,
-  type Difficulty,
+  type TierChoice,
   type Mode,
   type SessionMode,
   type Snack,
@@ -17,7 +19,7 @@ import {
 
 interface Props {
   dash: Dashboard;
-  onStart: (mode: SessionMode, difficulty: Difficulty, category: string) => void;
+  onStart: (mode: SessionMode, tier: TierChoice, category: string) => void;
   onChanged: () => void;
   goToSnacks: () => void;
   toast: (msg: string) => void;
@@ -31,7 +33,7 @@ const MODES: Array<{ mode: Mode; icon: string; title: string; desc: string }> = 
 ];
 
 export default function Home({ dash, onStart, onChanged, goToSnacks, toast }: Props) {
-  const [difficulty, setDifficulty] = useState<Difficulty>("low");
+  const [tier, setTier] = useState<TierChoice>("word");
   const [category, setCategory] = useState<string>(ALL_CATEGORIES);
   const [redeeming, setRedeeming] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -65,11 +67,10 @@ export default function Home({ dash, onStart, onChanged, goToSnacks, toast }: Pr
       toast(`${s.icon} ${s.name} を目標から外しました（お菓子図鑑には残っています）`);
     });
 
-  const countFor = (c: { total: number; low: number; mid: number; high: number }) =>
-    difficulty === "mixed" ? c.total : c[difficulty];
+  const countFor = (c: CategoryInfo) => (tier === "mixed" ? c.total : c[tier]);
   const visibleCategories = dash.categories.filter((c) => countFor(c) > 0);
   const totalCount = visibleCategories.reduce((s, c) => s + countFor(c), 0);
-  // If the selected genre has nothing at this difficulty, fall back to "all" silently.
+  // If the selected genre has nothing in this tab, fall back to "all" silently.
   const effectiveCategory = visibleCategories.some((c) => c.name === category) ? category : ALL_CATEGORIES;
 
   const redeem = async () => {
@@ -156,8 +157,8 @@ export default function Home({ dash, onStart, onChanged, goToSnacks, toast }: Pr
               const filled = Math.min(100, (Math.max(0, budget) / g.calories) * 100);
               // One line per goal: the word count leads, the other kinds of question are in the tooltip.
               const breakdown =
-                `あと ${remaining} kcal：英単語 ${need(remaining, kcalRates.low)} 問・` +
-                `フレーズ・文法 ${need(remaining, kcalRates.mid)} 問・慣用句・長文 ${need(remaining, kcalRates.high)} 問`;
+                `あと ${remaining} kcal：英単語なら ${need(remaining, kcalRates.low)} 問、` +
+                `文法・慣用句・フレーズ・例文の選択問題なら ${need(remaining, kcalRates.choice)} 問`;
               return (
                 <li key={g.id} className={"goal-row" + (ate ? " eaten" : "") + (remaining === 0 ? " reached" : "")}>
                   <span className="goal-icon">{g.icon}</span>
@@ -197,9 +198,9 @@ export default function Home({ dash, onStart, onChanged, goToSnacks, toast }: Pr
         <div className="section-head">
           <h2>学習をはじめる</h2>
           <div className="segmented">
-            {(["low", "mid", "high", "mixed"] as Difficulty[]).map((d) => (
-              <button key={d} className={difficulty === d ? "active" : ""} onClick={() => setDifficulty(d)}>
-                {DIFFICULTY_LABEL[d]}
+            {[...TIERS, "mixed" as const].map((t) => (
+              <button key={t} className={tier === t ? "active" : ""} onClick={() => setTier(t)}>
+                {TIER_LABEL[t]}
               </button>
             ))}
           </div>
@@ -223,7 +224,7 @@ export default function Home({ dash, onStart, onChanged, goToSnacks, toast }: Pr
         </div>
         <div className="mode-grid">
           {MODES.map((m) => (
-            <button key={m.mode} className="mode-card" onClick={() => onStart(m.mode, difficulty, effectiveCategory)}>
+            <button key={m.mode} className="mode-card" onClick={() => onStart(m.mode, tier, effectiveCategory)}>
               <div className="mode-icon">{m.icon}</div>
               <div className="mode-title">{m.title}</div>
               <div className="muted">{m.desc}</div>

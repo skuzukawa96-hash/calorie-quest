@@ -8,6 +8,10 @@ pub const INTERVALS: [i64; 5] = [1, 3, 7, 14, 30];
 pub const KCAL_LOW: i64 = 2;
 pub const KCAL_MID: i64 = 4;
 pub const KCAL_HIGH: i64 = 10;
+/// 英単語以外の選択問題は、種類にかかわらず 4 kcal。
+pub const KCAL_CHOICE: i64 = 4;
+/// 慣用句の記入問題は 6 kcal（例文・長文・フレーズの記入は 1語 1 kcal）。
+pub const KCAL_IDIOM_TYPING: i64 = 6;
 pub const REVIEW_MULTIPLIER: f64 = 1.5;
 pub const CHEAT_DAY_BONUS: i64 = 300;
 /// 使わずに残ったカロリーの貯蓄が、この量に達するごとにお菓子引換券1枚になる。
@@ -25,16 +29,22 @@ pub fn base_kcal(difficulty: &str) -> i64 {
     }
 }
 
-pub fn kcal_for(difficulty: &str, mode: &str, correct: bool, score: Option<f64>) -> i64 {
+/// kcal for a correct answer. Listening and speaking follow the question's level (低2/中4/高10,
+/// speaking scaled by the score); choice pays 4 for anything but a word, and typing an idiom 6.
+/// Typing a sentence (例文・長文・フレーズ) is paid per word instead, see `scores_per_word`.
+pub fn kcal_for(kind: &str, difficulty: &str, mode: &str, correct: bool, score: Option<f64>) -> i64 {
     if !correct {
         return 0;
     }
     let base = base_kcal(difficulty);
-    if mode == "speaking" {
-        let s = score.unwrap_or(100.0).clamp(0.0, 100.0);
-        ((base as f64) * s / 100.0).round() as i64
-    } else {
-        base
+    match mode {
+        "speaking" => {
+            let s = score.unwrap_or(100.0).clamp(0.0, 100.0);
+            ((base as f64) * s / 100.0).round() as i64
+        }
+        "choice" if kind != "word" => KCAL_CHOICE,
+        "typing" if kind == "idiom" => KCAL_IDIOM_TYPING,
+        _ => base,
     }
 }
 
@@ -42,10 +52,10 @@ pub fn apply_review_bonus(kcal: i64) -> i64 {
     ((kcal as f64) * REVIEW_MULTIPLIER).round() as i64
 }
 
-/// 中難易度の記入問題（フレーズ）は答えの長さで配点する: 1語につき 1 kcal。
-/// 一律 4 kcal だと、3語のフレーズも10語のフレーズも同じ価値になってしまうため。
-pub fn scores_per_word(difficulty: &str, mode: &str) -> bool {
-    difficulty == "mid" && mode == "typing"
+/// 文を書く記入問題（例文・長文・フレーズ）は答えの長さで配点する: 1語につき 1 kcal。
+/// 一律の点だと、3語の文も15語の文も同じ価値になってしまうため。
+pub fn scores_per_word(kind: &str, mode: &str) -> bool {
+    mode == "typing" && matches!(kind, "phrase" | "sentence" | "expression")
 }
 
 /// 答えの単語数。空白で区切った語のうち、英字か数字を含むものを数える（"I" も "a" も1語、
@@ -130,11 +140,21 @@ mod tests {
 
     #[test]
     fn kcal_matches_spec() {
-        assert_eq!(kcal_for("low", "choice", true, None) * 10, 20);
-        assert_eq!(kcal_for("mid", "typing", true, None) * 10, 40);
-        assert_eq!(kcal_for("high", "speaking", true, Some(100.0)) * 10, 100);
-        assert_eq!(kcal_for("high", "speaking", true, Some(80.0)), 8);
-        assert_eq!(kcal_for("high", "speaking", false, Some(20.0)), 0);
+        // Words keep their level: 2 kcal whichever way they are asked.
+        assert_eq!(kcal_for("word", "low", "choice", true, None) * 10, 20);
+        assert_eq!(kcal_for("word", "low", "typing", true, None), 2);
+        // Anything else picked from four pays 4, whatever its level.
+        for kind in ["grammar", "phrase", "expression", "idiom", "sentence"] {
+            let level = if matches!(kind, "idiom" | "sentence") { "high" } else { "mid" };
+            assert_eq!(kcal_for(kind, level, "choice", true, None), 4, "{kind}");
+        }
+        // An idiom typed pays 6; listening and speaking keep the level's rate.
+        assert_eq!(kcal_for("idiom", "high", "typing", true, None), 6);
+        assert_eq!(kcal_for("idiom", "high", "listening", true, None), 10);
+        assert_eq!(kcal_for("expression", "mid", "listening", true, None), 4);
+        assert_eq!(kcal_for("idiom", "high", "speaking", true, Some(100.0)) * 10, 100);
+        assert_eq!(kcal_for("sentence", "high", "speaking", true, Some(80.0)), 8);
+        assert_eq!(kcal_for("idiom", "high", "speaking", false, Some(20.0)), 0);
         assert_eq!(apply_review_bonus(10), 15);
     }
 
@@ -155,10 +175,12 @@ mod tests {
 
     #[test]
     fn mid_typing_pays_a_calorie_per_word_less_one_per_hint() {
-        assert!(scores_per_word("mid", "typing"));
-        assert!(!scores_per_word("mid", "choice"));
-        assert!(!scores_per_word("low", "typing"));
-        assert!(!scores_per_word("high", "typing"));
+        for kind in ["phrase", "sentence", "expression"] {
+            assert!(scores_per_word(kind, "typing"), "{kind}");
+            assert!(!scores_per_word(kind, "choice"), "{kind}");
+        }
+        assert!(!scores_per_word("word", "typing"));
+        assert!(!scores_per_word("idiom", "typing"));
 
         let answer = "She kept the leftovers in the fridge.";
         assert_eq!(answer_word_count(answer), 7);

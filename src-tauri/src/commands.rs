@@ -252,28 +252,33 @@ pub fn delete_consumption_inner(conn: &Connection, id: i64) -> CmdResult<DailySt
 /// Question counts per genre, in the order genres first appear in the seed data.
 fn category_infos(conn: &Connection) -> rusqlite::Result<Vec<CategoryInfo>> {
     let mut stmt = conn.prepare(
-        "SELECT category, difficulty, COUNT(*), MIN(id) FROM questions WHERE category != '' GROUP BY category, difficulty",
+        "SELECT category, tier, COUNT(*), MIN(id) FROM questions WHERE category != '' GROUP BY category, tier",
     )?;
     let rows = stmt.query_map([], |r| {
         Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, i64>(2)?, r.get::<_, i64>(3)?))
     })?;
     let mut out: Vec<(i64, CategoryInfo)> = Vec::new();
     for row in rows {
-        let (name, difficulty, n, min_id) = row?;
+        let (name, tier, n, min_id) = row?;
         let idx = match out.iter().position(|(_, c)| c.name == name) {
             Some(i) => i,
             None => {
-                out.push((min_id, CategoryInfo { name, total: 0, low: 0, mid: 0, high: 0 }));
+                out.push((
+                    min_id,
+                    CategoryInfo { name, total: 0, word: 0, grammar: 0, idiom: 0, phrase: 0, example: 0 },
+                ));
                 out.len() - 1
             }
         };
         let entry = &mut out[idx];
         entry.0 = entry.0.min(min_id);
         entry.1.total += n;
-        match difficulty.as_str() {
-            "low" => entry.1.low += n,
-            "mid" => entry.1.mid += n,
-            "high" => entry.1.high += n,
+        match tier.as_str() {
+            "word" => entry.1.word += n,
+            "grammar" => entry.1.grammar += n,
+            "idiom" => entry.1.idiom += n,
+            "phrase" => entry.1.phrase += n,
+            "example" => entry.1.example += n,
             _ => {}
         }
     }
@@ -286,6 +291,8 @@ fn kcal_rates() -> KcalRates {
         low: srs::KCAL_LOW,
         mid: srs::KCAL_MID,
         high: srs::KCAL_HIGH,
+        choice: srs::KCAL_CHOICE,
+        idiom_typing: srs::KCAL_IDIOM_TYPING,
         review_multiplier: srs::REVIEW_MULTIPLIER,
         cheat_day_bonus: srs::CHEAT_DAY_BONUS,
     }
@@ -529,18 +536,19 @@ fn review_mode_for(q: &Question, missed_in: Option<String>) -> String {
 }
 
 /// Due reviews first (at most 60% of the session), then unseen/fresh questions; shuffled.
-/// A review joins only sessions of the mode it was missed in. `category` is a genre name or "all";
-/// `mode` may also be [`REVIEW_SESSION`].
+/// A review joins only sessions of the mode it was missed in. `tier` is a tab (word / grammar /
+/// idiom / phrase / example) or "mixed", `category` a genre name or "all"; `mode` may also be
+/// [`REVIEW_SESSION`].
 pub fn session_questions(
     conn: &Connection,
     mode: &str,
-    difficulty: &str,
+    tier: &str,
     category: &str,
     count: u32,
 ) -> rusqlite::Result<Vec<SessionQuestion>> {
     let count = count.clamp(1, 50) as i64;
     if mode == REVIEW_SESSION {
-        return review_session(conn, difficulty, category, count);
+        return review_session(conn, tier, category, count);
     }
     let mode_like = format!("%\"{}\"%", mode);
     let today = today();
@@ -556,14 +564,14 @@ pub fn session_questions(
         "SELECT {Q_COLS} FROM questions q
          JOIN learning_history h ON h.question_id = q.id
          WHERE h.user_id = ?1 AND h.needs_review = 1 AND h.next_due_at IS NOT NULL AND h.next_due_at <= ?2
-           AND {mode_clause} AND (?4 = 'mixed' OR q.difficulty = ?4) AND (?5 = 'all' OR q.category = ?5)
+           AND {mode_clause} AND (?4 = 'mixed' OR q.tier = ?4) AND (?5 = 'all' OR q.category = ?5)
            AND (h.review_mode IS NULL OR h.review_mode = ?7)
          ORDER BY h.next_due_at ASC, RANDOM() LIMIT ?6"
     );
     let reviews: Vec<Question> = {
         let mut stmt = conn.prepare(&review_sql)?;
         let rows = stmt.query_map(
-            params![USER_ID, today, mode_like, difficulty, category, max_reviews, mode],
+            params![USER_ID, today, mode_like, tier, category, max_reviews, mode],
             db::row_to_question,
         )?;
         rows.collect::<Result<_, _>>()?
@@ -580,14 +588,14 @@ pub fn session_questions(
     let fresh_sql = format!(
         "SELECT {Q_COLS} FROM questions q
          LEFT JOIN learning_history h ON h.question_id = q.id AND h.user_id = ?1
-         WHERE {fresh_mode_clause} AND (?3 = 'mixed' OR q.difficulty = ?3) AND (?4 = 'all' OR q.category = ?4)
+         WHERE {fresh_mode_clause} AND (?3 = 'mixed' OR q.tier = ?3) AND (?4 = 'all' OR q.category = ?4)
            AND (h.needs_review IS NULL OR h.needs_review = 0) {exclude_clause}
          ORDER BY (h.last_studied_at IS NOT NULL), RANDOM() LIMIT ?5"
     );
     let fresh: Vec<Question> = {
         let mut stmt = conn.prepare(&fresh_sql)?;
         let rows = stmt.query_map(
-            params![USER_ID, mode_like, difficulty, category, remaining],
+            params![USER_ID, mode_like, tier, category, remaining],
             db::row_to_question,
         )?;
         rows.collect::<Result<_, _>>()?
@@ -607,17 +615,17 @@ pub fn session_questions(
 /// ホームの「復習をはじめる」: every due review, whatever its mode, each asked in the mode it was
 /// missed in, so a phrase got wrong by typing is typed again rather than picked from four.
 /// Nothing fresh is mixed in.
-fn review_session(conn: &Connection, difficulty: &str, category: &str, count: i64) -> rusqlite::Result<Vec<SessionQuestion>> {
+fn review_session(conn: &Connection, tier: &str, category: &str, count: i64) -> rusqlite::Result<Vec<SessionQuestion>> {
     let sql = format!(
         "SELECT {Q_COLS}, h.review_mode FROM questions q
          JOIN learning_history h ON h.question_id = q.id
          WHERE h.user_id = ?1 AND h.needs_review = 1 AND h.next_due_at IS NOT NULL AND h.next_due_at <= ?2
-           AND (?3 = 'mixed' OR q.difficulty = ?3) AND (?4 = 'all' OR q.category = ?4)
+           AND (?3 = 'mixed' OR q.tier = ?3) AND (?4 = 'all' OR q.category = ?4)
          ORDER BY h.next_due_at ASC, RANDOM() LIMIT ?5"
     );
     let due: Vec<(Question, Option<String>)> = {
         let mut stmt = conn.prepare(&sql)?;
-        let rows = stmt.query_map(params![USER_ID, today(), difficulty, category, count], |r| {
+        let rows = stmt.query_map(params![USER_ID, today(), tier, category, count], |r| {
             Ok((db::row_to_question(r)?, r.get(db::Q_COL_COUNT)?))
         })?;
         rows.collect::<Result<_, _>>()?
@@ -637,11 +645,11 @@ pub fn record_answer(conn: &mut Connection, payload: &AnswerPayload) -> Result<A
     let today = today();
     let now = now_ts();
 
-    let (difficulty, answer): (String, String) = tx
+    let (kind, difficulty, answer): (String, String, String) = tx
         .query_row(
-            "SELECT difficulty, en FROM questions WHERE id = ?1",
+            "SELECT kind, difficulty, en FROM questions WHERE id = ?1",
             params![payload.question_id],
-            |r| Ok((r.get(0)?, r.get(1)?)),
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
         )
         .map_err(|_| format!("question {} not found", payload.question_id))?;
 
@@ -667,12 +675,12 @@ pub fn record_answer(conn: &mut Connection, payload: &AnswerPayload) -> Result<A
             .map(|s| s < srs::SPEAKING_REVIEW_THRESHOLD)
             .unwrap_or(false);
     let hints_used = payload.hints_used.unwrap_or(0);
-    let per_word = srs::scores_per_word(&difficulty, &payload.mode);
+    let per_word = srs::scores_per_word(&kind, &payload.mode);
     let mut kcal = if per_word {
         // 1語 1 kcal、ヒント1語ごとに −1 kcal。復習の ×1.5 はその結果に掛ける。
         srs::per_word_kcal(&answer, payload.correct, hints_used, payload.mistakes)
     } else {
-        srs::kcal_for(&difficulty, &payload.mode, payload.correct, payload.score)
+        srs::kcal_for(&kind, &difficulty, &payload.mode, payload.correct, payload.score)
     };
     if is_due_review && payload.correct {
         kcal = srs::apply_review_bonus(kcal);
@@ -845,7 +853,7 @@ pub fn load_dashboard(conn: &Connection) -> CmdResult<Dashboard> {
 pub fn get_session_questions(
     state: State<'_, AppState>,
     mode: String,
-    difficulty: String,
+    tier: String,
     category: Option<String>,
     count: u32,
 ) -> CmdResult<Vec<SessionQuestion>> {
@@ -854,7 +862,7 @@ pub fn get_session_questions(
     }
     let conn = state.db.lock().map_err(err)?;
     let category = category.filter(|c| !c.trim().is_empty()).unwrap_or_else(|| "all".to_string());
-    session_questions(&conn, &mode, &difficulty, &category, count).map_err(err)
+    session_questions(&conn, &mode, &tier, &category, count).map_err(err)
 }
 
 /// English word (lowercase) → Japanese gloss, for the hover dictionary in the study screen.
@@ -1233,7 +1241,7 @@ mod tests {
         assert_eq!(due.as_deref(), Some(date_plus(1).as_str()));
         // Not due yet: it must not be served again today, neither as review nor as fresh.
         for _ in 0..5 {
-            let s = session_questions(&c, "typing", "low", "all", 50).unwrap();
+            let s = session_questions(&c, "typing", "word", "all", 50).unwrap();
             assert!(s.iter().all(|q| q.question.id != qid));
         }
     }
@@ -1246,7 +1254,7 @@ mod tests {
         c.execute("UPDATE learning_history SET next_due_at = ?1 WHERE question_id = ?2", params![today(), qid]).unwrap();
         assert_eq!(due_review_count(&c).unwrap(), 1);
 
-        let session = session_questions(&c, "choice", "low", "all", 10).unwrap();
+        let session = session_questions(&c, "choice", "word", "all", 10).unwrap();
         let served = session.iter().find(|q| q.question.id == qid).expect("due question served");
         assert!(served.is_review);
         assert_eq!(served.options.len(), 4);
@@ -1353,10 +1361,34 @@ mod tests {
     #[test]
     fn revealed_hint_words_halve_the_reward() {
         let mut c = conn();
-        let qid = question_id(&c, "i001"); // high difficulty: 10 kcal
+        let qid = question_id(&c, "i001"); // an idiom typed: 6 kcal
         let r = answer_with_hints(&mut c, qid, "typing", true, None, Some(2));
-        assert_eq!(r.kcal_earned, 3, "10 kcal halved twice, 2.5 rounds up");
-        assert_eq!(r.today_kcal, 3, "the daily total only counts what was earned");
+        assert_eq!(r.kcal_earned, 2, "6 kcal halved twice, 1.5 rounds up");
+        assert_eq!(r.today_kcal, 2, "the daily total only counts what was earned");
+    }
+
+    /// Idioms and long sentences picked from four pay 4 like everything but words; an idiom typed
+    /// pays 6, a long sentence typed one per word; listening keeps the old rate of their level.
+    #[test]
+    fn idioms_and_sentences_pay_the_new_rates() {
+        let mut c = conn();
+        let idiom = question_id(&c, "i002");
+        assert_eq!(answer(&mut c, idiom, "choice", true, None).kcal_earned, 4);
+        let idiom = question_id(&c, "i003");
+        assert_eq!(answer(&mut c, idiom, "typing", true, None).kcal_earned, 6);
+        let idiom = question_id(&c, "i004");
+        assert_eq!(answer(&mut c, idiom, "listening", true, None).kcal_earned, 10);
+        let sentence = question_id(&c, "s031");
+        assert_eq!(answer(&mut c, sentence, "choice", true, None).kcal_earned, 4);
+        let sentence = question_id(&c, "s033");
+        let en: String = c.query_row("SELECT en FROM questions WHERE id = ?1", params![sentence], |r| r.get(0)).unwrap();
+        assert_eq!(answer(&mut c, sentence, "typing", true, None).kcal_earned, srs::answer_word_count(&en));
+        let expression = question_id(&c, "x001"); // Long time no see.
+        assert_eq!(answer(&mut c, expression, "choice", true, None).kcal_earned, 4);
+        let expression = question_id(&c, "x020"); // Anything you say.
+        assert_eq!(answer(&mut c, expression, "typing", true, None).kcal_earned, 3);
+        let expression = question_id(&c, "x021");
+        assert_eq!(answer(&mut c, expression, "listening", true, None).kcal_earned, 4);
     }
 
     #[test]
@@ -1553,14 +1585,20 @@ mod tests {
     }
 
     #[test]
-    fn session_respects_mode_and_difficulty() {
+    fn session_respects_mode_and_tier() {
         let c = conn();
-        let s = session_questions(&c, "typing", "high", "all", 10).unwrap();
+        let s = session_questions(&c, "typing", "idiom", "all", 10).unwrap();
         assert!(!s.is_empty());
-        assert!(s.iter().all(|q| q.question.difficulty == "high" && q.question.modes.iter().any(|m| m == "typing")));
-        let g = session_questions(&c, "choice", "mid", "all", 50).unwrap();
+        assert!(s.iter().all(|q| q.question.tier == "idiom" && q.question.modes.iter().any(|m| m == "typing")));
+        let g = session_questions(&c, "choice", "grammar", "all", 50).unwrap();
+        assert!(g.iter().all(|q| q.question.tier == "grammar"));
         assert!(g.iter().any(|q| q.question.kind == "grammar"), "grammar questions appear in choice mode");
         assert!(g.iter().filter(|q| q.question.kind == "grammar").all(|q| q.options.len() == 4 && q.options.contains(&q.answer)));
+        let p = session_questions(&c, "choice", "phrase", "all", 50).unwrap();
+        assert!(p.iter().all(|q| q.question.tier == "phrase"));
+        assert!(p.iter().any(|q| q.question.kind == "expression"), "the phrases to learn by heart are in the phrase tab");
+        let e = session_questions(&c, "typing", "example", "all", 50).unwrap();
+        assert!(e.iter().all(|q| q.question.tier == "example" && matches!(q.question.kind.as_str(), "phrase" | "sentence")));
     }
 
     #[test]
@@ -1608,7 +1646,7 @@ mod tests {
         // Dialogues are mid/high; draw enough to be sure at least one shows up.
         let mut seen = false;
         for _ in 0..10 {
-            let s = session_questions(&c, "listening", "mid", "日常生活", 20).unwrap();
+            let s = session_questions(&c, "listening", "phrase", "日常生活", 20).unwrap();
             if let Some(d) = s.iter().find(|q| q.question.kind == "dialogue") {
                 seen = true;
                 assert_eq!(d.audio_text, d.question.prompt.clone().unwrap());
@@ -1792,7 +1830,7 @@ mod tests {
         // borrowed from sibling dialogues instead.
         let mut checked = 0;
         for _ in 0..20 {
-            let s = session_questions(&c, "listening", "mid", "食べ物", 20).unwrap();
+            let s = session_questions(&c, "listening", "phrase", "食べ物", 20).unwrap();
             for d in s.iter().filter(|q| q.question.kind == "dialogue") {
                 assert_eq!(d.options.len(), 4, "{} should offer four replies", d.question.key);
                 assert!(d.options.contains(&d.question.en), "{} lost its answer", d.question.key);
@@ -1830,7 +1868,7 @@ mod tests {
     #[test]
     fn session_filters_by_category_and_uses_genre_distractors() {
         let c = conn();
-        let food = session_questions(&c, "choice", "low", "食べ物", 20).unwrap();
+        let food = session_questions(&c, "choice", "word", "食べ物", 20).unwrap();
         assert!(!food.is_empty());
         assert!(food.iter().all(|q| q.question.category == "食べ物"));
         for q in &food {
@@ -1846,6 +1884,10 @@ mod tests {
         let total: i64 = cats.iter().map(|x| x.total).sum();
         let all: i64 = c.query_row("SELECT COUNT(*) FROM questions", [], |r| r.get(0)).unwrap();
         assert_eq!(total, all);
-        assert!(cats.iter().any(|x| x.name == "文法" && x.mid > 0));
+        assert!(cats.iter().any(|x| x.name == "文法" && x.grammar > 0));
+        for c in &cats {
+            assert_eq!(c.total, c.word + c.grammar + c.idiom + c.phrase + c.example, "{} counts every tab", c.name);
+        }
+        assert!(cats.iter().any(|x| x.name == "あいさつ・あいづち" && x.phrase > 0));
     }
 }

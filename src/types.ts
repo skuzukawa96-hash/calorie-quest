@@ -1,7 +1,11 @@
 export type Mode = "choice" | "typing" | "speaking" | "listening";
 /** a study session: one mode, or "review" (every due review, each in the mode it was missed in) */
 export type SessionMode = Mode | "review";
-export type Difficulty = "low" | "mid" | "high" | "mixed";
+/** the home screen's tabs: 英単語 / 文法 / 慣用句 / フレーズ / 例文 */
+export type Tier = "word" | "grammar" | "idiom" | "phrase" | "example";
+/** a tab, or every tab at once */
+export type TierChoice = Tier | "mixed";
+/** a question's level: sets the listening and speaking rate (2 / 4 / 10 kcal) */
 export type Level = "low" | "mid" | "high";
 
 export interface Question {
@@ -9,6 +13,8 @@ export interface Question {
   key: string;
   kind: string;
   difficulty: Level;
+  /** which tab it is in */
+  tier: Tier;
   /** genre such as 食べ物 / 旅行・交通 / 文法 */
   category: string;
   /** fine-grained semantic field (果物, 乗り物, …) that distractors are drawn from */
@@ -92,6 +98,9 @@ export interface KcalRates {
   low: number;
   mid: number;
   high: number;
+  /** any choice question but a word */
+  choice: number;
+  idiomTyping: number;
   reviewMultiplier: number;
   cheatDayBonus: number;
 }
@@ -99,9 +108,12 @@ export interface KcalRates {
 export interface CategoryInfo {
   name: string;
   total: number;
-  low: number;
-  mid: number;
-  high: number;
+  /** questions per tab */
+  word: number;
+  grammar: number;
+  idiom: number;
+  phrase: number;
+  example: number;
 }
 
 export const ALL_CATEGORIES = "all";
@@ -127,6 +139,12 @@ export const CATEGORY_ICON: Record<string, string> = {
   "芸術・文化": "🎭",
   文法: "✏️",
   慣用句: "🗣️",
+  "あいさつ・あいづち": "👋",
+  気持ちを伝える: "💗",
+  "お願い・誘い": "🙏",
+  "質問・確認": "❓",
+  "意見・評価": "💭",
+  決まり文句: "📣",
 };
 
 export function categoryIcon(name: string): string {
@@ -301,11 +319,13 @@ export const MODE_LABEL: Record<Mode, string> = {
   listening: "ヒアリング問題",
 };
 
-export const DIFFICULTY_LABEL: Record<Difficulty, string> = {
-  low: "低（英単語）",
-  mid: "中（フレーズ・文法）",
-  high: "高（慣用句・長文）",
+export const TIER_LABEL: Record<TierChoice, string> = {
+  word: "英単語",
+  grammar: "文法",
+  idiom: "慣用句",
+  phrase: "フレーズ",
+  example: "例文",
   mixed: "ミックス",
 };
 
-export const LEVEL_SHORT: Record<Level, string> = { low: "低", mid: "中", high: "高" };
+export const TIERS: Tier[] = ["word", "grammar", "idiom", "phrase", "example"];
