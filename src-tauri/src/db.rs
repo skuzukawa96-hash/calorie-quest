@@ -1367,6 +1367,14 @@ mod tests {
             let mut patterns = HashSet::new();
             for u in list {
                 assert!(patterns.insert(u.pattern.as_str()), "{w}: {} is written twice", u.pattern);
+                // One notation throughout: a gerund is -ing, a bare verb 原形, a slot ～ or 人.
+                let words: Vec<&str> =
+                    u.pattern.split(|c: char| !c.is_ascii_alphabetic()).filter(|s| !s.is_empty()).collect();
+                assert!(
+                    !u.pattern.contains('~') && !words.iter().any(|t| ["do", "doing", "someone", "something", "sth", "sb"].contains(t)),
+                    "{w}: write {} with -ing / 原形 / ～ / 人",
+                    u.pattern
+                );
                 assert!(uses_word(&u.pattern, w), "{w}: the pattern {} does not name it", u.pattern);
                 assert!(uses_word(&u.example, w), "{w}: the sentence for {} does not use it: {}", u.pattern, u.example);
                 assert!(!u.ja.trim().is_empty() && !u.example_ja.trim().is_empty(), "{w}: {} lacks Japanese", u.pattern);

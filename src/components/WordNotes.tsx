@@ -20,22 +20,6 @@ function SpeakButton({ text }: { text: string }) {
   );
 }
 
-/**
- * A pattern as it can be read aloud: "apologize to 人 for ~" → "apologize to someone for
- * something". The Japanese placeholders and asides would come out of an English voice as noise.
- */
-export function spokenPattern(pattern: string): string {
-  return pattern
-    .replace(/（[^）]*）/g, "")
-    .replace(/[()]/g, "")
-    .replace(/人/g, "someone")
-    .replace(/\b[AB]\b/g, "something")
-    .replace(/[~～]/g, "something")
-    .replace(/\s*\/\s*/g, ", ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
 /** How a word is built: pre-「前もって」＋ paid「支払った」→ prepaid「前払いの」. */
 function WordParts({ parts, word, meaning }: { parts: WordPart[]; word: string; meaning: string }) {
   return (
@@ -64,7 +48,8 @@ function WordParts({ parts, word, meaning }: { parts: WordPart[]; word: string; 
 /**
  * What the answer explains about a word or an idiom beyond its meaning: 成り立ち (prefix, root,
  * suffix), 例文, 用法 (patterns with prepositions, each with a sentence) and, for an idiom, 由来.
- * Every English line has a 🔊 that reads it aloud. Shown under a study answer and under a recipe
+ * Every sentence has a 🔊 that reads it aloud; a pattern has none, its ～ / 人 / 原形 being no
+ * English an English voice could read. Shown under a study answer and under a recipe
  * review answer alike.
  */
 export default function WordNotesPanel({
@@ -110,7 +95,6 @@ export default function WordNotesPanel({
                   <span className="usage-sep">：</span>
                   {u.ja}
                 </span>
-                <SpeakButton text={spokenPattern(u.pattern)} />
               </div>
               <div className="example-en">
                 <GlossedText text={u.example} dict={dict} enabled={gloss} highlight={word} contextJa={u.exampleJa} />
