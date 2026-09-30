@@ -741,7 +741,7 @@ const PARTICLES: &[&str] = &["off", "up", "out", "away", "down", "back"];
 /// Words too common to list for their similar words alone ("big" in every other sentence);
 /// they are listed when the sentence uses one of their patterns.
 const TOO_COMMON_FOR_RELATED: &[&str] =
-    &["big", "small", "little", "large", "fast", "sleep", "rest", "close", "cheap", "expensive", "price", "quiet", "wear", "fix", "hurt", "store"];
+    &["big", "small", "little", "large", "fast", "sleep", "rest", "close", "cheap", "expensive", "price", "quiet", "wear", "fix", "hurt", "store", "very", "really"];
 /// How many words may fill a slot between two words of a pattern ("compared [the new model] with").
 const MAX_SLOT_WORDS: usize = 6;
 /// Words ending in -ing that are no verb's -ing (the "-thing" words are left out as well).
@@ -749,7 +749,7 @@ const NOT_ING: &[&str] = &["morning", "evening", "ceiling", "during", "string", 
 /// Words after "to" that read as verbs by their gloss but are places to go ("commute to work").
 const NOUNS_AFTER_TO: &[&str] = &["work", "school", "bed", "class", "church", "court"];
 /// Adverbs that may stand between two words of a pattern ("get along well with", "is very good
-/// at"), besides the -ly words that are no verb or noun ("listen carefully to").
+/// at"), besides the words ending in -ly ("listen carefully to").
 const ADVERBS: &[&str] = &[
     "well", "very", "really", "so", "too", "just", "also", "still", "even", "never", "always", "often", "sometimes",
     "usually", "already", "soon", "much", "quite", "rather", "right", "straight", "early", "late", "hard", "not",
@@ -882,9 +882,9 @@ fn reads_as(token: &str, word: &str) -> bool {
     token == word || !(token.ends_with("er") || token.ends_with("est") || token.ends_with("ly"))
 }
 
-/// Verbs in their dictionary form, told by a first gloss that ends like a Japanese verb (会う,
-/// 走る, 〜できる): a "to" before one is an infinitive, not the preposition of be nice to 人
-/// ("Nice to meet you").
+/// Verbs in their dictionary form: the words of the bank whose part of speech is verb, and the
+/// words of the glossary whose first gloss ends like a Japanese verb (会う, 走る, 〜できる). A "to"
+/// before one is an infinitive, not the preposition of be nice to 人 ("Nice to meet you").
 fn base_verbs() -> &'static std::collections::HashSet<String> {
     static TABLE: std::sync::OnceLock<std::collections::HashSet<String>> = std::sync::OnceLock::new();
     TABLE.get_or_init(|| {
@@ -902,15 +902,22 @@ fn base_verbs() -> &'static std::collections::HashSet<String> {
             }
             plain.trim().ends_with(['う', 'く', 'ぐ', 'す', 'つ', 'ぬ', 'ぶ', 'む', 'る'])
         };
+        // A word of the bank is a verb when its part of speech says so (注意深く is carefully, an
+        // adverb, though it ends like a verb); a word only of the glossary goes by its gloss.
+        let mut bank: HashMap<String, bool> = HashMap::new();
+        for q in load_seed().questions.into_iter().filter(|q| q.kind == "word" && !q.en.contains([' ', '-'])) {
+            let verb = word_pos().get(&q.key).is_some_and(|p| p == "verb");
+            *bank.entry(q.en.to_lowercase()).or_insert(false) |= verb;
+        }
         let glossary: HashMap<String, String> =
             serde_json::from_str(GLOSSARY_JSON).expect("data/glossary.json must be a valid JSON object");
-        let words = load_seed().questions.into_iter().filter(|q| q.kind == "word").map(|q| (q.en.to_lowercase(), q.ja));
-        glossary
+        let mut verbs: std::collections::HashSet<String> = glossary
             .into_iter()
-            .chain(words)
-            .filter(|(en, ja)| !en.contains(' ') && verb_like(ja))
+            .filter(|(en, ja)| !en.contains(' ') && !bank.contains_key(en) && verb_like(ja))
             .map(|(en, _)| en)
-            .collect()
+            .collect();
+        verbs.extend(bank.into_iter().filter(|(_, verb)| *verb).map(|(en, _)| en));
+        verbs
     })
 }
 
@@ -942,8 +949,7 @@ fn pieces_found(pieces: &[PatternPiece], headword: &str, tokens: &[String], lemm
     impl Search<'_> {
         fn is_adverb(&self, k: usize) -> bool {
             let t = self.tokens[k].as_str();
-            ADVERBS.contains(&t)
-                || (t.len() > 4 && t.ends_with("ly") && !NOT_LY_ADVERBS.contains(&t) && !self.verbs.contains(t))
+            ADVERBS.contains(&t) || (t.len() > 4 && t.ends_with("ly") && !NOT_LY_ADVERBS.contains(&t))
         }
 
         fn hit(&self, piece: &PatternPiece, j: usize) -> bool {

@@ -83,5 +83,13 @@
 {"title": "疑う", "members": [{"word": "doubt", "nuance": "～ではないと思う（否定寄り）"}, {"word": "suspect", "nuance": "～ではないかと思う（肯定寄り）"}]},
 {"title": "話し合う", "members": [{"word": "discuss", "nuance": "～について話し合う。about は付けない"}, {"word": "talk", "nuance": "talk about ～：～について話す", "patterns": ["talk to/with 人 about ～"]}]},
 {"title": "起きる", "members": [{"word": "wake", "nuance": "目を覚ます"}, {"word": "get", "nuance": "get up：（ベッドから）起き上がる", "patterns": ["get up"]}]},
-{"title": "分別・敏感", "members": [{"word": "sensitive", "nuance": "敏感な、傷つきやすい"}, {"word": "sensible", "nuance": "分別のある、賢明な", "example": "It was sensible to wait for the rain to stop.", "exampleJa": "雨がやむのを待ったのは賢明だった。"}]}
+{"title": "分別・敏感", "members": [{"word": "sensitive", "nuance": "敏感な、傷つきやすい"}, {"word": "sensible", "nuance": "分別のある、賢明な", "example": "It was sensible to wait for the rain to stop.", "exampleJa": "雨がやむのを待ったのは賢明だった。"}]},
+{"title": "ほとんど〜ない・かろうじて", "members": [{"word": "barely", "nuance": "かろうじて〜する。できたことを言う（肯定の意味）"}, {"word": "hardly", "nuance": "ほとんど〜ない。できなかったことを言う（否定の意味）"}, {"word": "nearly", "nuance": "もう少しで〜するところだった。実際にはしていない"}, {"word": "almost", "nuance": "ほとんど、ほぼ。数や完了に近いこと"}]},
+{"title": "もう・まだ", "members": [{"word": "already", "nuance": "（肯定文で）もう、すでに"}, {"word": "still", "nuance": "まだ〜している。状態が続いている"}, {"word": "yet", "nuance": "（否定文で）まだ〜ない、（疑問文で）もう"}]},
+{"title": "確信の強さ", "members": [{"word": "definitely", "nuance": "間違いなく。ほぼ確実"}, {"word": "surely", "nuance": "きっと。話し手がそう信じている"}, {"word": "probably", "nuance": "たぶん。かなりの見込みがある"}, {"word": "maybe", "nuance": "もしかすると。口語で五分五分くらい"}, {"word": "perhaps", "nuance": "ひょっとすると。maybe より改まった言い方"}, {"word": "possibly", "nuance": "ことによると。見込みは低め"}]},
+{"title": "頻度", "members": [{"word": "always", "nuance": "いつも（100%）"}, {"word": "usually", "nuance": "たいてい（80〜90%）"}, {"word": "often", "nuance": "よく、しばしば（60〜70%）"}, {"word": "sometimes", "nuance": "ときどき（30〜50%）"}, {"word": "seldom", "nuance": "めったに〜ない（10%ほど）。やや改まった言い方"}, {"word": "rarely", "nuance": "まれに。seldom とほぼ同じ"}, {"word": "never", "nuance": "一度も〜ない（0%）"}]},
+{"title": "最近", "members": [{"word": "recently", "nuance": "少し前に。過去形や現在完了と使う"}, {"word": "lately", "nuance": "近ごろ。主に現在完了と使う"}, {"word": "nowadays", "nuance": "今日では。昔と比べて今のことを現在形で言う"}]},
+{"title": "速く・早く", "members": [{"word": "fast", "nuance": "（速度が）速く"}, {"word": "quickly", "nuance": "（動作が）すばやく、短い時間で"}, {"word": "early", "nuance": "（時刻・時期が）早く"}, {"word": "soon", "nuance": "間もなく、すぐに"}]},
+{"title": "とても・かなり", "members": [{"word": "very", "nuance": "とても。形容詞・副詞を強める最も一般的な語"}, {"word": "really", "nuance": "本当に。口語で気持ちを込めて強める"}, {"word": "extremely", "nuance": "極めて。very より強い"}, {"word": "quite", "nuance": "かなり"}, {"word": "fairly", "nuance": "そこそこ。控えめなほめ方"}]},
+{"title": "しかし・でも", "members": [{"word": "however", "nuance": "しかし。文頭や文中でコンマと使う、やや改まった言い方"}, {"word": "though", "nuance": "でも。文末に置く口語的な言い方"}]}
 ]

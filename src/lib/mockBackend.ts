@@ -676,7 +676,7 @@ const OPTIONAL_PATTERN_WORDS = ["be", "is", "am", "are", "feel", "can", "would",
 const REFLEXIVES = ["oneself", "myself", "yourself", "himself", "herself", "itself", "ourselves", "yourselves", "themselves"];
 const PARTICLES = ["off", "up", "out", "away", "down", "back"];
 const TOO_COMMON_FOR_RELATED = [
-  "big", "small", "little", "large", "fast", "sleep", "rest", "close", "cheap", "expensive", "price", "quiet", "wear", "fix", "hurt", "store",
+  "big", "small", "little", "large", "fast", "sleep", "rest", "close", "cheap", "expensive", "price", "quiet", "wear", "fix", "hurt", "store", "very", "really",
 ];
 const NOT_ING = ["morning", "evening", "ceiling", "during", "string", "spring", "sibling", "pudding", "awning", "darling"];
 const NOUNS_AFTER_TO = ["work", "school", "bed", "class", "church", "court"];
@@ -696,19 +696,24 @@ const MAX_SHORT_SLOT_WORDS = 3;
 const MAX_GAP_WORDS = 2;
 const MAX_USED_WORDS = 6;
 
-/** Mirrors db::base_verbs: words whose first gloss ends like a Japanese verb (会う, 走る). */
+/** Mirrors db::base_verbs: verbs of the bank by their part of speech, glossary words by their gloss. */
 const baseVerbs: Set<string> = (() => {
   const verbLike = (ja: string) => {
     const first = (ja.split(/[、，,]/)[0] ?? "").replace(/（[^）]*）|\([^)]*\)/g, "").trim();
     return /[うくぐすつぬぶむる]$/.test(first);
   };
+  // A word of the bank is a verb when its part of speech says so; a glossary word by its gloss.
+  const bank = new Map<string, boolean>();
+  for (const q of seedQuestions) {
+    if (q.kind !== "word" || /[\s-]/.test(q.en)) continue;
+    const en = q.en.toLowerCase();
+    bank.set(en, (bank.get(en) ?? false) || (wordPos as Record<string, string>)[q.key] === "verb");
+  }
   const out = new Set<string>();
   for (const [en, ja] of Object.entries(glossary as Record<string, string>)) {
-    if (!en.includes(" ") && verbLike(ja)) out.add(en);
+    if (!en.includes(" ") && !bank.has(en) && verbLike(ja)) out.add(en);
   }
-  for (const q of seedQuestions) {
-    if (q.kind === "word" && !q.en.includes(" ") && verbLike(q.ja)) out.add(q.en.toLowerCase());
-  }
+  for (const [en, verb] of bank) if (verb) out.add(en);
   return out;
 })();
 
@@ -778,9 +783,8 @@ function patternWays(pattern: string, headword: string): Piece[][] {
   return all;
 }
 
-/** Mirrors Search::is_adverb: well / very …, or an -ly word that is no verb or noun. */
-const isAdverb = (t: string) =>
-  ADVERBS.includes(t) || (t.length > 4 && t.endsWith("ly") && !NOT_LY_ADVERBS.includes(t) && !baseVerbs.has(t));
+/** Mirrors Search::is_adverb: well / very …, or a word ending in -ly. */
+const isAdverb = (t: string) => ADVERBS.includes(t) || (t.length > 4 && t.endsWith("ly") && !NOT_LY_ADVERBS.includes(t));
 
 /** Mirrors db::reads_as: "speaker" is no speak, "completely" no complete. */
 const readsAs = (token: string, word: string) =>

@@ -205,6 +205,7 @@ export const CATEGORY_ICON: Record<string, string> = {
   "質問・確認": "❓",
   "意見・評価": "💭",
   決まり文句: "📣",
+  副詞: "🔤",
 };
 
 export function categoryIcon(name: string): string {
