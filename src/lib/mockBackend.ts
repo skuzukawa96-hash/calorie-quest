@@ -9,6 +9,7 @@ import tierOverrides from "../../src-tauri/data/tiers.json";
 import wordExamples from "../../src-tauri/data/word-examples.json";
 import wordUsages from "../../src-tauri/data/word-usage.json";
 import idiomOrigins from "../../src-tauri/data/idiom-origins.json";
+import wordPos from "../../src-tauri/data/word-pos.json";
 import relatedSeeds from "../../src-tauri/data/word-related.json";
 import { expandDictionary, lemmas, tokenize, type Dictionary } from "./dictionary";
 import { answerWordCount, scoresPerWord } from "./scoring";
@@ -25,6 +26,7 @@ import type {
   Level,
   RelatedGroup,
   Mode,
+  PartOfSpeech,
   Question,
   RecipeAddResult,
   RecipeWord,
@@ -116,15 +118,27 @@ interface SnackTicket {
 
 const RATES = { low: 2, mid: 4, high: 10, choice: 4, idiomTyping: 6, reviewMultiplier: 1.5, cheatDayBonus: 300 };
 
-/** Mirrors db::tier_of: the hand-sorted example sentences, else the kind decides the tab. */
-function tierOf(kind: string, key: string): Tier {
+/**
+ * Mirrors db::tier_of: the hand-sorted example sentences, else the kind decides the tab. A word of
+ * several words, or of words joined by a hyphen, is a compound.
+ */
+function tierOf(kind: string, key: string, en: string): Tier {
   const sorted = (tierOverrides as Record<string, Tier>)[key];
   if (sorted) return sorted;
-  if (kind === "word" || kind === "grammar" || kind === "idiom") return kind;
+  if (kind === "word") return /[\s-]/.test(en) ? "compound" : "word";
+  if (kind === "grammar" || kind === "idiom") return kind;
   if (kind === "dialogue" || kind === "expression") return "phrase";
   return "example";
 }
 const INTERVALS = [1, 3, 7, 14, 30];
+
+/** Mirrors db::word_pos: a one-word word question's part of speech, by key. */
+const posOf = wordPos as Record<string, PartOfSpeech>;
+
+/** Mirrors the category clause of session_questions: a genre, "pos:noun" …, or "all". */
+function inCategory(q: Question, category: string): boolean {
+  return category === "all" || q.category === category || `pos:${posOf[q.key]}` === category;
+}
 // v2 keys history by question key. v1 keyed it by array position, and those numbers no longer
 // mean anything, so a v1 blob is dropped rather than read back onto the wrong questions.
 const STORAGE_KEY = "calorie-quest-mock-v2";
@@ -155,7 +169,7 @@ const seedQuestions: SeedQuestion[] = [
   ...Object.entries(packModules)
     .filter(
       ([path]) =>
-        !/\/(questions|glossary|grammar-notes|pronunciations|word-parts|tiers|word-examples|word-usage|idiom-origins|word-related)\.json$/.test(
+        !/\/(questions|glossary|grammar-notes|pronunciations|word-parts|tiers|word-examples|word-usage|idiom-origins|word-related|word-pos)\.json$/.test(
           path,
         ),
     )
@@ -173,7 +187,7 @@ const questions: Question[] = seedQuestions.map(
     key: q.key,
     kind: q.kind,
     difficulty: q.difficulty as Level,
-    tier: tierOf(q.kind, q.key),
+    tier: tierOf(q.kind, q.key, q.en),
     category: q.category ?? "",
     group: q.group ?? q.category ?? "",
     en: q.en,
@@ -984,7 +998,7 @@ function getSessionQuestions(mode: SessionMode, tier: string, category: string, 
   if (mode === "review") {
     // Mirrors review_session: every due review, each in the mode it was missed in; nothing fresh.
     const due = questions
-      .filter((q) => isDue(q) && (tier === "mixed" || q.tier === tier) && (category === "all" || q.category === category))
+      .filter((q) => isDue(q) && (tier === "mixed" || q.tier === tier) && inCategory(q, category))
       .sort(byDue)
       .slice(0, count);
     return shuffle(due.map((q) => buildSessionQuestion(q, reviewModeFor(q, state.history[q.key].reviewMode), true)));
@@ -994,7 +1008,7 @@ function getSessionQuestions(mode: SessionMode, tier: string, category: string, 
   const fits = (q: Question) =>
     hasMode(q) &&
     (tier === "mixed" || q.tier === tier) &&
-    (category === "all" || q.category === category);
+    inCategory(q, category);
   const maxReviews = Math.ceil(count * 0.6);
   // A review joins only sessions of the mode it was missed in.
   const due = questions
@@ -1197,7 +1211,7 @@ export async function mockInvoke<T>(cmd: string, args: Record<string, unknown>):
         if (!q.category) continue;
         let c = categories.find((x) => x.name === q.category);
         if (!c) {
-          c = { name: q.category, total: 0, word: 0, grammar: 0, idiom: 0, phrase: 0, example: 0 };
+          c = { name: q.category, total: 0, word: 0, compound: 0, grammar: 0, idiom: 0, phrase: 0, example: 0 };
           categories.push(c);
         }
         c.total += 1;
@@ -1210,6 +1224,10 @@ export async function mockInvoke<T>(cmd: string, args: Record<string, unknown>):
         eatenToday: [...new Set(state.consumption.filter((c) => c.date === t).map((c) => snackIdOf(c)).filter((id): id is number => id !== null))].sort((a, b) => a - b),
         snacks: counted(state.snacks).sort((a, b) => a.calories - b.calories),
         categories,
+        partsOfSpeech: (["noun", "verb", "adjective", "adverb"] as PartOfSpeech[]).map((pos) => ({
+          pos,
+          total: questions.filter((q) => q.tier === "word" && posOf[q.key] === pos).length,
+        })),
         dueReviewCount: dueCount(),
         ticketsAvailable: ticketsAvailable(),
         kcalRates: { ...RATES },

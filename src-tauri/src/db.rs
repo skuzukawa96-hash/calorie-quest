@@ -58,20 +58,34 @@ const WORD_RELATED_JSON: &str = include_str!("../data/word-related.json");
 /// (a clear grammar point). Sorted once, sentence by sentence; every other question's tab follows
 /// from its kind.
 const TIERS_JSON: &str = include_str!("../data/tiers.json");
+/// The part of speech of every word question written as one word (key → noun / verb / adjective /
+/// adverb), taken from the sense its Japanese gives: watch 腕時計 is a noun, watch 見守る a verb.
+/// Compounds (average deviation, ex-boyfriend) have none; they have a tab of their own.
+const WORD_POS_JSON: &str = include_str!("../data/word-pos.json");
 
-pub const TIERS: [&str; 5] = ["word", "grammar", "idiom", "phrase", "example"];
+pub const TIERS: [&str; 6] = ["word", "compound", "grammar", "idiom", "phrase", "example"];
+pub const PARTS_OF_SPEECH: [&str; 4] = ["noun", "verb", "adjective", "adverb"];
+
+/// Question key → part of speech, for the words of the 英単語 tab.
+pub fn word_pos() -> &'static HashMap<String, String> {
+    static TABLE: std::sync::OnceLock<HashMap<String, String>> = std::sync::OnceLock::new();
+    TABLE.get_or_init(|| serde_json::from_str(WORD_POS_JSON).expect("data/word-pos.json must be a valid JSON object"))
+}
 
 fn tier_overrides() -> &'static HashMap<String, String> {
     static TABLE: std::sync::OnceLock<HashMap<String, String>> = std::sync::OnceLock::new();
     TABLE.get_or_init(|| serde_json::from_str(TIERS_JSON).expect("data/tiers.json must be a valid JSON object"))
 }
 
-/// The home screen's tab for a question: 英単語 / 文法 / 慣用句 / フレーズ / 例文.
-pub fn tier_of(kind: &str, key: &str) -> String {
+/// The home screen's tab for a question: 英単語 / 複合語 / 文法 / 慣用句 / フレーズ / 例文. A word
+/// question of several words, or of words joined by a hyphen, is a compound (average deviation,
+/// ex-boyfriend).
+pub fn tier_of(kind: &str, key: &str, en: &str) -> String {
     if let Some(t) = tier_overrides().get(key) {
         return t.clone();
     }
     match kind {
+        "word" if en.contains([' ', '-']) => "compound",
         "word" => "word",
         "grammar" => "grammar",
         "idiom" => "idiom",
@@ -120,7 +134,8 @@ CREATE TABLE IF NOT EXISTS questions (
   example TEXT,
   example_ja TEXT,
   point TEXT,
-  tier TEXT NOT NULL DEFAULT ''
+  tier TEXT NOT NULL DEFAULT '',
+  pos TEXT
 );
 CREATE TABLE IF NOT EXISTS learning_history (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -294,6 +309,7 @@ fn setup(conn: Connection) -> rusqlite::Result<Connection> {
     ensure_column(&conn, "questions", "example_ja", "TEXT")?;
     ensure_column(&conn, "questions", "point", "TEXT")?;
     ensure_column(&conn, "questions", "tier", "TEXT NOT NULL DEFAULT ''")?;
+    ensure_column(&conn, "questions", "pos", "TEXT")?;
     ensure_column(&conn, "users", "savings_kcal", "INTEGER NOT NULL DEFAULT 0")?;
     ensure_column(&conn, "consumption_log", "ticket_id", "INTEGER")?;
     // A day's leftover kcal moves to savings once the day is over; `saved_kcal` records how much,
@@ -393,14 +409,14 @@ fn seed_questions(conn: &Connection) -> rusqlite::Result<()> {
     let tx = conn.unchecked_transaction()?;
     {
         let mut stmt = tx.prepare(
-            "INSERT INTO questions (key, kind, difficulty, en, ja, modes, choices, prompt, hint, audio_path, category, word_group, example, example_ja, point, tier)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)
+            "INSERT INTO questions (key, kind, difficulty, en, ja, modes, choices, prompt, hint, audio_path, category, word_group, example, example_ja, point, tier, pos)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)
              ON CONFLICT(key) DO UPDATE SET kind = excluded.kind, difficulty = excluded.difficulty,
                en = excluded.en, ja = excluded.ja, modes = excluded.modes, choices = excluded.choices,
                prompt = excluded.prompt, hint = excluded.hint, audio_path = excluded.audio_path,
                category = excluded.category, word_group = excluded.word_group,
                example = excluded.example, example_ja = excluded.example_ja, point = excluded.point,
-               tier = excluded.tier",
+               tier = excluded.tier, pos = excluded.pos",
         )?;
         for q in &seed.questions {
             let modes = serde_json::to_string(&q.modes).unwrap_or_else(|_| "[]".into());
@@ -411,7 +427,8 @@ fn seed_questions(conn: &Connection) -> rusqlite::Result<()> {
             let group = if q.group.is_empty() { &q.category } else { &q.group };
             stmt.execute(params![
                 q.key, q.kind, q.difficulty, q.en, q.ja, modes, choices, q.prompt, q.hint, q.audio_path, q.category,
-                group, q.example, q.example_ja, q.point, tier_of(&q.kind, &q.key)
+                group, q.example, q.example_ja, q.point, tier_of(&q.kind, &q.key, &q.en),
+                word_pos().get(&q.key)
             ])?;
         }
     }
@@ -1291,6 +1308,7 @@ mod tests {
                     && n != "word-usage.json"
                     && n != "idiom-origins.json"
                     && n != "word-related.json"
+                    && n != "word-pos.json"
             })
             .count();
         assert_eq!(
@@ -1446,7 +1464,7 @@ mod tests {
         }
         let mut counts: HashMap<String, usize> = HashMap::new();
         for q in &seed.questions {
-            let tier = tier_of(&q.kind, &q.key);
+            let tier = tier_of(&q.kind, &q.key, &q.en);
             assert!(TIERS.contains(&tier.as_str()), "{} has tier {tier}", q.key);
             *counts.entry(tier).or_default() += 1;
         }
@@ -1456,6 +1474,32 @@ mod tests {
         let conn = init_in_memory().unwrap();
         let blank: i64 = conn.query_row("SELECT COUNT(*) FROM questions WHERE tier = ''", [], |r| r.get(0)).unwrap();
         assert_eq!(blank, 0, "seeding fills every question's tab");
+        assert_eq!(tier_of("word", "w1", "average deviation"), "compound");
+        assert_eq!(tier_of("word", "w1", "ex-boyfriend"), "compound");
+        assert_eq!(tier_of("word", "w1", "apple"), "word");
+    }
+
+    /// Every one-word word question has its part of speech, and word-pos.json names nothing else.
+    #[test]
+    fn every_word_has_a_part_of_speech() {
+        let seed = load_seed();
+        let by_key: HashMap<&str, &SeedQuestion> = seed.questions.iter().map(|q| (q.key.as_str(), q)).collect();
+        for (key, pos) in word_pos() {
+            let q = by_key.get(key.as_str()).unwrap_or_else(|| panic!("word-pos.json names {key}, which is no question"));
+            assert_eq!(tier_of(&q.kind, &q.key, &q.en), "word", "{key} ({}) is not a one-word word question", q.en);
+            assert!(PARTS_OF_SPEECH.contains(&pos.as_str()), "{key}: {pos} is no part of speech");
+        }
+        let mut missing: Vec<&str> = seed
+            .questions
+            .iter()
+            .filter(|q| tier_of(&q.kind, &q.key, &q.en) == "word" && !word_pos().contains_key(&q.key))
+            .map(|q| q.en.as_str())
+            .collect();
+        missing.sort();
+        assert!(missing.is_empty(), "words without a part of speech: {missing:?}");
+        for pos in PARTS_OF_SPEECH {
+            assert!(word_pos().values().filter(|p| *p == pos).count() >= 10, "hardly any {pos}");
+        }
     }
 
     /// Each word split into parts is a word question of the bank, is split into at least two

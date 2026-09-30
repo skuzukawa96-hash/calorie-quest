@@ -2,7 +2,7 @@ export type Mode = "choice" | "typing" | "speaking" | "listening";
 /** a study session: one mode, or "review" (every due review, each in the mode it was missed in) */
 export type SessionMode = Mode | "review";
 /** the home screen's tabs: 英単語 / 文法 / 慣用句 / フレーズ / 例文 */
-export type Tier = "word" | "grammar" | "idiom" | "phrase" | "example";
+export type Tier = "word" | "compound" | "grammar" | "idiom" | "phrase" | "example";
 /** a tab, or every tab at once */
 export type TierChoice = Tier | "mixed";
 /** a question's level: sets the listening and speaking rate (2 / 4 / 10 kcal) */
@@ -169,6 +169,7 @@ export interface CategoryInfo {
   total: number;
   /** questions per tab */
   word: number;
+  compound: number;
   grammar: number;
   idiom: number;
   phrase: number;
@@ -210,6 +211,25 @@ export function categoryIcon(name: string): string {
   return CATEGORY_ICON[name] ?? "📚";
 }
 
+/** The part of speech of a word in the 英単語 tab. */
+export type PartOfSpeech = "noun" | "verb" | "adjective" | "adverb";
+
+export const POS_LABEL: Record<PartOfSpeech, string> = { noun: "名詞", verb: "動詞", adjective: "形容詞", adverb: "副詞" };
+
+export interface PartOfSpeechInfo {
+  pos: PartOfSpeech;
+  total: number;
+}
+
+/** The category a session asks for to get the words of one part of speech. */
+export const posCategory = (pos: PartOfSpeech) => `pos:${pos}`;
+
+/** How a session's category reads: 名詞 for a part of speech, the icon and name for a genre. */
+export function categoryLabel(category: string): string {
+  const pos = category.startsWith("pos:") ? POS_LABEL[category.slice(4) as PartOfSpeech] : undefined;
+  return pos ?? `${categoryIcon(category)} ${category}`;
+}
+
 export interface Dashboard {
   user: UserInfo;
   today: DailyStats;
@@ -219,6 +239,8 @@ export interface Dashboard {
   eatenToday: number[];
   snacks: Snack[];
   categories: CategoryInfo[];
+  /** 英単語 by part of speech, for the chips above the genres */
+  partsOfSpeech: PartOfSpeechInfo[];
   dueReviewCount: number;
   ticketsAvailable: number;
   kcalRates: KcalRates;
@@ -380,6 +402,7 @@ export const MODE_LABEL: Record<Mode, string> = {
 
 export const TIER_LABEL: Record<TierChoice, string> = {
   word: "英単語",
+  compound: "複合語",
   grammar: "文法",
   idiom: "慣用句",
   phrase: "フレーズ",
@@ -387,4 +410,4 @@ export const TIER_LABEL: Record<TierChoice, string> = {
   mixed: "ミックス",
 };
 
-export const TIERS: Tier[] = ["word", "grammar", "idiom", "phrase", "example"];
+export const TIERS: Tier[] = ["word", "compound", "grammar", "idiom", "phrase", "example"];

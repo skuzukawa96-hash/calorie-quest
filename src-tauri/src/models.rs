@@ -204,10 +204,18 @@ pub struct CategoryInfo {
     pub total: i64,
     /// questions per tab
     pub word: i64,
+    pub compound: i64,
     pub grammar: i64,
     pub idiom: i64,
     pub phrase: i64,
     pub example: i64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct PartOfSpeechInfo {
+    /// noun / verb / adjective / adverb; a session asks for it as the category "pos:noun"
+    pub pos: String,
+    pub total: i64,
 }
 
 #[derive(Debug, Serialize)]
@@ -221,6 +229,8 @@ pub struct Dashboard {
     pub eaten_today: Vec<i64>,
     pub snacks: Vec<Snack>,
     pub categories: Vec<CategoryInfo>,
+    /// 英単語 by part of speech (noun / verb / adjective / adverb), for the chips above the genres
+    pub parts_of_speech: Vec<PartOfSpeechInfo>,
     pub due_review_count: i64,
     pub tickets_available: i64,
     pub kcal_rates: KcalRates,

@@ -32,6 +32,7 @@ import {
 import {
   ALL_CATEGORIES,
   categoryIcon,
+  categoryLabel,
   TIER_LABEL,
   MODE_LABEL,
   type AnswerResult,
@@ -306,7 +307,7 @@ export default function Study({ mode, tier, category, rates, onExit, onProgress,
           <span className="pill">{TIER_LABEL[tier]}</span>
           {category !== ALL_CATEGORIES && (
             <span className="pill">
-              {categoryIcon(category)} {category}
+              {categoryLabel(category)}
             </span>
           )}
           {tier === "mixed" && <span className="pill level">{TIER_LABEL[current.question.tier]}</span>}

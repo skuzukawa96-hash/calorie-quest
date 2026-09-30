@@ -358,6 +358,33 @@ main {
   gap: 6px;
   margin: 2px 0 16px;
 }
+/* すべて and the parts of speech: the first choice, above the genres */
+.category-main {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 2px 0 10px;
+}
+.chip.chip-main {
+  font-size: 14px;
+  font-weight: 700;
+  padding: 6px 16px;
+  border-radius: 10px;
+  border: 1.5px solid var(--choco-light);
+  background: var(--cream-2);
+  color: var(--choco);
+}
+.chip.chip-main.active {
+  background: var(--choco);
+  border-color: var(--choco);
+  color: #fff;
+}
+/* the genres, a step below */
+.category-genres {
+  margin-left: 6px;
+  padding-left: 12px;
+  border-left: 3px solid var(--line);
+}
 /* ---------- hover dictionary ---------- */
 .glossed {
   border-bottom: 1px dotted var(--caramel);

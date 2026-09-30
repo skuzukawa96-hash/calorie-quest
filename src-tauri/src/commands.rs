@@ -265,7 +265,7 @@ fn category_infos(conn: &Connection) -> rusqlite::Result<Vec<CategoryInfo>> {
             None => {
                 out.push((
                     min_id,
-                    CategoryInfo { name, total: 0, word: 0, grammar: 0, idiom: 0, phrase: 0, example: 0 },
+                    CategoryInfo { name, total: 0, word: 0, compound: 0, grammar: 0, idiom: 0, phrase: 0, example: 0 },
                 ));
                 out.len() - 1
             }
@@ -275,6 +275,7 @@ fn category_infos(conn: &Connection) -> rusqlite::Result<Vec<CategoryInfo>> {
         entry.1.total += n;
         match tier.as_str() {
             "word" => entry.1.word += n,
+            "compound" => entry.1.compound += n,
             "grammar" => entry.1.grammar += n,
             "idiom" => entry.1.idiom += n,
             "phrase" => entry.1.phrase += n,
@@ -284,6 +285,21 @@ fn category_infos(conn: &Connection) -> rusqlite::Result<Vec<CategoryInfo>> {
     }
     out.sort_by_key(|(first_id, _)| *first_id);
     Ok(out.into_iter().map(|(_, c)| c).collect())
+}
+
+/// How many words of the 英単語 tab each part of speech has, in the order of the chips.
+fn parts_of_speech(conn: &Connection) -> rusqlite::Result<Vec<PartOfSpeechInfo>> {
+    db::PARTS_OF_SPEECH
+        .iter()
+        .map(|pos| {
+            let total = conn.query_row(
+                "SELECT COUNT(*) FROM questions WHERE tier = 'word' AND pos = ?1",
+                params![pos],
+                |r| r.get(0),
+            )?;
+            Ok(PartOfSpeechInfo { pos: pos.to_string(), total })
+        })
+        .collect()
 }
 
 fn kcal_rates() -> KcalRates {
@@ -550,8 +566,9 @@ fn review_mode_for(q: &Question, missed_in: Option<String>) -> String {
 }
 
 /// Due reviews first (at most 60% of the session), then unseen/fresh questions; shuffled.
-/// A review joins only sessions of the mode it was missed in. `tier` is a tab (word / grammar /
-/// idiom / phrase / example) or "mixed", `category` a genre name or "all"; `mode` may also be
+/// A review joins only sessions of the mode it was missed in. `tier` is a tab (word / compound /
+/// grammar / idiom / phrase / example) or "mixed", `category` a genre name, a part of speech of
+/// the word tab ("pos:noun" / "pos:verb" / "pos:adjective" / "pos:adverb") or "all"; `mode` may also be
 /// [`REVIEW_SESSION`].
 pub fn session_questions(
     conn: &Connection,
@@ -578,7 +595,8 @@ pub fn session_questions(
         "SELECT {Q_COLS} FROM questions q
          JOIN learning_history h ON h.question_id = q.id
          WHERE h.user_id = ?1 AND h.needs_review = 1 AND h.next_due_at IS NOT NULL AND h.next_due_at <= ?2
-           AND {mode_clause} AND (?4 = 'mixed' OR q.tier = ?4) AND (?5 = 'all' OR q.category = ?5)
+           AND {mode_clause} AND (?4 = 'mixed' OR q.tier = ?4)
+           AND (?5 = 'all' OR q.category = ?5 OR ('pos:' || q.pos) = ?5)
            AND (h.review_mode IS NULL OR h.review_mode = ?7)
          ORDER BY h.next_due_at ASC, RANDOM() LIMIT ?6"
     );
@@ -602,7 +620,8 @@ pub fn session_questions(
     let fresh_sql = format!(
         "SELECT {Q_COLS} FROM questions q
          LEFT JOIN learning_history h ON h.question_id = q.id AND h.user_id = ?1
-         WHERE {fresh_mode_clause} AND (?3 = 'mixed' OR q.tier = ?3) AND (?4 = 'all' OR q.category = ?4)
+         WHERE {fresh_mode_clause} AND (?3 = 'mixed' OR q.tier = ?3)
+           AND (?4 = 'all' OR q.category = ?4 OR ('pos:' || q.pos) = ?4)
            AND (h.needs_review IS NULL OR h.needs_review = 0) {exclude_clause}
          ORDER BY (h.last_studied_at IS NOT NULL), RANDOM() LIMIT ?5"
     );
@@ -634,7 +653,7 @@ fn review_session(conn: &Connection, tier: &str, category: &str, count: i64) -> 
         "SELECT {Q_COLS}, h.review_mode FROM questions q
          JOIN learning_history h ON h.question_id = q.id
          WHERE h.user_id = ?1 AND h.needs_review = 1 AND h.next_due_at IS NOT NULL AND h.next_due_at <= ?2
-           AND (?3 = 'mixed' OR q.tier = ?3) AND (?4 = 'all' OR q.category = ?4)
+           AND (?3 = 'mixed' OR q.tier = ?3) AND (?4 = 'all' OR q.category = ?4 OR ('pos:' || q.pos) = ?4)
          ORDER BY h.next_due_at ASC, RANDOM() LIMIT ?5"
     );
     let due: Vec<(Question, Option<String>)> = {
@@ -855,6 +874,7 @@ pub fn load_dashboard(conn: &Connection) -> CmdResult<Dashboard> {
         eaten_today: eaten_today(conn).map_err(err)?,
         snacks: list_snacks_inner(conn).map_err(err)?,
         categories: category_infos(conn).map_err(err)?,
+        parts_of_speech: parts_of_speech(conn).map_err(err)?,
         due_review_count: due_review_count(conn).map_err(err)?,
         tickets_available: tickets_available(conn).map_err(err)?,
         kcal_rates: kcal_rates(),
@@ -1624,6 +1644,27 @@ mod tests {
         assert!(e.iter().all(|q| q.question.tier == "example" && matches!(q.question.kind.as_str(), "phrase" | "sentence")));
     }
 
+    /// 英単語 holds the one-word words and can be narrowed to a part of speech; 複合語 holds the
+    /// words of several words.
+    #[test]
+    fn words_split_into_single_words_and_compounds_and_by_part_of_speech() {
+        let c = conn();
+        let words = session_questions(&c, "choice", "word", "all", 50).unwrap();
+        assert!(words.iter().all(|q| q.question.kind == "word" && !q.question.en.contains([' ', '-'])));
+        let compounds = session_questions(&c, "choice", "compound", "all", 50).unwrap();
+        assert!(!compounds.is_empty());
+        assert!(compounds.iter().all(|q| q.question.kind == "word" && q.question.en.contains([' ', '-'])));
+        for pos in db::PARTS_OF_SPEECH {
+            let s = session_questions(&c, "choice", "word", &format!("pos:{pos}"), 50).unwrap();
+            assert!(!s.is_empty(), "no {pos} session");
+            assert!(s.iter().all(|q| db::word_pos().get(&q.question.key).map(String::as_str) == Some(pos)), "{pos}");
+        }
+        let counts = parts_of_speech(&c).unwrap();
+        assert_eq!(counts.iter().map(|p| p.pos.as_str()).collect::<Vec<_>>(), db::PARTS_OF_SPEECH);
+        let singles: i64 = c.query_row("SELECT COUNT(*) FROM questions WHERE tier = 'word'", [], |r| r.get(0)).unwrap();
+        assert_eq!(counts.iter().map(|p| p.total).sum::<i64>(), singles, "every word counts under one part of speech");
+    }
+
     #[test]
     fn distractors_come_from_the_same_semantic_group() {
         let c = conn();
@@ -1909,7 +1950,12 @@ mod tests {
         assert_eq!(total, all);
         assert!(cats.iter().any(|x| x.name == "文法" && x.grammar > 0));
         for c in &cats {
-            assert_eq!(c.total, c.word + c.grammar + c.idiom + c.phrase + c.example, "{} counts every tab", c.name);
+            assert_eq!(
+                c.total,
+                c.word + c.compound + c.grammar + c.idiom + c.phrase + c.example,
+                "{} counts every tab",
+                c.name
+            );
         }
         assert!(cats.iter().any(|x| x.name == "あいさつ・あいづち" && x.phrase > 0));
     }

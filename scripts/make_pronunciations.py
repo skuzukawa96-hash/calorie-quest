@@ -21,7 +21,8 @@ import sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA = os.path.join(ROOT, "src-tauri", "data")
 NOT_QUESTIONS = {"glossary.json", "grammar-notes.json", "pronunciations.json", "word-parts.json", "tiers.json",
-                 "word-examples.json", "word-usage.json", "idiom-origins.json", "word-related.json"}
+                 "word-examples.json", "word-usage.json", "idiom-origins.json", "word-related.json",
+                 "word-pos.json"}
 
 VOWELS = {
     "AA": "ɑ", "AE": "æ", "AO": "ɔː", "AW": "aʊ", "AY": "aɪ", "EH": "ɛ", "EY": "eɪ",

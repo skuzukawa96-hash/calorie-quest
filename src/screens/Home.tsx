@@ -7,6 +7,8 @@ import { playCrunch, playFanfare } from "../lib/sfx";
 import {
   ALL_CATEGORIES,
   categoryIcon,
+  POS_LABEL,
+  posCategory,
   TIER_LABEL,
   TIERS,
   type CategoryInfo,
@@ -70,8 +72,13 @@ export default function Home({ dash, onStart, onChanged, goToSnacks, toast }: Pr
   const countFor = (c: CategoryInfo) => (tier === "mixed" ? c.total : c[tier]);
   const visibleCategories = dash.categories.filter((c) => countFor(c) > 0);
   const totalCount = visibleCategories.reduce((s, c) => s + countFor(c), 0);
-  // If the selected genre has nothing in this tab, fall back to "all" silently.
-  const effectiveCategory = visibleCategories.some((c) => c.name === category) ? category : ALL_CATEGORIES;
+  // 英単語 can also be narrowed to a part of speech; the genres come in the row below.
+  const partsOfSpeech = tier === "word" ? dash.partsOfSpeech.filter((p) => p.total > 0) : [];
+  // If the selected genre or part of speech has nothing in this tab, fall back to "all" silently.
+  const effectiveCategory =
+    visibleCategories.some((c) => c.name === category) || partsOfSpeech.some((p) => posCategory(p.pos) === category)
+      ? category
+      : ALL_CATEGORIES;
 
   const redeem = async () => {
     setRedeeming(true);
@@ -205,13 +212,24 @@ export default function Home({ dash, onStart, onChanged, goToSnacks, toast }: Pr
             ))}
           </div>
         </div>
-        <div className="category-row" role="group" aria-label="ジャンル">
+        <div className="category-main" role="group" aria-label="絞り込み">
           <button
-            className={"chip " + (effectiveCategory === ALL_CATEGORIES ? "active" : "")}
+            className={"chip chip-main " + (effectiveCategory === ALL_CATEGORIES ? "active" : "")}
             onClick={() => setCategory(ALL_CATEGORIES)}
           >
-            📚 すべて（{totalCount}）
+            すべて（{totalCount}）
           </button>
+          {partsOfSpeech.map((p) => (
+            <button
+              key={p.pos}
+              className={"chip chip-main " + (effectiveCategory === posCategory(p.pos) ? "active" : "")}
+              onClick={() => setCategory(posCategory(p.pos))}
+            >
+              {POS_LABEL[p.pos]}（{p.total}）
+            </button>
+          ))}
+        </div>
+        <div className="category-row category-genres" role="group" aria-label="ジャンル">
           {visibleCategories.map((c) => (
             <button
               key={c.name}

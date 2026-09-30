@@ -47,6 +47,7 @@ fn is_pack(name: &str) -> bool {
         && name != "word-usage.json"
         && name != "idiom-origins.json"
         && name != "word-related.json"
+        && name != "word-pos.json"
 }
 
 /// Groups packs by family and orders them numerically, so `-2` comes before `-10` and the seeded
