@@ -638,6 +638,18 @@ main {
   background: var(--caramel);
   color: #fff;
 }
+.recipe-toast-answers {
+  display: flex;
+  gap: 6px;
+}
+.recipe-toast-offer.yes {
+  background: var(--caramel);
+  border-color: var(--caramel);
+  color: #fff;
+}
+.recipe-toast-offer.yes:hover {
+  background: var(--caramel-dark);
+}
 
 /* ---------- listening ---------- */
 .listen-stage {
