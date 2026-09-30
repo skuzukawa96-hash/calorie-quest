@@ -122,12 +122,12 @@ const RATES = { low: 2, mid: 4, high: 10, choice: 4, idiomTyping: 6, reviewMulti
 
 /**
  * Mirrors db::tier_of: the hand-sorted example sentences, else the kind decides the tab. A word of
- * several words, or of words joined by a hyphen, is a compound.
+ * several words, or of words joined by a hyphen, is a compound, unless it is a verb (get up).
  */
 function tierOf(kind: string, key: string, en: string): Tier {
   const sorted = (tierOverrides as Record<string, Tier>)[key];
   if (sorted) return sorted;
-  if (kind === "word") return /[\s-]/.test(en) ? "compound" : "word";
+  if (kind === "word") return /[\s-]/.test(en) && (wordPos as Record<string, string>)[key] !== "verb" ? "compound" : "word";
   if (kind === "grammar" || kind === "idiom") return kind;
   if (kind === "dialogue" || kind === "expression") return "phrase";
   return "example";
@@ -453,6 +453,9 @@ function wordDistractors(q: Question): string[] | null {
   const candidates = shuffle(questions.filter((o) => o.kind === "word" && posOf[o.key] === pos && o.id !== q.id && o.ja !== q.ja));
   const confused = confusables.get(q.en.toLowerCase()) ?? [];
   const near = relatedWords(q.en.toLowerCase()).filter((w) => !confused.includes(w));
+  const otherSenses = questions
+    .filter((o) => o.kind === "word" && o.id !== q.id && o.en.toLowerCase() === q.en.toLowerCase())
+    .map((o) => o.ja);
   const picked: string[] = [];
   const pickedEn: string[] = [];
   const take = (fits: (c: Question) => boolean, checked: boolean, upTo: number) => {
@@ -465,7 +468,8 @@ function wordDistractors(q: Question): string[] | null {
         pickedEn.includes(c.en.toLowerCase()) ||
         shareASense(c.ja, q.ja) ||
         picked.some((p) => shareASense(p, c.ja)) ||
-        (!checked && meaningsClose(c.ja, q.ja))
+        (!checked && meaningsClose(c.ja, q.ja)) ||
+        otherSenses.some((o) => meaningsClose(c.ja, o))
       )
         continue;
       picked.push(c.ja);
@@ -765,12 +769,24 @@ function relatedGroups(key: string): RelatedGroup[] {
 }
 
 /** Mirrors db::word_notes: everything the data says about a word or an idiom, or null. */
+/** Mirrors db::usages_of: a phrasal verb takes the patterns of its verb that begin with it. */
+function usagesOf(key: string): WordUsage[] {
+  const own = usagesByWord.get(key);
+  if (own) return own as WordUsage[];
+  const space = key.indexOf(" ");
+  if (space < 0) return [];
+  return ((usagesByWord.get(key.slice(0, space)) ?? []) as WordUsage[]).filter((u) => {
+    const p = u.pattern.toLowerCase();
+    return p === key || p.startsWith(key + " ");
+  });
+}
+
 function wordNotes(word: string): WordNotes | null {
   const key = word.trim().toLowerCase();
   const notes: WordNotes = {
     parts: wordPartsByWord.get(key) ?? [],
     examples: (examplesByWord.get(key) ?? []) as ExampleSentence[],
-    usages: (usagesByWord.get(key) ?? []) as WordUsage[],
+    usages: usagesOf(key),
     origin: originByIdiom.get(key) ?? null,
     related: relatedGroups(key),
     used: [],
@@ -800,7 +816,7 @@ const TOO_COMMON_FOR_RELATED = [
   "big", "small", "little", "large", "fast", "sleep", "rest", "close", "cheap", "expensive", "price", "quiet", "wear", "fix", "hurt", "store", "very", "really",
 ];
 const NOT_ING = ["morning", "evening", "ceiling", "during", "string", "spring", "sibling", "pudding", "awning", "darling"];
-const NOUNS_AFTER_TO = ["work", "school", "bed", "class", "church", "court", "rain", "store"];
+const NOUNS_AFTER_TO = ["work", "school", "bed", "class", "church", "court", "rain", "store", "water"];
 const DETERMINERS = ["the", "a", "an", "my", "your", "his", "its", "our", "their", "every", "each"];
 const ADVERBS = [
   "well", "very", "really", "so", "too", "just", "also", "still", "even", "never", "always", "often", "sometimes",

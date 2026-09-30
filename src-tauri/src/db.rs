@@ -113,7 +113,9 @@ pub fn tier_of(kind: &str, key: &str, en: &str) -> String {
         return t.clone();
     }
     match kind {
-        "word" if en.contains([' ', '-']) => "compound",
+        // A verb of two words or more (get up, look forward to) is still a verb to learn as one: it
+        // goes with the single words, under 動詞.
+        "word" if en.contains([' ', '-']) && word_pos().get(key).map(String::as_str) != Some("verb") => "compound",
         "word" => "word",
         "grammar" => "grammar",
         "idiom" => "idiom",
@@ -802,12 +804,36 @@ pub fn recipe_pos(word: &str, meaning: &str) -> String {
 /// Everything the data says about a word or an idiom beyond its meaning, or None when it says
 /// nothing. Looked up by the English alone, so a word saved to the recipe gets the same notes as
 /// the word question it may have come from.
+/// The patterns of `key` (lowercase). A phrasal verb has its own only rarely: "look forward to ～"
+/// is written under look, so it takes those of its verb that begin with it.
+fn usages_of(key: &str) -> Vec<crate::models::WordUsage> {
+    if let Some(own) = word_usages().get(key) {
+        return own.clone();
+    }
+    let Some((head, _)) = key.split_once(' ') else {
+        return Vec::new();
+    };
+    let prefix = format!("{key} ");
+    word_usages()
+        .get(head)
+        .map(|us| {
+            us.iter()
+                .filter(|u| {
+                    let p = u.pattern.to_lowercase();
+                    p == key || p.starts_with(&prefix)
+                })
+                .cloned()
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 pub fn word_notes(word: &str) -> Option<crate::models::WordNotes> {
     let key = word.trim().to_lowercase();
     let notes = crate::models::WordNotes {
         parts: word_parts().get(&key).cloned().unwrap_or_default(),
         examples: word_examples().get(&key).cloned().unwrap_or_default(),
-        usages: word_usages().get(&key).cloned().unwrap_or_default(),
+        usages: usages_of(&key),
         origin: idiom_origins().get(&key).cloned(),
         related: related_groups(&key),
         used: Vec::new(),
@@ -854,8 +880,8 @@ const MAX_SLOT_WORDS: usize = 6;
 /// Words ending in -ing that are no verb's -ing (the "-thing" words are left out as well).
 const NOT_ING: &[&str] = &["morning", "evening", "ceiling", "during", "string", "spring", "sibling", "pudding", "awning", "darling"];
 /// Words after "to" that read as verbs by their gloss but are places to go ("commute to work") or
-/// nouns there ("due to rain", "from store to store").
-const NOUNS_AFTER_TO: &[&str] = &["work", "school", "bed", "class", "church", "court", "rain", "store"];
+/// nouns there ("due to rain", "from store to store", "resistant to water").
+const NOUNS_AFTER_TO: &[&str] = &["work", "school", "bed", "class", "church", "court", "rain", "store", "water"];
 /// Adverbs that may stand between two words of a pattern ("get along well with", "is very good
 /// at"), besides the words ending in -ly ("listen carefully to").
 const ADVERBS: &[&str] = &[
@@ -2127,6 +2153,15 @@ mod tests {
         }
         missed.sort();
         assert!(missed.is_empty(), "{} patterns not found in their sentence:\n{}", missed.len(), missed.join("\n"));
+    }
+
+    /// A phrasal verb shows the patterns of its verb that begin with it, and none of the others.
+    #[test]
+    fn phrasal_verbs_take_their_verbs_patterns() {
+        let notes = word_notes("look forward to").expect("notes for look forward to");
+        assert!(notes.usages.iter().any(|u| u.pattern == "look forward to ～"), "{:?}", notes.usages);
+        assert!(notes.usages.iter().all(|u| u.pattern.starts_with("look forward to")));
+        assert!(!notes.examples.is_empty());
     }
 
     /// Every word of a confusable set is asked as a word question, and two of one part of speech

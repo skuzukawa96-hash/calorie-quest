@@ -434,6 +434,12 @@ fn word_distractors(conn: &Connection, q: &Question) -> rusqlite::Result<Option<
         .into_iter()
         .filter(|w| !confused.contains(w))
         .collect();
+    // The word's other senses count as right answers too: 閉まった is no wrong answer for close
+    // (近い) when close is also 閉める.
+    let other_senses: Vec<String> = conn
+        .prepare_cached("SELECT ja FROM questions WHERE kind = 'word' AND lower(en) = lower(?1) AND id != ?2")?
+        .query_map(params![q.en, q.id], |r| r.get(0))?
+        .collect::<Result<_, _>>()?;
     let mut picked: Vec<String> = Vec::new();
     // One sense per English word: change is not asked against both of charge's (請求する, 充電する).
     let mut picked_en: Vec<String> = Vec::new();
@@ -453,6 +459,7 @@ fn word_distractors(conn: &Connection, q: &Question) -> rusqlite::Result<Option<
                 || share_a_sense(&c.ja, &q.ja)
                 || picked.iter().any(|p| share_a_sense(p, &c.ja))
                 || (!checked && meanings_close(&c.ja, &q.ja))
+                || other_senses.iter().any(|o| meanings_close(&c.ja, o))
             {
                 continue;
             }
@@ -1812,10 +1819,14 @@ mod tests {
     fn words_split_into_single_words_and_compounds_and_by_part_of_speech() {
         let c = conn();
         let words = session_questions(&c, "choice", "word", "all", 50).unwrap();
-        assert!(words.iter().all(|q| q.question.kind == "word" && !q.question.en.contains([' ', '-'])));
+        // A phrasal verb (get up) goes with the single words.
+        assert!(words.iter().all(|q| q.question.kind == "word"
+            && (!q.question.en.contains([' ', '-']) || db::word_pos().get(&q.question.key).map(String::as_str) == Some("verb"))));
         let compounds = session_questions(&c, "choice", "compound", "all", 50).unwrap();
         assert!(!compounds.is_empty());
-        assert!(compounds.iter().all(|q| q.question.kind == "word" && q.question.en.contains([' ', '-'])));
+        assert!(compounds.iter().all(|q| q.question.kind == "word"
+            && q.question.en.contains([' ', '-'])
+            && db::word_pos().get(&q.question.key).map(String::as_str) != Some("verb")));
         for pos in db::PARTS_OF_SPEECH {
             let s = session_questions(&c, "choice", "word", &format!("pos:{pos}"), 50).unwrap();
             assert!(!s.is_empty(), "no {pos} session");
