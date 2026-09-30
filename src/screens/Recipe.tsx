@@ -115,6 +115,36 @@ function startingWith(words: RecipeWord[], query: string): RecipeWord[] {
   return q ? words.filter((w) => w.word.toLowerCase().startsWith(q)) : words;
 }
 
+/* ---------- hints shown once a day ---------- */
+
+/**
+ * The notes under a right answer that say the same thing every time: how 習得 / まだ work, and
+ * that a word pays only once a day. Each is shown the first time it comes up in a day.
+ */
+type Hint = "decide" | "paid";
+const HINT_STORAGE = "cq-recipe-hints";
+
+function localDay(): string {
+  const d = new Date();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+/** True the first time `hint` comes up today, which it also notes; false after that. */
+function firstToday(hint: Hint): boolean {
+  try {
+    const day = localDay();
+    const v = JSON.parse(localStorage.getItem(HINT_STORAGE) ?? "null");
+    const seen: string[] = v?.day === day && Array.isArray(v.seen) ? v.seen : [];
+    if (seen.includes(hint)) return false;
+    localStorage.setItem(HINT_STORAGE, JSON.stringify({ day, seen: [...seen, hint] }));
+    return true;
+  } catch {
+    // Nowhere to remember it: better shown every time than never.
+    return true;
+  }
+}
+
 /** "2026-09-30T12:34:56" as 2026-09-30 12:34. */
 function stamp(ts: string): string {
   return ts.slice(0, 16).replace("T", " ");
@@ -536,16 +566,18 @@ export default function Recipe({ onProgress, toast }: Props) {
                           }
                         }}
                       >
+                        <span className="recipe-word">{w.word}</span>
                         <button
-                          className="recipe-word"
+                          className="btn-link speak-btn recipe-speak"
                           onClick={(e) => {
                             e.stopPropagation();
                             say(w.word);
                           }}
-                          title="クリックで発音"
                           disabled={!isTtsSupported()}
+                          title="読み上げる"
+                          aria-label={`${w.word} を読み上げる`}
                         >
-                          {w.word}
+                          🔊
                         </button>
                         <span className={"recipe-meaning" + (w.meaning ? "" : " muted")}>{w.meaning || NO_MEANING}</span>
                         {w.masteredAt && (
@@ -616,6 +648,10 @@ interface Answered {
   given: string;
   /** right and paid; a word pays once a day */
   counted: boolean;
+  /** right, and the first right answer today: explain 習得 / まだ */
+  decideHint: boolean;
+  /** right but already paid today, the first time today: say why it is +0 kcal */
+  paidNote: boolean;
 }
 
 function RecipeReview({
@@ -703,7 +739,13 @@ function RecipeReview({
         }
         setEarned((k) => k + r.kcalEarned);
         setHalfPending(r.halfPending);
-        setAnswered({ correct, given, counted: r.counted });
+        setAnswered({
+          correct,
+          given,
+          counted: r.counted,
+          decideHint: correct && firstToday("decide"),
+          paidNote: correct && !r.counted && firstToday("paid"),
+        });
         if (r.kcalEarned > 0) onProgress();
         if (mode === "typing") window.setTimeout(() => say(current.word), 380);
       } catch (e) {
@@ -945,16 +987,23 @@ function RecipeReview({
             {notes?.word === current.word && notes.notes && (
               <WordNotesPanel notes={notes.notes} word={current.word} meaning={current.meaning} dict={dict} gloss />
             )}
-            <div className="muted">
-              {answered.correct
-                ? again
-                  ? "まだ覚えているなら「習得」、自信がなければ「まだ」で復習中に戻します。"
-                  : "覚えたなら「習得」で習得済みに。なんとなく当たっただけなら「まだ」で復習中に残します。"
-                : again
-                  ? "復習中に戻しました。最後にもう一度挑戦できます。"
-                  : "復習中のまま残ります。最後にもう一度挑戦できます。"}
-              {answered.correct && !answered.counted && " この単語のカロリーは今日もう受け取っています（1語につき1日1回）。"}
-            </div>
+            {(answered.correct ? answered.decideHint || answered.paidNote : true) && (
+              <div className="muted">
+                {answered.correct
+                  ? [
+                      answered.decideHint &&
+                        (again
+                          ? "まだ覚えているなら「習得」、自信がなければ「まだ」で復習中に戻します。"
+                          : "覚えたなら「習得」で習得済みに。なんとなく当たっただけなら「まだ」で復習中に残します。"),
+                      answered.paidNote && "この単語のカロリーは今日もう受け取っています（1語につき1日1回）。",
+                    ]
+                      .filter(Boolean)
+                      .join(" ")
+                  : again
+                    ? "復習中に戻しました。最後にもう一度挑戦できます。"
+                    : "復習中のまま残ります。最後にもう一度挑戦できます。"}
+              </div>
+            )}
           </div>
           {answered.correct ? (
             <div className="row decide-buttons">
