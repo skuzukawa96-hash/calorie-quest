@@ -374,6 +374,17 @@ export default function Recipe({ onProgress, toast }: Props) {
       if (!next.delete(id)) next.add(id);
       return next;
     });
+  // 一括: opens every word the list shows, or closes them when all are open already.
+  const allOpen = listed.length > 0 && listed.every((w) => open.has(w.id));
+  const toggleAll = () =>
+    setOpen((s) => {
+      const next = new Set(s);
+      for (const w of listed) {
+        if (allOpen) next.delete(w.id);
+        else next.add(w.id);
+      }
+      return next;
+    });
   // The review buttons follow the list's tab: 習得済み goes over the learned words, the others
   // over the words still in review.
   const target: Target = filter === "mastered" ? "mastered" : "learning";
@@ -472,6 +483,9 @@ export default function Recipe({ onProgress, toast }: Props) {
                   </button>
                 ))}
               </div>
+              <button className="btn-small recipe-open-all" disabled={listed.length === 0} onClick={toggleAll}>
+                {allOpen ? "一括で詳細を閉じる" : "一括で詳細を開く"}
+              </button>
               <div className="recipe-tools">
                 <input
                   type="search"
