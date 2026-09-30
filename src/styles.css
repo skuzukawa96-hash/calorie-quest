@@ -907,6 +907,21 @@ main {
 .related-word .usage + .usage {
   padding-top: 6px;
 }
+/* After a right answer in a recipe review: 習得 (green) or まだ (red) */
+.decide-buttons {
+  gap: 10px;
+}
+.btn.decide-learned {
+  color: var(--mint);
+  border-color: #c6e3cf;
+  font-weight: 700;
+}
+.btn.decide-not-yet {
+  color: var(--berry);
+  border-color: #f2c4c2;
+  font-weight: 700;
+}
+
 /* 文中の用法: one block per word of the sentence */
 .used-word + .used-word {
   margin-top: 10px;

@@ -1374,11 +1374,12 @@ export async function mockInvoke<T>(cmd: string, args: Record<string, unknown>):
       if (!halves) throw new Error(`unknown review mode ${String(args.mode)}`);
       const w = recipeWord(Number(args.id));
       const now = nowTs();
-      // A word pays once a day; a learned word answered right keeps the day it was learned.
+      // A word pays once a day. Right leaves it where it is (the learner marks it learned with
+      // 習得 / まだ, which is set_recipe_mastered); wrong puts it back into review.
       const counted = !!args.remembered && state.recipePaid[w.id] !== t;
       w.reviews += 1;
       w.lastReviewedAt = now;
-      w.masteredAt = args.remembered ? (w.masteredAt ?? now) : null;
+      if (!args.remembered) w.masteredAt = null;
       if (counted) state.recipePaid[w.id] = t;
       const before = state.recipeHalves[t] ?? 0;
       const gained = counted ? halves : 0;

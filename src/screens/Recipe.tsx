@@ -489,8 +489,8 @@ function RecipeReview({
       try {
         const r: RecipeReviewResult = await api.reviewRecipeWord(current.id, correct, mode);
         if (correct) {
+          // Right is not yet learned: the learner says so with 習得 / まだ (see `decide`).
           playCrunch();
-          setRemembered((w) => [...w, current]);
         } else {
           playWrong();
           setLeft((w) => [...w, current]);
@@ -516,10 +516,31 @@ function RecipeReview({
     setIdx((i) => i + 1);
   }, []);
 
+  // After a right answer: 習得 marks the word learned, まだ keeps it in review (or puts a learned
+  // word back), so a lucky guess does not make a word learned.
+  const decide = useCallback(
+    async (learned: boolean) => {
+      if (!current || !answered?.correct || saving) return;
+      setSaving(true);
+      try {
+        await api.setRecipeMastered(current.id, learned);
+        if (learned) setRemembered((w) => [...w, current]);
+        else setLeft((w) => [...w, current]);
+        next();
+      } catch (e) {
+        toast(String(e));
+      } finally {
+        setSaving(false);
+      }
+    },
+    [current, answered, saving, next, toast],
+  );
+
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (finished) return;
-      if (answered && (e.key === "Enter" || e.key === " ")) {
+      // A right answer waits for 習得 / まだ; only a wrong one moves on with Enter.
+      if (answered && !answered.correct && (e.key === "Enter" || e.key === " ")) {
         e.preventDefault();
         next();
       } else if (!answered && mode === "choice") {
@@ -564,10 +585,14 @@ function RecipeReview({
             端数の 0.5 kcal は、今日のうちに次の 0.5 kcal と合わせて 1 kcal になります（日付が変わると切り捨て）。
           </p>
         )}
-        {again && left.length > 0 && <p className="muted">忘れていた単語は復習中に戻しました。</p>}
+        {left.length > 0 && (
+          <p className="muted">
+            {again ? "忘れていた単語と「まだ」にした単語は復習中に戻しました。" : "間違えた単語と「まだ」にした単語は復習中に残ります。"}
+          </p>
+        )}
         {remembered.length > 0 && (
           <p className="muted">
-            {again ? "覚えていた単語は習得済みのままです。" : "覚えた単語は習得済みになりました。"}
+            {again ? "「習得」にした単語は習得済みのままです。" : "「習得」にした単語は習得済みになりました。"}
             レシピに残しておくことも、片付けることもできます。
           </p>
         )}
@@ -717,17 +742,28 @@ function RecipeReview({
             <div className="muted">
               {answered.correct
                 ? again
-                  ? "習得済みのままです。"
-                  : "習得済みになりました。"
+                  ? "まだ覚えているなら「習得」、自信がなければ「まだ」で復習中に戻します。"
+                  : "覚えたなら「習得」で習得済みに。なんとなく当たっただけなら「まだ」で復習中に残します。"
                 : again
                   ? "復習中に戻しました。最後にもう一度挑戦できます。"
                   : "復習中のまま残ります。最後にもう一度挑戦できます。"}
               {answered.correct && !answered.counted && " この単語のカロリーは今日もう受け取っています（1語につき1日1回）。"}
             </div>
           </div>
-          <button className="btn btn-primary" onClick={next} autoFocus>
-            {idx + 1 >= queue.length ? "結果を見る" : "次へ（Enter）"}
-          </button>
+          {answered.correct ? (
+            <div className="row decide-buttons">
+              <button className="btn decide-learned" disabled={saving} onClick={() => void decide(true)} autoFocus>
+                習得
+              </button>
+              <button className="btn decide-not-yet" disabled={saving} onClick={() => void decide(false)}>
+                まだ
+              </button>
+            </div>
+          ) : (
+            <button className="btn btn-primary" onClick={next} autoFocus>
+              {idx + 1 >= queue.length ? "結果を見る" : "次へ（Enter）"}
+            </button>
+          )}
         </div>
       )}
     </section>

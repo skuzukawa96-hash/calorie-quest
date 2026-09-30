@@ -99,8 +99,9 @@ pub fn add(conn: &Connection, input: &RecipeWordInput) -> CmdResult<RecipeAddRes
 }
 
 /// One word reviewed in `mode` ("choice": its meaning picked from four, "typing": the English
-/// written from the meaning). Right marks it learned (a word already learned keeps its date) and
-/// pays into today's kcal; wrong puts it back into review, learned or not. Pay is counted in halves
+/// written from the meaning). Right pays into today's kcal and leaves the word where it is: a
+/// right answer may be a lucky one, so the learner says whether the word is learned
+/// (`set_mastered`, the 習得 / まだ buttons). Wrong puts it back into review, learned or not. Pay is counted in halves
 /// per day, so two meanings picked make a whole calorie; whatever half is left when the day ends is
 /// dropped. A word pays once a day at most, so going over the learned words again and again is
 /// practice, not a source of calories.
@@ -117,7 +118,7 @@ pub fn review(conn: &mut Connection, id: i64, remembered: bool, mode: &str) -> C
     let counted = remembered && paid_on.as_deref() != Some(day.as_str());
     tx.execute(
         "UPDATE recipe_words SET reviews = reviews + 1, last_reviewed_at = ?2,
-         mastered_at = CASE WHEN ?3 THEN COALESCE(mastered_at, ?2) ELSE NULL END,
+         mastered_at = CASE WHEN ?3 THEN mastered_at ELSE NULL END,
          paid_on = CASE WHEN ?4 THEN ?5 ELSE paid_on END
          WHERE id = ?1",
         params![id, now, remembered, counted, day],
@@ -274,8 +275,10 @@ mod tests {
         assert!(list(&c).unwrap().is_empty());
     }
 
+    /// A right answer does not make a word learned by itself: the learner marks it learned (習得)
+    /// or keeps it in review (まだ). A wrong answer puts it back into review.
     #[test]
-    fn reviewing_marks_words_learned_and_learned_words_can_be_cleared() {
+    fn reviewing_leaves_learning_to_the_learner_and_learned_words_can_be_cleared() {
         let mut c = db::init_in_memory().unwrap();
         let hear = add(&c, &input("hear", "")).unwrap().entry;
         let bag = add(&c, &input("doggy bag", "")).unwrap().entry;
@@ -285,11 +288,15 @@ mod tests {
         assert!(not_yet.last_reviewed_at.is_some());
         assert!(not_yet.mastered_at.is_none());
 
-        let learned = review(&mut c, hear.id, true, "typing").unwrap().entry;
-        assert_eq!(learned.reviews, 2);
+        let right = review(&mut c, hear.id, true, "typing").unwrap().entry;
+        assert_eq!(right.reviews, 2);
+        assert!(right.mastered_at.is_none(), "right alone does not make it learned");
+        // 習得: learned, without counting another review.
+        let learned = set_mastered(&c, hear.id, true).unwrap();
         assert!(learned.mastered_at.is_some());
+        assert_eq!(learned.reviews, 2);
 
-        // Unmarking from the list puts it back without counting a review.
+        // まだ (or unmarking from the list) puts it back without counting a review.
         let back = set_mastered(&c, hear.id, false).unwrap();
         assert!(back.mastered_at.is_none());
         assert_eq!(back.reviews, 2);
@@ -333,7 +340,7 @@ mod tests {
         assert_eq!(kcal(&c), 2, "an unknown mode changes nothing");
     }
 
-    /// Learned words can be gone over again: right keeps them learned (from the day they were
+    /// Learned words can be gone over again: right leaves them learned (from the day they were
     /// first learned), wrong puts them back into review. Either way a word pays once a day.
     #[test]
     fn a_learned_word_reviewed_again_stays_learned_or_goes_back() {
@@ -344,7 +351,7 @@ mod tests {
         let first = review(&mut c, hear, true, "typing").unwrap();
         assert!(first.counted);
         assert_eq!(first.kcal_earned, 1);
-        let learned_at = first.entry.mastered_at.clone().expect("learned");
+        let learned_at = set_mastered(&c, hear, true).unwrap().mastered_at.expect("learned");
 
         // The same day, over the learned words again: still learned, still dated the first time,
         // but no second calorie for the same word.
@@ -375,6 +382,7 @@ mod tests {
         let mut c = c;
         let hear = add(&c, &input("hear", "")).unwrap().entry;
         review(&mut c, hear.id, true, "choice").unwrap();
+        set_mastered(&c, hear.id, true).unwrap();
         let again = add(&c, &input("hear", "")).unwrap();
         assert_eq!(again.status, RecipeAddStatus::Restored);
         assert!(again.entry.mastered_at.is_none());
