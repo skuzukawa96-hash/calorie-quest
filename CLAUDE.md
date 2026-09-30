@@ -30,7 +30,8 @@ npm run tauri build        # 配布ビルド
 | `src-tauri/src/db.rs` | スキーマ、`ensure_column` によるマイグレーション、`questions.json` / お菓子の初期投入 |
 | `src-tauri/src/recipe.rs` | お菓子作りレシピ（学習者の単語帳）。`recipe_words` テーブルへの追加・一覧・復習・習得済み・削除。同じ語の再追加はエラーにせず、習得済みなら復習に戻す。復習（`review`）は `mode`（`choice` / `typing`）付きで、正解なら習得済みにして（習得済みの語は習得日をそのまま）カロリーを払い、不正解なら習得済みでも復習中に戻す。習得済みの語を何度も復習してカロリーを稼げないよう、1語が払うのは1日1回（`recipe_words.paid_on`） |
 | `src-tauri/src/speech.rs` | SAPI5 で英語 TTS → WAV（フロントで再生）、WinRT `SpeechRecognizer` のリスト文法で発音判定 |
-| `src-tauri/data/*.json` | 問題データ（20,167問・20ジャンル・442意味グループ）、`glossary.json`（補助語彙5,379語）、`grammar-notes.json`（文法解説84件）。`questions.json` が `version` を持ち、追加パック（`words-2a.json` など120ファイル）は `build.rs` と `mockBackend.ts` の `import.meta.glob` が**このディレクトリから自動で拾う**（`questions.json` / `glossary.json` / `grammar-notes.json` は除外）。`version` を上げると起動時に key 単位で upsert される |
+| `src-tauri/data/*.json` | 問題データ（20,167問・20ジャンル・442意味グループ）、`glossary.json`（補助語彙5,379語）、`grammar-notes.json`（文法解説84件）。`questions.json` が `version` を持ち、追加パック（`words-2a.json` など120ファイル）は `build.rs` と `mockBackend.ts` の `import.meta.glob` が**このディレクトリから自動で拾う**（`questions.json` / `glossary.json` / `grammar-notes.json` / `pronunciations.json` は除外）。`version` を上げると起動時に key 単位で upsert される |
+| `src-tauri/data/pronunciations.json` | 発音問題の単語の発音記号。`scripts/make_pronunciations.py` が CMU Pronouncing Dictionary（ライセンスは `data/cmudict-LICENSE.txt`、辞書本体はリポジトリに入れない）から作る。音ごとにスペース区切り、第1強勢の ˈ だけを音節の前に付ける（CMU の副強勢は学習辞書と食い違うので付けない）。使う記号は `db::IPA_SEGMENTS` に限り（テストが検査）、その全部の解説が `src/lib/phonemes.ts` にある。発音問題の英文を増やしたらスクリプトを流し直す（カバー率 95% 未満でテストが落ちる） |
 | `src/lib/speech.ts` | TTS/STT の切り替え（Tauri=native、ブラウザ=web）、`INSTALL_STT_GUIDE` |
 | `src/lib/scoring.ts` | 一致度・流暢さ・発音のコツ検出（`detectTrickySounds`） |
 | `src/lib/dictionary.ts` | 単語ポップアップの辞書引き。`tokenize` / `lemmas` は `util.rs` の同名関数と、`buildPhraseIndex` / `phraseSpans` は `util.rs` の `PhraseIndex` と挙動を合わせる |
@@ -60,7 +61,7 @@ npm run tauri build        # 配布ビルド
 - 慣用句（`kind: "idiom"`）は `example`（その慣用句を使った英文）と `exampleJa`（訳）が必須。テストが例文中に慣用句の主要語が出ているかまで検査する
 - **辞書の熟語**: 複数語の単語問題（"doggy bag"）と慣用句は、`db::dictionary` が英文まるごとをキーに入れる。**構成語に熟語の意味を配ってはいけない**（"doggy" が 持ち帰り用の袋 になる。`phrase_meanings_stay_with_the_phrase` が検査する）。構成語の意味は `glossary.json` に語単体で書く。慣用句は辞書形（"keep your fingers crossed"）で書けば、文中の活用（kept）と代名詞（my / him）は `PhraseIndex` が吸収する
 - 英文に出てくる単語はすべて辞書に載っている必要がある（単語問題 or `glossary.json`、または文中で熟語の一部として検出される）。`dictionary_covers_words_used_in_sentences` が未収録語を列挙する。不規則動詞は `util.rs` の `IRREGULAR` と `dictionary.ts` の同名テーブルで解決する（両方を更新すること）
-- 新しいデータファイルは `src-tauri/data/` に置くだけでよい（`build.rs` が Rust 側の一覧を生成し、`mockBackend.ts` は `import.meta.glob` で拾う）。登録漏れで片方のプラットフォームだけ問題数が変わる事故を防ぐため、手書きの一覧は持たない。問題以外のデータファイルを足すときは `build.rs` の `is_pack` と `mockBackend.ts` の除外リストの両方に名前を足すこと
+- 新しいデータファイルは `src-tauri/data/` に置くだけでよい（`build.rs` が Rust 側の一覧を生成し、`mockBackend.ts` は `import.meta.glob` で拾う）。登録漏れで片方のプラットフォームだけ問題数が変わる事故を防ぐため、手書きの一覧は持たない。問題以外のデータファイルを足すときは `build.rs` の `is_pack`、`mockBackend.ts` の除外リスト、`db.rs` のテスト `every_pack_in_the_data_directory_is_loaded` の3か所に名前を足すこと
 - スキーマ変更は `SCHEMA` に列を足すだけでなく `ensure_column` で既存 DB にも追加する（`group` は SQL 予約語なので列名は `word_group`）
 
 ## 検証の流儀

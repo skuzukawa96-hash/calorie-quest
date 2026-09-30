@@ -3,6 +3,7 @@
 import seedJson from "../../src-tauri/data/questions.json";
 import glossary from "../../src-tauri/data/glossary.json";
 import grammarNotes from "../../src-tauri/data/grammar-notes.json";
+import pronunciations from "../../src-tauri/data/pronunciations.json";
 import { expandDictionary, type Dictionary } from "./dictionary";
 import { answerWordCount, scoresPerWord } from "./scoring";
 import type {
@@ -130,7 +131,7 @@ function packOrder(path: string): [string, number, string] {
 const seedQuestions: SeedQuestion[] = [
   ...(seedJson as unknown as { questions: SeedQuestion[] }).questions,
   ...Object.entries(packModules)
-    .filter(([path]) => !/\/(questions|glossary|grammar-notes)\.json$/.test(path))
+    .filter(([path]) => !/\/(questions|glossary|grammar-notes|pronunciations)\.json$/.test(path))
     .sort(([a], [b]) => {
       const x = packOrder(a);
       const y = packOrder(b);
@@ -974,6 +975,8 @@ export async function mockInvoke<T>(cmd: string, args: Record<string, unknown>):
       return { nativeTts: false, ttsVoices: [], nativeStt: false, sttLanguages: [], sttError: "browser preview" } as T;
     case "get_dictionary":
       return mockDictionary() as T;
+    case "get_pronunciations":
+      return pronunciations as T;
     case "get_idioms": {
       // Mirrors db::idiom_keys: idioms, minus any English that is also a vocabulary item.
       const words = new Set(questions.filter((q) => q.kind === "word").map((q) => q.en.toLowerCase()));

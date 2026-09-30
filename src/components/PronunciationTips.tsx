@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
+import { PHONEMES } from "../lib/phonemes";
 import { detectTrickySounds, type TipKey } from "../lib/scoring";
 import MouthDiagram from "./MouthDiagram";
 
@@ -63,9 +64,12 @@ interface Props {
   text: string;
   active: TipKey | null;
   onActiveChange: (key: TipKey | null) => void;
+  /** a sound picked from the IPA line, explained here in place of the tricky-sound tips */
+  phoneme?: string | null;
+  onPhonemeChange?: (sound: string | null) => void;
 }
 
-export default function PronunciationTips({ text, active, onActiveChange }: Props) {
+export default function PronunciationTips({ text, active, onActiveChange, phoneme = null, onPhonemeChange }: Props) {
   const keys = detectTrickySounds(text);
   const [open, setOpen] = useState(true);
 
@@ -75,7 +79,13 @@ export default function PronunciationTips({ text, active, onActiveChange }: Prop
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [text]);
 
-  if (!keys.length) return null;
+  // A sound picked from the IPA line opens the panel even in a sentence with no tricky sounds.
+  useEffect(() => {
+    if (phoneme) setOpen(true);
+  }, [phoneme]);
+
+  const picked = phoneme ? PHONEMES[phoneme] : undefined;
+  if (!keys.length && !picked) return null;
   const tip = active ? TIPS[active] : null;
 
   return (
@@ -87,8 +97,9 @@ export default function PronunciationTips({ text, active, onActiveChange }: Prop
             <button
               key={k}
               type="button"
-              className={"chip " + (active === k ? "active" : "")}
+              className={"chip " + (!picked && active === k ? "active" : "")}
               onClick={() => {
+                onPhonemeChange?.(null);
                 onActiveChange(k);
                 setOpen(true);
               }}
@@ -96,12 +107,29 @@ export default function PronunciationTips({ text, active, onActiveChange }: Prop
               {TIPS[k].title}
             </button>
           ))}
+          {picked && (
+            <button type="button" className="chip active ipa-chip" onClick={() => setOpen(true)}>
+              /{phoneme}/
+            </button>
+          )}
         </div>
         <button type="button" className="btn-link" onClick={() => setOpen((o) => !o)}>
           {open ? "閉じる" : "図解を見る"}
         </button>
       </div>
-      {open && tip && active && (
+      {open && picked && (
+        <div className={"tips-body" + (picked.diagram ? "" : " no-diagram")}>
+          {picked.diagram && <MouthDiagram variant={picked.diagram} />}
+          <div>
+            <div className="tips-title">
+              <span className="ipa-symbol">/{phoneme}/</span> {picked.kind}
+            </div>
+            <p>{picked.text}</p>
+            <div className="muted">例: {picked.sample}</div>
+          </div>
+        </div>
+      )}
+      {open && !picked && tip && active && (
         <div className="tips-body">
           <MouthDiagram variant={active} />
           <div>

@@ -38,6 +38,7 @@ pub fn run() {
             commands::get_stats,
             commands::get_dictionary,
             commands::get_idioms,
+            commands::get_pronunciations,
             commands::reset_progress,
             commands::log_debug,
             recipe::list_recipe_words,

@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import GlossedText from "../components/GlossedText";
 import PronunciationTips, { HighlightedText } from "../components/PronunciationTips";
+import { PHONEMES, STRESS_MARK } from "../lib/phonemes";
+import { ipaWords, loadPronunciations, type Pronunciations } from "../lib/pronunciation";
 import { api, runningInTauri } from "../lib/api";
 import { loadDictionary, type Dictionary } from "../lib/dictionary";
 import {
@@ -781,8 +783,27 @@ function SpeakingCard({
   const [state, setState] = useState<ListenState>("idle");
   const [error, setError] = useState<string | null>(null);
   const [activeTip, setActiveTip] = useState<TipKey | null>(null);
+  const [phoneme, setPhoneme] = useState<string | null>(null);
+  const [ipa, setIpa] = useState<Pronunciations | null>(null);
   const [speaking, setSpeaking] = useState(false);
   const handle = useRef<RecognitionHandle | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    loadPronunciations()
+      .then((t) => alive && setIpa(t))
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  /** A sound picked from the IPA line: its tip opens below, and a sound with a diagram marks its letters too. */
+  const pickSound = (sound: string) => {
+    setPhoneme(sound);
+    const diagram = PHONEMES[sound]?.diagram;
+    if (diagram) setActiveTip(diagram);
+  };
 
   const playModel = useCallback(() => {
     setSpeaking(true);
@@ -837,6 +858,7 @@ function SpeakingCard({
       <div className="prompt speak-target">
         <HighlightedText text={q.display} active={activeTip} />
       </div>
+      {ipa && <IpaLine text={q.question.en} table={ipa} active={phoneme} onPick={pickSound} />}
       {q.subDisplay && <div className="muted">{q.subDisplay}</div>}
 
       <div className="row speak-controls">
@@ -919,8 +941,69 @@ function SpeakingCard({
         </div>
       )}
 
-      <PronunciationTips text={q.question.en} active={activeTip} onActiveChange={setActiveTip} />
+      <PronunciationTips
+        text={q.question.en}
+        active={activeTip}
+        onActiveChange={setActiveTip}
+        phoneme={phoneme}
+        onPhonemeChange={setPhoneme}
+      />
     </>
+  );
+}
+
+/**
+ * The sentence in IPA, one clickable span per sound. Right-clicking (or clicking) a sound explains
+ * it under 発音のコツ. A word the pronouncing dictionary lacks keeps its spelling in place.
+ */
+function IpaLine({
+  text,
+  table,
+  active,
+  onPick,
+}: {
+  text: string;
+  table: Pronunciations;
+  active: string | null;
+  onPick: (sound: string) => void;
+}) {
+  const words = ipaWords(text, table);
+  if (!words.some((w) => w.sounds)) return null;
+  return (
+    <div className="ipa-line" title="発音記号を右クリックすると、下の「発音のコツ」にその音の解説が出ます">
+      /
+      {words.map((w, i) => (
+        <span key={i} className="ipa-word">
+          {i > 0 && " "}
+          {w.sounds ? (
+            w.sounds.map((s, j) =>
+              s === STRESS_MARK ? (
+                <span key={j} className="ipa-stress" title="この後の音節を強く読みます">
+                  {s}
+                </span>
+              ) : (
+                <span
+                  key={j}
+                  className={"ipa-sound" + (s === active ? " active" : "")}
+                  onClick={() => onPick(s)}
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    onPick(s);
+                  }}
+                >
+                  {s}
+                </span>
+              ),
+            )
+          ) : (
+            <span className="ipa-missing" title="発音記号の辞書にない語です">
+              {w.word}
+            </span>
+          )}
+        </span>
+      ))}
+      /
+    </div>
   );
 }
 

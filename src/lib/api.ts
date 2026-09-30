@@ -57,6 +57,8 @@ export const api = {
   getStats: () => call<Stats>("get_stats"),
   getDictionary: () => call<Record<string, string>>("get_dictionary"),
   getIdioms: () => call<string[]>("get_idioms"),
+  /** word → its IPA sounds separated by spaces (CMU Pronouncing Dictionary) */
+  getPronunciations: () => call<Record<string, string>>("get_pronunciations"),
   resetProgress: () => call<void>("reset_progress"),
 
   // お菓子作りレシピ (the learner's word list)

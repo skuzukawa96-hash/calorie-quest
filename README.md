@@ -72,6 +72,7 @@ cd src-tauri && cargo test
 | 高 | 慣用句・長文 | 10 kcal | 100 kcal（クッキー2枚） |
 
 - 発音問題は音声認識スコア（0〜100）に応じて按分。60点以上で正解、70点未満は復習に回ります。
+- 発音問題の英文の下には **発音記号**（米国英語、第1強勢に ˈ）が出ます。記号を右クリック（クリックでも可）すると、下の「💡 発音のコツ」にその音の出し方と例が表示され、th・r・l・f/v・w の音は口の断面図も出ます。発音記号は [CMU Pronouncing Dictionary](https://github.com/cmusphinx/cmudict) から作っており、辞書にない語（一部の料理名や新語）はつづりのまま表示されます。
 - ヒアリング問題は難易度どおりのカロリー。英語を聞いて意味を選び、会話問題では自然な応答を英語で選びます。
 - 難易度中の記入問題（フレーズ）は、**答えの1語につき 1 kcal**。ヒントで単語を1つ開示するごとに **1 kcal 減点**します（"He likes cooking." なら 3 kcal、cooking を開示して正解すると 2 kcal、全部開示すると 0 kcal）。
   打ち間違えも**間違えた語の分だけ減点**します。"He like cooking." と答えたら 1語ちがいで 2 kcal（違う語・抜けた語・余分な語がそれぞれ1語分）。完全に正解しなかった問題は、翌日の復習に回ります。回答後は「あなたの答え」で間違えた語に印が付きます。
@@ -160,9 +161,13 @@ src-tauri/
   src/commands.rs    フロントから呼ぶコマンド（ユニットテスト付き）
   src/recipe.rs      お菓子作りレシピ（単語帳）の保存・復習（カロリー付与）・削除
   src/speech.rs      SAPI5 読み上げ / WinRT 音声認識
-  data/*.json        問題データ・会話データ・語彙集・文法解説（key で管理、追記可能）
+  data/*.json        問題データ・会話データ・語彙集・文法解説・発音記号（key で管理、追記可能）
+scripts/
+  make_pronunciations.py  CMU 発音辞書から発音問題の単語の発音記号（data/pronunciations.json）を作る
 ```
 
 ## ライセンス
 
 [MIT License](LICENSE)
+
+発音記号のデータ（`src-tauri/data/pronunciations.json`）は CMU Pronouncing Dictionary（Copyright (C) 1993-2015 Carnegie Mellon University）から作成しています。同辞書のライセンスは [src-tauri/data/cmudict-LICENSE.txt](src-tauri/data/cmudict-LICENSE.txt) を参照してください。

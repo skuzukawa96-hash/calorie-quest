@@ -1556,6 +1556,48 @@ main {
   font-weight: 700;
   color: var(--choco);
 }
+.tips-body.no-diagram {
+  grid-template-columns: 1fr;
+}
+/* 発音記号: one span per sound, right-click (or click) explains it under 発音のコツ */
+.ipa-line {
+  margin: 2px 0 6px;
+  font-family: "Segoe UI", "Lucida Sans Unicode", "Arial Unicode MS", sans-serif;
+  font-size: 19px;
+  color: var(--choco-light);
+  letter-spacing: 0.02em;
+}
+.ipa-sound {
+  cursor: pointer;
+  border-radius: 4px;
+  padding: 0 1px;
+}
+.ipa-sound:hover {
+  background: var(--cream-2);
+  color: var(--choco);
+}
+.ipa-sound.active {
+  background: #fdebd9;
+  color: var(--caramel-dark);
+  box-shadow: inset 0 -2px 0 var(--caramel);
+}
+.ipa-stress {
+  color: var(--caramel-dark);
+  font-weight: 700;
+}
+.ipa-missing {
+  font-style: italic;
+  font-size: 15px;
+  color: var(--muted);
+}
+.ipa-chip,
+.ipa-symbol {
+  font-family: "Segoe UI", "Lucida Sans Unicode", "Arial Unicode MS", sans-serif;
+}
+.ipa-symbol {
+  color: var(--caramel-dark);
+  margin-right: 4px;
+}
 .mouth-diagram {
   width: 100%;
   height: auto;

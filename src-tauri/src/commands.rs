@@ -858,6 +858,12 @@ pub fn get_dictionary(state: State<'_, AppState>) -> CmdResult<HashMap<String, S
     db::dictionary(&conn).map_err(err)
 }
 
+/// IPA for the words of speaking questions (see `db::pronunciations`).
+#[tauri::command]
+pub fn get_pronunciations() -> HashMap<String, String> {
+    db::pronunciations().clone()
+}
+
 /// The dictionary keys that are idioms (see `db::idiom_keys`).
 #[tauri::command]
 pub fn get_idioms(state: State<'_, AppState>) -> CmdResult<Vec<String>> {

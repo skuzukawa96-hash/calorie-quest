@@ -34,6 +34,17 @@ const GLOSSARY_JSON: &str = include_str!("../data/glossary.json");
 /// One explanation per grammar point, looked up by a grammar question's `point` tag. The same
 /// point covers dozens of questions, so the text lives here once instead of in every row.
 const GRAMMAR_NOTES_JSON: &str = include_str!("../data/grammar-notes.json");
+/// IPA for the words of speaking questions, from the CMU Pronouncing Dictionary
+/// (`scripts/make_pronunciations.py`; licence in `data/cmudict-LICENSE.txt`).
+const PRONUNCIATIONS_JSON: &str = include_str!("../data/pronunciations.json");
+
+/// Every sound `pronunciations.json` is written in, plus the stress mark. The frontend's
+/// `lib/phonemes.ts` explains each of them; a test keeps the data inside this set.
+pub const IPA_SEGMENTS: &[&str] = &[
+    "ˈ", "ɑ", "ɑː", "æ", "ɔː", "aʊ", "aɪ", "ɛ", "eɪ", "ɪ", "iː", "i", "oʊ", "ɔɪ", "ʊ", "uː", "u", "ʌ",
+    "ə", "ɜːr", "ər", "b", "tʃ", "d", "ð", "f", "ɡ", "h", "dʒ", "k", "l", "m", "n", "ŋ", "p", "r",
+    "s", "ʃ", "t", "θ", "v", "w", "j", "z", "ʒ",
+];
 
 const SCHEMA: &str = "
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -474,6 +485,16 @@ pub fn grammar_notes() -> &'static HashMap<String, GrammarNoteSeed> {
     })
 }
 
+/// Word (lowercase) → its sounds, separated by spaces with ˈ before the stressed syllable:
+/// "library" → "ˈ l aɪ b r ɛ r i". Words the CMU dictionary lacks are missing; the app shows
+/// their spelling instead.
+pub fn pronunciations() -> &'static HashMap<String, String> {
+    static TABLE: std::sync::OnceLock<HashMap<String, String>> = std::sync::OnceLock::new();
+    TABLE.get_or_init(|| {
+        serde_json::from_str(PRONUNCIATIONS_JSON).expect("data/pronunciations.json must be a valid JSON object")
+    })
+}
+
 /// English word (lowercase) → Japanese gloss, for the hover dictionary.
 ///
 /// Built from the word questions plus the glossary of supporting vocabulary, then expanded so that
@@ -675,6 +696,7 @@ mod tests {
                     && n != "questions.json"
                     && n != "glossary.json"
                     && n != "grammar-notes.json"
+                    && n != "pronunciations.json"
             })
             .count();
         assert_eq!(
@@ -784,6 +806,37 @@ mod tests {
         for q in &seed.questions {
             assert!(q.kind == "grammar" || q.point.is_none(), "{} is not a grammar question", q.key);
         }
+    }
+
+    /// Every sound in the IPA table is one the app can explain, and the table covers the words of
+    /// speaking questions (the CMU dictionary lacks some food names and new coinages).
+    #[test]
+    fn pronunciations_cover_speaking_questions_in_explained_sounds() {
+        let table = pronunciations();
+        for (word, ipa) in table {
+            assert!(!ipa.trim().is_empty(), "{word} has no pronunciation");
+            for seg in ipa.split(' ') {
+                assert!(IPA_SEGMENTS.contains(&seg), "{word}: unexplained sound {seg:?} in {ipa:?}");
+            }
+            let stresses = ipa.split(' ').filter(|s| *s == "ˈ").count();
+            assert!(stresses <= 1, "{word}: more than one primary stress in {ipa:?}");
+        }
+        let mut words = HashSet::new();
+        for q in load_seed().questions.iter().filter(|q| q.modes.iter().any(|m| m == "speaking")) {
+            let text = q.en.to_lowercase().replace('\u{2019}', "'");
+            for w in text.split(|c: char| !(c.is_ascii_alphabetic() || c == '\'')) {
+                let w = w.trim_matches('\'');
+                if !w.is_empty() {
+                    words.insert(w.to_string());
+                }
+            }
+        }
+        let covered = words.iter().filter(|w| table.contains_key(*w)).count();
+        assert!(
+            covered * 100 >= words.len() * 95,
+            "only {covered} of {} words of speaking questions have a pronunciation",
+            words.len()
+        );
     }
 
     /// An explanation's example is a second sentence to learn from. Most of them had been lifted
