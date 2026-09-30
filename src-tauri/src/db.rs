@@ -731,6 +731,20 @@ const MAX_SLOT_WORDS: usize = 6;
 const NOT_ING: &[&str] = &["morning", "evening", "ceiling", "during", "string", "spring", "sibling", "pudding", "awning", "darling"];
 /// Words after "to" that read as verbs by their gloss but are places to go ("commute to work").
 const NOUNS_AFTER_TO: &[&str] = &["work", "school", "bed", "class", "church", "court"];
+/// Adverbs that may stand between two words of a pattern ("get along well with", "is very good
+/// at"), besides the -ly words that are no verb or noun ("listen carefully to").
+const ADVERBS: &[&str] = &[
+    "well", "very", "really", "so", "too", "just", "also", "still", "even", "never", "always", "often", "sometimes",
+    "usually", "already", "soon", "much", "quite", "rather", "right", "straight", "early", "late", "hard", "not",
+    "almost", "only", "again", "ever", "all", "both",
+];
+/// Words ending in -ly that are no adverb.
+const NOT_LY_ADVERBS: &[&str] = &[
+    "family", "italy", "july", "belly", "jelly", "lily", "rally", "assembly", "ally", "bully", "butterfly",
+    "dragonfly", "firefly", "monopoly", "supply", "reply", "apply", "rely", "fly", "multiply", "imply", "comply",
+];
+/// How many adverbs may stand between two words of a pattern, on top of what the pattern allows.
+const MAX_ADVERBS: usize = 2;
 /// How many words may fill a slot before a particle ("pick [my little brother] up").
 const MAX_SHORT_SLOT_WORDS: usize = 3;
 /// How many words may stand for an optional be / can / would ("It [is] difficult").
@@ -909,6 +923,12 @@ fn pieces_found(pieces: &[PatternPiece], headword: &str, tokens: &[String], lemm
         verbs: &'a std::collections::HashSet<String>,
     }
     impl Search<'_> {
+        fn is_adverb(&self, k: usize) -> bool {
+            let t = self.tokens[k].as_str();
+            ADVERBS.contains(&t)
+                || (t.len() > 4 && t.ends_with("ly") && !NOT_LY_ADVERBS.contains(&t) && !self.verbs.contains(t))
+        }
+
         fn hit(&self, piece: &PatternPiece, j: usize) -> bool {
             match piece {
                 PatternPiece::Word(ws) => ws.iter().any(|w| &self.tokens[j] == w || self.lemmas[j].contains(w)),
@@ -948,11 +968,20 @@ fn pieces_found(pieces: &[PatternPiece], headword: &str, tokens: &[String], lemm
             }
             let range = match last {
                 None => 0..self.tokens.len(),
-                Some(l) => (l + 1 + gap.0)..(l + 2 + gap.1).min(self.tokens.len()),
+                Some(l) => (l + 1 + gap.0)..(l + 2 + gap.1 + MAX_ADVERBS).min(self.tokens.len()),
             };
             for j in range {
                 if !self.hit(first, j) {
                     continue;
+                }
+                // Words between beyond what the pattern allows must be adverbs: "get along [well]
+                // with", not "left [Tokyo] for" (which is leave A for B, not leave for ～).
+                if let Some(l) = last {
+                    let between = j - l - 1;
+                    let adverbs = (l + 1..j).filter(|&k| self.is_adverb(k)).count().min(MAX_ADVERBS);
+                    if between > gap.1 + adverbs {
+                        continue;
+                    }
                 }
                 let is_head = names(first, self.headword);
                 // The word itself, first of the pattern, after "the" / "a" is a noun.
@@ -1881,6 +1910,15 @@ mod tests {
         assert!(f.iter().any(|(w, p)| w == "dangerous" && p.len() == 1), "{f:?}");
         // A warning about a preposition is shown wherever the word is.
         assert!(found("We discussed the plan.").iter().any(|(w, _)| w == "discuss"));
+        // An adverb between the words of a pattern does not hide it; a noun does.
+        let f = found("We get along well with our neighbors.");
+        assert!(f.contains(&("get".to_string(), vec!["get along with 人".to_string()])), "{f:?}");
+        let f = found("Please listen carefully to the teacher.");
+        assert!(f.contains(&("listen".to_string(), vec!["listen to ～".to_string()])), "{f:?}");
+        let f = found("She is really good at math.");
+        assert!(f.contains(&("good".to_string(), vec!["be good at ～".to_string()])), "{f:?}");
+        let f = found("He left Tokyo for Osaka.");
+        assert!(f.contains(&("leave".to_string(), vec!["leave A for B".to_string()])), "{f:?}");
         // "have 人 原形" would be found wherever have is: have alone says nothing.
         assert!(!found("I have a dog.").iter().any(|(w, _)| w == "have"));
         // A word with similar words and no pattern is listed for them; a too common one is not.

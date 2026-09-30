@@ -667,6 +667,16 @@ const TOO_COMMON_FOR_RELATED = [
 const NOT_ING = ["morning", "evening", "ceiling", "during", "string", "spring", "sibling", "pudding", "awning", "darling"];
 const NOUNS_AFTER_TO = ["work", "school", "bed", "class", "church", "court"];
 const DETERMINERS = ["the", "a", "an", "my", "your", "his", "its", "our", "their", "every", "each"];
+const ADVERBS = [
+  "well", "very", "really", "so", "too", "just", "also", "still", "even", "never", "always", "often", "sometimes",
+  "usually", "already", "soon", "much", "quite", "rather", "right", "straight", "early", "late", "hard", "not",
+  "almost", "only", "again", "ever", "all", "both",
+];
+const NOT_LY_ADVERBS = [
+  "family", "italy", "july", "belly", "jelly", "lily", "rally", "assembly", "ally", "bully", "butterfly",
+  "dragonfly", "firefly", "monopoly", "supply", "reply", "apply", "rely", "fly", "multiply", "imply", "comply",
+];
+const MAX_ADVERBS = 2;
 const MAX_SLOT_WORDS = 6;
 const MAX_SHORT_SLOT_WORDS = 3;
 const MAX_GAP_WORDS = 2;
@@ -754,6 +764,10 @@ function patternWays(pattern: string, headword: string): Piece[][] {
   return all;
 }
 
+/** Mirrors Search::is_adverb: well / very …, or an -ly word that is no verb or noun. */
+const isAdverb = (t: string) =>
+  ADVERBS.includes(t) || (t.length > 4 && t.endsWith("ly") && !NOT_LY_ADVERBS.includes(t) && !baseVerbs.has(t));
+
 /** Mirrors db::reads_as: "speaker" is no speak, "completely" no complete. */
 const readsAs = (token: string, word: string) =>
   token === word || !(token.endsWith("er") || token.endsWith("est") || token.endsWith("ly"));
@@ -794,10 +808,16 @@ function piecesFound(pieces: Piece[], headword: string, tokens: string[], lemmaL
     }
     if (first.kind === "gap") return go(i + 1, last, [gap[0], gap[1] + MAX_GAP_WORDS], afterHead, headSeen);
     const from = last === null ? 0 : last + 1 + gap[0];
-    const to = last === null ? tokens.length : Math.min(last + 2 + gap[1], tokens.length);
+    const to = last === null ? tokens.length : Math.min(last + 2 + gap[1] + MAX_ADVERBS, tokens.length);
     const next = pieces[i + 1];
     for (let j = from; j < to; j++) {
       if (!hit(first, j)) continue;
+      // Words beyond what the pattern allows must be adverbs: "get along [well] with".
+      if (last !== null) {
+        let adverbs = 0;
+        for (let k = last + 1; k < j; k++) if (isAdverb(tokens[k])) adverbs++;
+        if (j - last - 1 > gap[1] + Math.min(adverbs, MAX_ADVERBS)) continue;
+      }
       const isHead = names(first, headword);
       if (isHead && last === null && j > 0 && DETERMINERS.includes(tokens[j - 1])) continue;
       if (isHead && !readsAs(tokens[j], headword)) continue;
