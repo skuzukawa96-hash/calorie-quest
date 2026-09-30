@@ -476,11 +476,7 @@ fn build_session_question(
         vec![answer.clone()]
     };
     let grammar_note = grammar_note_for(&q);
-    let word_parts = if q.kind == "word" {
-        db::word_parts().get(&q.en.to_lowercase()).cloned()
-    } else {
-        None
-    };
+    let notes = if q.kind == "word" || q.kind == "idiom" { db::word_notes(&q.en) } else { None };
     Ok(SessionQuestion {
         question: q,
         mode: mode.to_string(),
@@ -493,7 +489,7 @@ fn build_session_question(
         audio_text,
         hide_text,
         grammar_note,
-        word_parts,
+        notes,
     })
 }
 
@@ -876,6 +872,12 @@ pub fn get_dictionary(state: State<'_, AppState>) -> CmdResult<HashMap<String, S
 #[tauri::command]
 pub fn get_pronunciations() -> HashMap<String, String> {
     db::pronunciations().clone()
+}
+
+/// What the answer explains about a word, for a word saved to the recipe (see `db::word_notes`).
+#[tauri::command]
+pub fn get_word_notes(word: String) -> Option<WordNotes> {
+    db::word_notes(&word)
 }
 
 /// The dictionary keys that are idioms (see `db::idiom_keys`).
@@ -1279,14 +1281,16 @@ mod tests {
             .query_row(&format!("SELECT {Q_COLS} FROM questions q WHERE q.id = ?1"), params![id], db::row_to_question)
             .unwrap();
         let s = build_session_question(&c, q, "choice", false).unwrap();
-        let parts = s.word_parts.expect("telescope has parts");
+        let notes = s.notes.expect("telescope has notes");
+        assert!(!notes.examples.is_empty(), "every word has an example");
+        let parts = notes.parts;
         assert_eq!(parts.iter().map(|p| p.text.as_str()).collect::<Vec<_>>(), vec!["tele", "scope"]);
         assert_eq!(parts[0].kind, "prefix");
         let phrase = question_id(&c, "p001");
         let q = c
             .query_row(&format!("SELECT {Q_COLS} FROM questions q WHERE q.id = ?1"), params![phrase], db::row_to_question)
             .unwrap();
-        assert!(build_session_question(&c, q, "choice", false).unwrap().word_parts.is_none());
+        assert!(build_session_question(&c, q, "choice", false).unwrap().notes.is_none());
     }
 
     /// A phrase got wrong by typing comes back to be typed: in typing sessions and in the review

@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import GlossedText from "../components/GlossedText";
 import { DeleteButton } from "../components/IconButtons";
+import WordNotesPanel from "../components/WordNotes";
 import { api } from "../lib/api";
 import { loadDictionary, lookup, type Dictionary } from "../lib/dictionary";
 import { onRecipeChanged } from "../lib/recipe";
 import { playCrunch, playFanfare, playWrong } from "../lib/sfx";
 import { isTtsSupported, speak, stopSpeaking } from "../lib/speech";
-import type { RecipeReviewMode, RecipeReviewResult, RecipeWord } from "../types";
+import type { RecipeReviewMode, RecipeReviewResult, RecipeWord, WordNotes } from "../types";
 
 interface Props {
   /** a correct review adds to today's kcal, which the header and home show */
@@ -455,6 +456,21 @@ function RecipeReview({
     [current, mode, dict === null],
   );
   const gapped = useMemo(() => (current ? withGap(current) : null), [current]);
+  // The same explanation a word question shows under its answer: how the word is built, sentences
+  // and patterns using it, an idiom's origin. Fetched with the card, shown once it is answered.
+  const [notes, setNotes] = useState<{ word: string; notes: WordNotes | null } | null>(null);
+  const word = current?.word;
+  useEffect(() => {
+    if (!word) return;
+    let alive = true;
+    api
+      .getWordNotes(word)
+      .then((n) => alive && setNotes({ word, notes: n }))
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, [word]);
 
   useEffect(() => {
     if (!current) return;
@@ -578,6 +594,16 @@ function RecipeReview({
     <div className="flash-example">
       {/* Meanings stay off until the answer is in, or hovering would give it away. */}
       <GlossedText text={current.example} dict={dict} enabled={!!answered} highlight={current.form || current.word} />
+      <button
+        type="button"
+        className="btn-link speak-btn"
+        onClick={() => say(current.example)}
+        disabled={!isTtsSupported()}
+        title="読み上げる"
+        aria-label="読み上げる"
+      >
+        🔊
+      </button>
     </div>
   ) : null;
 
@@ -685,6 +711,9 @@ function RecipeReview({
                 🔊 もう一度聞く
               </button>
             </div>
+            {notes?.word === current.word && notes.notes && (
+              <WordNotesPanel notes={notes.notes} word={current.word} meaning={current.meaning} dict={dict} gloss />
+            )}
             <div className="muted">
               {answered.correct
                 ? again

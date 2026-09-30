@@ -51,7 +51,7 @@ const IRREGULAR: Record<string, string> = {
   woke: "wake", woken: "wake", hung: "hang", blew: "blow", blown: "blow",
   flew: "fly", flown: "fly", slid: "slide", swum: "swim", lent: "lend",
   stuck: "stick", swept: "sweep", dug: "dig", hid: "hide", shook: "shake",
-  rang: "ring", rung: "ring", sank: "sink", laid: "lay",
+  rang: "ring", rung: "ring", sank: "sink", laid: "lay", sold: "sell",
 };
 
 /** Candidate dictionary forms for an inflected word. Mirrors `util::lemmas`. */

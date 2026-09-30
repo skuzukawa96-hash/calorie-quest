@@ -1,6 +1,7 @@
-import { Fragment, useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import GlossedText from "../components/GlossedText";
 import PronunciationTips, { HighlightedText } from "../components/PronunciationTips";
+import WordNotesPanel from "../components/WordNotes";
 import { PHONEMES, STRESS_MARK } from "../lib/phonemes";
 import { ipaWords, loadPronunciations, type Pronunciations } from "../lib/pronunciation";
 import { api, runningInTauri } from "../lib/api";
@@ -38,7 +39,6 @@ import {
   type SessionMode,
   type SessionQuestion,
   type TierChoice,
-  type WordPart,
 } from "../types";
 
 const SESSION_SIZE = 10;
@@ -458,9 +458,6 @@ export default function Study({ mode, tier, category, rates, onExit, onProgress,
                   </button>
                 )}
               </div>
-              {current.wordParts && current.wordParts.length > 0 && (
-                <WordParts parts={current.wordParts} word={current.question.en} meaning={current.question.ja} />
-              )}
               {current.question.kind === "grammar" && (
                 <div className="filled-line">
                   <span className="label">完成した文</span>{" "}
@@ -499,6 +496,15 @@ export default function Study({ mode, tier, category, rates, onExit, onProgress,
                   {current.question.exampleJa && <div className="muted">{current.question.exampleJa}</div>}
                 </div>
               )}
+              {current.notes && (
+                <WordNotesPanel
+                  notes={current.notes}
+                  word={current.question.en}
+                  meaning={current.question.ja}
+                  dict={dict}
+                  gloss={showGloss}
+                />
+              )}
               {feedback.score && (
                 <div className="score-breakdown">
                   <span>
@@ -522,35 +528,6 @@ export default function Study({ mode, tier, category, rates, onExit, onProgress,
           </div>
         )}
       </div>
-    </div>
-  );
-}
-
-/* ---------- 成り立ち ---------- */
-
-const PART_LABEL: Record<WordPart["kind"], string> = { prefix: "接頭辞", root: "語根", suffix: "接尾辞" };
-
-/** How a word is built: pre-「前もって」＋ paid「支払った」→ prepaid「前払いの」. */
-function WordParts({ parts, word, meaning }: { parts: WordPart[]; word: string; meaning: string }) {
-  return (
-    <div className="word-parts">
-      <span className="label">成り立ち</span>
-      <span className="word-parts-row">
-        {parts.map((p, i) => (
-          <Fragment key={i}>
-            {i > 0 && <span className="wp-sign">＋</span>}
-            <span className={"wp wp-" + p.kind}>
-              <span className="wp-kind">{PART_LABEL[p.kind]}</span>
-              <b>{p.kind === "prefix" ? `${p.text}-` : p.kind === "suffix" ? `-${p.text}` : p.text}</b>
-              <span>「{p.ja}」</span>
-            </span>
-          </Fragment>
-        ))}
-        <span className="wp-sign">→</span>
-        <span className="wp-result">
-          <b>{word}</b>「{meaning}」
-        </span>
-      </span>
     </div>
   );
 }

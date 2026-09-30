@@ -41,6 +41,15 @@ const PRONUNCIATIONS_JSON: &str = include_str!("../data/pronunciations.json");
 /// hand for the words where the pieces help remember the whole (a guesser would split "mother"
 /// into moth + -er), so it covers some words, not all.
 const WORD_PARTS_JSON: &str = include_str!("../data/word-parts.json");
+/// A sentence for every word of the bank, shown under its answer: a sentence of the bank that uses
+/// the word in the question's sense where there is one, a sentence written for it otherwise.
+const WORD_EXAMPLES_JSON: &str = include_str!("../data/word-examples.json");
+/// Patterns a word is used in ("compare A with B", "be afraid of ~"), each with a sentence. Written
+/// for the words of the bank that take them and for common words of the glossary, so a word saved
+/// to the recipe from a sentence can have them too.
+const WORD_USAGE_JSON: &str = include_str!("../data/word-usage.json");
+/// Where an idiom comes from, written only for the idioms whose origin is known.
+const IDIOM_ORIGINS_JSON: &str = include_str!("../data/idiom-origins.json");
 /// Which tab an example sentence (kind phrase / sentence) belongs to when it is not 例文: key →
 /// idiom (it uses an idiom figuratively), phrase (said as is in everyday conversation) or grammar
 /// (a clear grammar point). Sorted once, sentence by sentence; every other question's tab follows
@@ -537,6 +546,75 @@ pub fn word_parts() -> &'static HashMap<String, Vec<crate::models::WordPart>> {
     })
 }
 
+#[derive(serde::Deserialize)]
+struct WordExampleSeed {
+    word: String,
+    en: String,
+    ja: String,
+}
+
+/// Word (lowercase) → sentences using it.
+pub fn word_examples() -> &'static HashMap<String, Vec<crate::models::ExampleSentence>> {
+    static TABLE: std::sync::OnceLock<HashMap<String, Vec<crate::models::ExampleSentence>>> =
+        std::sync::OnceLock::new();
+    TABLE.get_or_init(|| {
+        let list: Vec<WordExampleSeed> =
+            serde_json::from_str(WORD_EXAMPLES_JSON).expect("data/word-examples.json must be a valid JSON array");
+        let mut map: HashMap<String, Vec<crate::models::ExampleSentence>> = HashMap::new();
+        for e in list {
+            map.entry(e.word.to_lowercase())
+                .or_default()
+                .push(crate::models::ExampleSentence { en: e.en, ja: e.ja });
+        }
+        map
+    })
+}
+
+#[derive(serde::Deserialize)]
+struct WordUsageSeed {
+    word: String,
+    #[serde(flatten)]
+    usage: crate::models::WordUsage,
+}
+
+/// Word (lowercase) → the patterns it is used in, in the order written.
+pub fn word_usages() -> &'static HashMap<String, Vec<crate::models::WordUsage>> {
+    static TABLE: std::sync::OnceLock<HashMap<String, Vec<crate::models::WordUsage>>> = std::sync::OnceLock::new();
+    TABLE.get_or_init(|| {
+        let list: Vec<WordUsageSeed> =
+            serde_json::from_str(WORD_USAGE_JSON).expect("data/word-usage.json must be a valid JSON array");
+        let mut map: HashMap<String, Vec<crate::models::WordUsage>> = HashMap::new();
+        for u in list {
+            map.entry(u.word.to_lowercase()).or_default().push(u.usage);
+        }
+        map
+    })
+}
+
+/// Idiom (lowercase) → where it comes from.
+pub fn idiom_origins() -> &'static HashMap<String, String> {
+    static TABLE: std::sync::OnceLock<HashMap<String, String>> = std::sync::OnceLock::new();
+    TABLE.get_or_init(|| {
+        let map: HashMap<String, String> =
+            serde_json::from_str(IDIOM_ORIGINS_JSON).expect("data/idiom-origins.json must be a valid JSON object");
+        map.into_iter().map(|(k, v)| (k.to_lowercase(), v)).collect()
+    })
+}
+
+/// Everything the data says about a word or an idiom beyond its meaning, or None when it says
+/// nothing. Looked up by the English alone, so a word saved to the recipe gets the same notes as
+/// the word question it may have come from.
+pub fn word_notes(word: &str) -> Option<crate::models::WordNotes> {
+    let key = word.trim().to_lowercase();
+    let notes = crate::models::WordNotes {
+        parts: word_parts().get(&key).cloned().unwrap_or_default(),
+        examples: word_examples().get(&key).cloned().unwrap_or_default(),
+        usages: word_usages().get(&key).cloned().unwrap_or_default(),
+        origin: idiom_origins().get(&key).cloned(),
+    };
+    (!notes.is_empty()).then_some(notes)
+}
+
 /// Word (lowercase) → its sounds, separated by spaces with ˈ before the stressed syllable:
 /// "library" → "ˈ l aɪ b r ɛ r i". Words the CMU dictionary lacks are missing; the app shows
 /// their spelling instead.
@@ -751,6 +829,9 @@ mod tests {
                     && n != "pronunciations.json"
                     && n != "word-parts.json"
                     && n != "tiers.json"
+                    && n != "word-examples.json"
+                    && n != "word-usage.json"
+                    && n != "idiom-origins.json"
             })
             .count();
         assert_eq!(
@@ -1213,10 +1294,19 @@ mod tests {
                 }
             }
         }
-        // The explanations' examples are hovered too. They are not part of the dictionary build,
-        // so their inflections are found the way the frontend finds them: through the lemma.
-        for note in grammar_notes().values() {
-            let words = crate::util::tokens(&note.example);
+        // The explanations' examples are hovered too: grammar notes, and the sentences and patterns
+        // under a word's answer. They are not part of the dictionary build, so their inflections
+        // are found the way the frontend finds them: through the lemma.
+        let mut explained: Vec<(String, String)> =
+            grammar_notes().values().map(|n| (n.example.clone(), format!("note {}", n.point))).collect();
+        for (w, list) in word_examples() {
+            explained.extend(list.iter().map(|e| (e.en.clone(), format!("example of {w}"))));
+        }
+        for (w, list) in word_usages() {
+            explained.extend(list.iter().map(|u| (u.example.clone(), format!("usage of {w}"))));
+        }
+        for (text, source) in explained {
+            let words = crate::util::tokens(&text);
             let mut in_phrase = vec![false; words.len()];
             for span in phrases.spans(&words) {
                 in_phrase[span.start..span.end].iter_mut().for_each(|b| *b = true);
@@ -1226,13 +1316,75 @@ mod tests {
                 // Only English is looked up; a Japanese aside such as （やめた） is left alone.
                 let english = word.starts_with(|c: char| c.is_ascii_alphabetic());
                 if english && !covered && !known {
-                    uncovered.push(format!("{} (note {})", word, note.point));
+                    uncovered.push(format!("{word} ({source})"));
                 }
             }
         }
         uncovered.sort();
         uncovered.dedup();
         assert!(uncovered.is_empty(), "words without a gloss: {}", uncovered.join(", "));
+    }
+
+    /// `text` has the words of `word` in a row, each as written or inflected ("compared" for
+    /// compare, "nearest" for near).
+    fn uses_word(text: &str, word: &str) -> bool {
+        let text = crate::util::tokens(text);
+        let word = crate::util::tokens(word);
+        !word.is_empty()
+            && text
+                .windows(word.len())
+                .any(|w| w.iter().zip(&word).all(|(t, p)| t == p || crate::util::lemmas(t).contains(p)))
+    }
+
+    /// Every word of the bank has a sentence to show under its answer, and the sentence uses it.
+    #[test]
+    fn every_word_has_an_example_that_uses_it() {
+        let seed = load_seed();
+        let words: HashSet<String> =
+            seed.questions.iter().filter(|q| q.kind == "word").map(|q| q.en.to_lowercase()).collect();
+        let examples = word_examples();
+        let mut missing: Vec<&String> = words.iter().filter(|w| !examples.contains_key(*w)).collect();
+        missing.sort();
+        assert!(missing.is_empty(), "words without an example: {missing:?}");
+        for (w, list) in examples {
+            assert!(words.contains(w), "word-examples.json has {w}, which is no word question");
+            for e in list {
+                assert!(uses_word(&e.en, w), "the example for {w} does not use it: {}", e.en);
+                assert!(!e.ja.trim().is_empty(), "the example for {w} has no translation");
+            }
+        }
+    }
+
+    /// A pattern belongs to a word the hover dictionary knows (so a word saved to the recipe can
+    /// have it), names the word, and its sentence uses the word.
+    #[test]
+    fn usages_are_for_dictionary_words_and_use_them() {
+        let conn = init_in_memory().unwrap();
+        let dict = dictionary(&conn).unwrap();
+        assert!(word_usages().len() > 200, "only {} words have usages", word_usages().len());
+        for (w, list) in word_usages() {
+            assert!(dict.contains_key(w), "word-usage.json has {w}, which the dictionary lacks");
+            let mut patterns = HashSet::new();
+            for u in list {
+                assert!(patterns.insert(u.pattern.as_str()), "{w}: {} is written twice", u.pattern);
+                assert!(uses_word(&u.pattern, w), "{w}: the pattern {} does not name it", u.pattern);
+                assert!(uses_word(&u.example, w), "{w}: the sentence for {} does not use it: {}", u.pattern, u.example);
+                assert!(!u.ja.trim().is_empty() && !u.example_ja.trim().is_empty(), "{w}: {} lacks Japanese", u.pattern);
+            }
+        }
+    }
+
+    /// An origin is written for an idiom of the bank, as a finished sentence.
+    #[test]
+    fn origins_are_for_idioms_of_the_bank() {
+        let seed = load_seed();
+        let idioms: HashSet<String> =
+            seed.questions.iter().filter(|q| q.kind == "idiom").map(|q| q.en.to_lowercase()).collect();
+        assert!(idiom_origins().len() > 300, "only {} origins", idiom_origins().len());
+        for (k, text) in idiom_origins() {
+            assert!(idioms.contains(k), "idiom-origins.json has {k}, which is no idiom question");
+            assert!(text.ends_with('。'), "the origin of {k} is not a finished sentence");
+        }
     }
 }
 

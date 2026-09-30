@@ -40,6 +40,32 @@ export interface WordPart {
   ja: string;
 }
 
+/** A sentence using a word, with its Japanese. */
+export interface ExampleSentence {
+  en: string;
+  ja: string;
+}
+
+/** A pattern a word is used in: "compare A with B" AとBを比較する, with a sentence using it. */
+export interface WordUsage {
+  pattern: string;
+  ja: string;
+  example: string;
+  exampleJa: string;
+}
+
+/**
+ * What the answer explains about a word or an idiom beyond its meaning (db::word_notes). Each part
+ * is empty when the data has nothing for it.
+ */
+export interface WordNotes {
+  parts: WordPart[];
+  examples: ExampleSentence[];
+  usages: WordUsage[];
+  /** for an idiom whose origin is known: where it comes from */
+  origin?: string | null;
+}
+
 /** The explanation shown with a grammar answer; one note serves every question on that point. */
 export interface GrammarNote {
   title: string;
@@ -63,8 +89,8 @@ export interface SessionQuestion {
   hideText: boolean;
   /** grammar questions carry the explanation of the point they test */
   grammarNote?: GrammarNote | null;
-  /** a word built from a prefix, root and suffix carries its parts, shown with the answer */
-  wordParts?: WordPart[] | null;
+  /** words and idioms carry how they are built, sentences, patterns and origin, shown with the answer */
+  notes?: WordNotes | null;
 }
 
 export interface UserInfo {

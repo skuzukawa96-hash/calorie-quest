@@ -6,6 +6,9 @@ import grammarNotes from "../../src-tauri/data/grammar-notes.json";
 import pronunciations from "../../src-tauri/data/pronunciations.json";
 import wordPartsList from "../../src-tauri/data/word-parts.json";
 import tierOverrides from "../../src-tauri/data/tiers.json";
+import wordExamples from "../../src-tauri/data/word-examples.json";
+import wordUsages from "../../src-tauri/data/word-usage.json";
+import idiomOrigins from "../../src-tauri/data/idiom-origins.json";
 import { expandDictionary, type Dictionary } from "./dictionary";
 import { answerWordCount, scoresPerWord } from "./scoring";
 import type {
@@ -16,6 +19,7 @@ import type {
   DailyStats,
   Dashboard,
   DayPoint,
+  ExampleSentence,
   GrammarNote,
   Level,
   Mode,
@@ -31,7 +35,9 @@ import type {
   Tier,
   UserInfo,
   WeakQuestion,
+  WordNotes,
   WordPart,
+  WordUsage,
 } from "../types";
 
 interface SeedQuestion {
@@ -144,7 +150,12 @@ function packOrder(path: string): [string, number, string] {
 const seedQuestions: SeedQuestion[] = [
   ...(seedJson as unknown as { questions: SeedQuestion[] }).questions,
   ...Object.entries(packModules)
-    .filter(([path]) => !/\/(questions|glossary|grammar-notes|pronunciations|word-parts|tiers)\.json$/.test(path))
+    .filter(
+      ([path]) =>
+        !/\/(questions|glossary|grammar-notes|pronunciations|word-parts|tiers|word-examples|word-usage|idiom-origins)\.json$/.test(
+          path,
+        ),
+    )
     .sort(([a], [b]) => {
       const x = packOrder(a);
       const y = packOrder(b);
@@ -561,6 +572,34 @@ const wordPartsByWord = new Map(
   (wordPartsList as { en: string; parts: WordPart[] }[]).map((w) => [w.en.toLowerCase(), w.parts]),
 );
 
+function groupByWord<T extends { word: string }>(list: T[]): Map<string, Omit<T, "word">[]> {
+  const map = new Map<string, Omit<T, "word">[]>();
+  for (const { word, ...rest } of list) {
+    const key = word.toLowerCase();
+    map.set(key, [...(map.get(key) ?? []), rest]);
+  }
+  return map;
+}
+
+const examplesByWord = groupByWord(wordExamples as ({ word: string } & ExampleSentence)[]);
+const usagesByWord = groupByWord(wordUsages as ({ word: string } & WordUsage)[]);
+const originByIdiom = new Map(
+  Object.entries(idiomOrigins as Record<string, string>).map(([k, v]) => [k.toLowerCase(), v]),
+);
+
+/** Mirrors db::word_notes: everything the data says about a word or an idiom, or null. */
+function wordNotes(word: string): WordNotes | null {
+  const key = word.trim().toLowerCase();
+  const notes: WordNotes = {
+    parts: wordPartsByWord.get(key) ?? [],
+    examples: (examplesByWord.get(key) ?? []) as ExampleSentence[],
+    usages: (usagesByWord.get(key) ?? []) as WordUsage[],
+    origin: originByIdiom.get(key) ?? null,
+  };
+  const empty = !notes.parts.length && !notes.examples.length && !notes.usages.length && !notes.origin;
+  return empty ? null : notes;
+}
+
 function buildSessionQuestion(q: Question, mode: Mode, isReview: boolean): SessionQuestion {
   const base = {
     question: q,
@@ -569,7 +608,7 @@ function buildSessionQuestion(q: Question, mode: Mode, isReview: boolean): Sessi
     audioText: audioTextFor(q),
     hideText: false,
     grammarNote: grammarNoteFor(q),
-    wordParts: q.kind === "word" ? (wordPartsByWord.get(q.en.toLowerCase()) ?? null) : null,
+    notes: q.kind === "word" || q.kind === "idiom" ? wordNotes(q.en) : null,
   };
   if (mode === "choice") {
     if (q.choices && q.choices.length) {
@@ -999,6 +1038,8 @@ export async function mockInvoke<T>(cmd: string, args: Record<string, unknown>):
       return { nativeTts: false, ttsVoices: [], nativeStt: false, sttLanguages: [], sttError: "browser preview" } as T;
     case "get_dictionary":
       return mockDictionary() as T;
+    case "get_word_notes":
+      return wordNotes(String(args.word ?? "")) as T;
     case "get_pronunciations":
       return pronunciations as T;
     case "get_idioms": {

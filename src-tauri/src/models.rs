@@ -61,9 +61,45 @@ pub struct SessionQuestion {
     pub hide_text: bool,
     /// Grammar questions carry the explanation of the point they test, shown with the answer.
     pub grammar_note: Option<GrammarNote>,
-    /// A word built from a prefix, root and suffix carries its parts ("pre-" 前もって + paid
-    /// 支払った), shown with the answer.
-    pub word_parts: Option<Vec<WordPart>>,
+    /// What a word or an idiom carries to its answer beyond the meaning: how the word is built,
+    /// sentences using it, its patterns with prepositions, where the idiom comes from.
+    pub notes: Option<WordNotes>,
+}
+
+/// The explanation under the answer to a word or an idiom, also shown when a word saved to the
+/// recipe is reviewed. Each part is empty when the data has nothing for the word.
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct WordNotes {
+    /// prefix, root and suffix ("pre-" 前もって + paid 支払った)
+    pub parts: Vec<WordPart>,
+    /// sentences using the word
+    pub examples: Vec<ExampleSentence>,
+    /// patterns it is used in ("compare A with B" AとBを比較する), each with a sentence
+    pub usages: Vec<WordUsage>,
+    /// for an idiom whose origin is known: where it comes from
+    pub origin: Option<String>,
+}
+
+impl WordNotes {
+    pub fn is_empty(&self) -> bool {
+        self.parts.is_empty() && self.examples.is_empty() && self.usages.is_empty() && self.origin.is_none()
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExampleSentence {
+    pub en: String,
+    pub ja: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WordUsage {
+    /// "compare A with B", with A / B / 人 / ~ standing for what fills the pattern
+    pub pattern: String,
+    pub ja: String,
+    pub example: String,
+    pub example_ja: String,
 }
 
 /// One piece of a word: a prefix ("pre"), a root ("paid") or a suffix ("ness"), with its meaning.

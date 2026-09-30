@@ -65,6 +65,7 @@ const IRREGULAR: &[(&str, &str)] = &[
     ("flew", "fly"), ("flown", "fly"), ("slid", "slide"), ("swum", "swim"), ("lent", "lend"),
     ("stuck", "stick"), ("swept", "sweep"), ("dug", "dig"), ("hid", "hide"), ("shook", "shake"),
     ("threw", "throw"), ("rang", "ring"), ("rung", "ring"), ("sank", "sink"), ("laid", "lay"),
+    ("sold", "sell"),
 ];
 
 /// Candidate dictionary forms for an inflected English word ("studies" → study, "running" → run).

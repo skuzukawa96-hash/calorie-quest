@@ -14,10 +14,11 @@ import type {
   RedeemResult,
   SessionMode,
   SessionQuestion,
-  TierChoice,
   Snack,
   SpeechCapabilities,
   Stats,
+  TierChoice,
+  WordNotes,
 } from "../types";
 
 /** True when the page runs inside the Tauri WebView; false in a plain browser (`npm run dev`). */
@@ -59,6 +60,8 @@ export const api = {
   getIdioms: () => call<string[]>("get_idioms"),
   /** word → its IPA sounds separated by spaces (CMU Pronouncing Dictionary) */
   getPronunciations: () => call<Record<string, string>>("get_pronunciations"),
+  /** how a word is built, sentences and patterns using it, an idiom's origin; null when none */
+  getWordNotes: (word: string) => call<WordNotes | null>("get_word_notes", { word }),
   resetProgress: () => call<void>("reset_progress"),
 
   // お菓子作りレシピ (the learner's word list)
