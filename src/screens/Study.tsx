@@ -561,6 +561,11 @@ function ChoiceCard({
   }, [q, disabled, onAnswer]);
 
   const isGrammar = !!q.question.choices;
+  // Once answered, each wrong option shows the English it translates. Words and short idioms sit
+  // to the right of the Japanese; when any is longer (a phrase, a sentence) they all go on a second,
+  // smaller line, so the four options stay alike.
+  const wrongEn = (i: number) => (chosen && q.options[i] !== q.answer ? q.optionEn[i] : undefined);
+  const enBelow = q.optionEn.some((en, i) => q.options[i] !== q.answer && (en.split(" ").length > 3 || en.length > 22));
   return (
     <>
       <div className="prompt-label">{isGrammar ? "空欄に入る語を選ぼう" : "この英語の意味は？"}</div>
@@ -574,17 +579,25 @@ function ChoiceCard({
           {...recipeContext(q, q.display)}
         />
       </div>
-      <div className="options">
+      <div className={"options" + (chosen ? " answered" : "")}>
         {q.options.map((opt, i) => {
           let cls = "option";
           if (chosen) {
             if (opt === q.answer) cls += " correct";
             else if (opt === chosen) cls += " wrong";
           }
+          const en = wrongEn(i);
           return (
             <button key={opt + i} className={cls} disabled={disabled} onClick={() => onAnswer(opt)}>
               <span className="option-num">{i + 1}</span>
-              <span>{opt}</span>
+              <span className="option-text">
+                <span>{opt}</span>
+                {en && (
+                  <span className={"option-en" + (enBelow ? " below" : "")} lang="en">
+                    {en}
+                  </span>
+                )}
+              </span>
             </button>
           );
         })}

@@ -1717,6 +1717,26 @@ main {
   border-color: var(--berry);
   background: var(--berry-bg);
 }
+/* Answered: the options are there to be read now (the English of the wrong ones), not faded out. */
+.options.answered .option:disabled {
+  opacity: 1;
+}
+/* The Japanese, and once answered a wrong option's English beside it (or below it when long). */
+.option-text {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 10px;
+}
+.option-en {
+  color: var(--mint);
+}
+.option-en.below {
+  flex-basis: 100%;
+  margin-top: 3px;
+  font-size: 13.5px;
+  line-height: 1.4;
+}
 .option-num {
   display: inline-flex;
   align-items: center;

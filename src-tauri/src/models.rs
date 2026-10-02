@@ -49,6 +49,9 @@ pub struct SessionQuestion {
     pub display: String,
     pub sub_display: Option<String>,
     pub options: Vec<String>,
+    /// The English of each option when the options are Japanese (野球 → baseball), shown in the
+    /// wrong options once the question is answered. Empty when the options are English already.
+    pub option_en: Vec<String>,
     pub answer: String,
     /// Every English the grader accepts for a typing question. The prompt is Japanese, and the
     /// bank often holds more than one question meaning the same thing in the same group

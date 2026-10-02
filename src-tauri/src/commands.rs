@@ -403,7 +403,7 @@ fn spelled_alike(a: &str, b: &str) -> bool {
 /// confused with (its set in word-confusables.json, then words spelt alike: 負ける for win, 馬 for
 /// house), the rest from its own group, then its genre, then any word of the part of speech, single
 /// words before compounds when it is one. None when the question has no part of speech.
-fn word_distractors(conn: &Connection, q: &Question) -> rusqlite::Result<Option<Vec<String>>> {
+fn word_distractors(conn: &Connection, q: &Question) -> rusqlite::Result<Option<Vec<Distractor>>> {
     struct Candidate {
         en: String,
         ja: String,
@@ -440,7 +440,7 @@ fn word_distractors(conn: &Connection, q: &Question) -> rusqlite::Result<Option<
         .prepare_cached("SELECT ja FROM questions WHERE kind = 'word' AND lower(en) = lower(?1) AND id != ?2")?
         .query_map(params![q.en, q.id], |r| r.get(0))?
         .collect::<Result<_, _>>()?;
-    let mut picked: Vec<String> = Vec::new();
+    let mut picked: Vec<Distractor> = Vec::new();
     // One sense per English word: change is not asked against both of charge's (請求する, 充電する).
     let mut picked_en: Vec<String> = Vec::new();
     // `checked`: the pair was set side by side by hand (a confusable set: 上がる / 上げる for rise and
@@ -457,13 +457,13 @@ fn word_distractors(conn: &Connection, q: &Question) -> rusqlite::Result<Option<
                 || near.contains(&c.en.to_lowercase())
                 || picked_en.contains(&c.en.to_lowercase())
                 || share_a_sense(&c.ja, &q.ja)
-                || picked.iter().any(|p| share_a_sense(p, &c.ja))
+                || picked.iter().any(|(p, _)| share_a_sense(p, &c.ja))
                 || (!checked && meanings_close(&c.ja, &q.ja))
                 || other_senses.iter().any(|o| meanings_close(&c.ja, o))
             {
                 continue;
             }
-            picked.push(c.ja.clone());
+            picked.push((c.ja.clone(), c.en.clone()));
             picked_en.push(c.en.to_lowercase());
         }
     };
@@ -482,7 +482,7 @@ fn word_distractors(conn: &Connection, q: &Question) -> rusqlite::Result<Option<
 /// members: same fine-grained group → same genre → same kind → anything. Picking from the same
 /// group is what makes the quiz worth doing: for "salt" the alternatives are other seasonings,
 /// not a random animal. Word questions keep to their part of speech (`word_distractors`).
-fn japanese_distractors(conn: &Connection, q: &Question) -> rusqlite::Result<Vec<String>> {
+fn japanese_distractors(conn: &Connection, q: &Question) -> rusqlite::Result<Vec<Distractor>> {
     if q.kind == "word" {
         if let Some(opts) = word_distractors(conn, q)? {
             if opts.len() >= 3 {
@@ -490,41 +490,66 @@ fn japanese_distractors(conn: &Connection, q: &Question) -> rusqlite::Result<Vec
             }
         }
     }
-    let mut opts: Vec<String> = Vec::new();
+    let mut opts: Vec<Distractor> = Vec::new();
 
     let mut fill = |sql: &str, field: &str| -> rusqlite::Result<()> {
         if opts.len() >= 3 {
             return Ok(());
         }
         let mut stmt = conn.prepare(sql)?;
-        let found: Vec<String> = stmt
-            .query_map(params![q.id, q.kind, field, q.ja], |r| r.get(0))?
+        let found: Vec<Distractor> = stmt
+            .query_map(params![q.id, q.kind, field, q.ja], |r| Ok((r.get(0)?, r.get(1)?)))?
             .collect::<Result<_, _>>()?;
-        extend_unique(&mut opts, found, &q.ja);
+        extend_unique_meanings(&mut opts, found, &q.ja);
         Ok(())
     };
 
     fill(
-        "SELECT ja FROM questions WHERE id != ?1 AND kind = ?2 AND word_group = ?3 AND ja != ?4 ORDER BY RANDOM() LIMIT 8",
+        "SELECT ja, en FROM questions WHERE id != ?1 AND kind = ?2 AND word_group = ?3 AND ja != ?4 ORDER BY RANDOM() LIMIT 8",
         &q.group,
     )?;
     fill(
-        "SELECT ja FROM questions WHERE id != ?1 AND kind = ?2 AND category = ?3 AND ja != ?4 ORDER BY RANDOM() LIMIT 8",
+        "SELECT ja, en FROM questions WHERE id != ?1 AND kind = ?2 AND category = ?3 AND ja != ?4 ORDER BY RANDOM() LIMIT 8",
         &q.category,
     )?;
     fill(
-        "SELECT ja FROM questions WHERE id != ?1 AND kind = ?2 AND ?3 IS NOT NULL AND ja != ?4 ORDER BY RANDOM() LIMIT 8",
+        "SELECT ja, en FROM questions WHERE id != ?1 AND kind = ?2 AND ?3 IS NOT NULL AND ja != ?4 ORDER BY RANDOM() LIMIT 8",
         &q.category,
     )?;
 
     if opts.len() < 3 {
-        let mut stmt = conn.prepare("SELECT ja FROM questions WHERE id != ?1 AND ja != ?2 ORDER BY RANDOM() LIMIT 8")?;
-        let any: Vec<String> = stmt
-            .query_map(params![q.id, q.ja], |r| r.get(0))?
+        let mut stmt =
+            conn.prepare("SELECT ja, en FROM questions WHERE id != ?1 AND ja != ?2 ORDER BY RANDOM() LIMIT 8")?;
+        let any: Vec<Distractor> = stmt
+            .query_map(params![q.id, q.ja], |r| Ok((r.get(0)?, r.get(1)?)))?
             .collect::<Result<_, _>>()?;
-        extend_unique(&mut opts, any, &q.ja);
+        extend_unique_meanings(&mut opts, any, &q.ja);
     }
     Ok(opts)
+}
+
+/// A wrong option in Japanese with the English it translates (野球, baseball). The English is
+/// shown in the option once the question is answered, so a wrong choice teaches a word too.
+type Distractor = (String, String);
+
+/// `extend_unique` for Japanese options, which are told apart by their meaning.
+fn extend_unique_meanings(opts: &mut Vec<Distractor>, more: Vec<Distractor>, answer: &str) {
+    for (ja, en) in more {
+        if opts.len() >= 3 {
+            break;
+        }
+        if ja != answer && !opts.iter().any(|(o, _)| *o == ja) {
+            opts.push((ja, en));
+        }
+    }
+}
+
+/// A question's four Japanese options, shuffled, and the English of each one.
+fn japanese_options(conn: &Connection, q: &Question) -> rusqlite::Result<(Vec<String>, Vec<String>)> {
+    let mut opts = japanese_distractors(conn, q)?;
+    opts.push((q.ja.clone(), q.en.clone()));
+    shuffle(&mut opts);
+    Ok(opts.into_iter().unzip())
 }
 
 /// Every English the bank considers a correct rendering of this question's Japanese: its own `en`
@@ -612,7 +637,8 @@ fn build_session_question(
 ) -> rusqlite::Result<SessionQuestion> {
     let audio_text = audio_text_for(&q);
     let mut hide_text = false;
-    let (display, sub_display, options, answer) = match mode {
+    // `option_en` stays empty where the options are English already.
+    let (display, sub_display, options, option_en, answer) = match mode {
         "choice" => {
             if let Some(ch) = q.choices.clone() {
                 // Grammar-style question: the prompt has a blank, choices are given.
@@ -622,16 +648,15 @@ fn build_session_question(
                     q.prompt.clone().unwrap_or_else(|| q.en.clone()),
                     Some(q.ja.clone()),
                     opts,
+                    Vec::new(),
                     q.en.clone(),
                 )
             } else {
-                let mut opts = japanese_distractors(conn, &q)?;
-                opts.push(q.ja.clone());
-                shuffle(&mut opts);
-                (q.en.clone(), None, opts, q.ja.clone())
+                let (opts, en) = japanese_options(conn, &q)?;
+                (q.en.clone(), None, opts, en, q.ja.clone())
             }
         }
-        "typing" => (q.ja.clone(), q.prompt.clone(), Vec::new(), q.en.clone()),
+        "typing" => (q.ja.clone(), q.prompt.clone(), Vec::new(), Vec::new(), q.en.clone()),
         "listening" => {
             hide_text = true;
             if q.kind == "dialogue" {
@@ -643,16 +668,14 @@ fn build_session_question(
                 }
                 opts.push(q.en.clone());
                 shuffle(&mut opts);
-                (String::new(), Some(q.ja.clone()), opts, q.en.clone())
+                (String::new(), Some(q.ja.clone()), opts, Vec::new(), q.en.clone())
             } else {
                 // Heard: the English. Answer: what it means, in Japanese.
-                let mut opts = japanese_distractors(conn, &q)?;
-                opts.push(q.ja.clone());
-                shuffle(&mut opts);
-                (String::new(), None, opts, q.ja.clone())
+                let (opts, en) = japanese_options(conn, &q)?;
+                (String::new(), None, opts, en, q.ja.clone())
             }
         }
-        _ => (q.en.clone(), Some(q.ja.clone()), Vec::new(), q.en.clone()),
+        _ => (q.en.clone(), Some(q.ja.clone()), Vec::new(), Vec::new(), q.en.clone()),
     };
     // Only typing is graded by comparing free text; everywhere else the learner picks an option.
     let accepted = if mode == "typing" {
@@ -669,6 +692,7 @@ fn build_session_question(
         display,
         sub_display,
         options,
+        option_en,
         answer,
         accepted,
         audio_text,
@@ -1863,6 +1887,11 @@ mod tests {
         out
     }
 
+    /// The wrong meanings alone, without their English.
+    fn distractor_meanings(c: &Connection, q: &Question) -> Vec<String> {
+        japanese_distractors(c, q).unwrap().into_iter().map(|(ja, _)| ja).collect()
+    }
+
     #[test]
     fn distractors_come_from_the_same_semantic_group() {
         let c = conn();
@@ -1875,7 +1904,7 @@ mod tests {
         let meanings = pos_of_meanings(&c);
         // Repeat: the picks are random. A word spelt like salt may come in, the rest are seasonings.
         for _ in 0..20 {
-            let opts = japanese_distractors(&c, &q).unwrap();
+            let opts = distractor_meanings(&c, &q);
             assert_eq!(opts.len(), 3);
             assert!(opts.iter().filter(|o| group_meanings.contains(o)).count() >= 2, "{opts:?}");
             for o in &opts {
@@ -1898,7 +1927,7 @@ mod tests {
         let lose: String =
             c.query_row("SELECT ja FROM questions WHERE kind = 'word' AND en = 'lose'", [], |r| r.get(0)).unwrap();
         for _ in 0..10 {
-            let opts = japanese_distractors(&c, &q).unwrap();
+            let opts = distractor_meanings(&c, &q);
             assert_eq!(opts.len(), 3);
             assert!(opts.contains(&lose), "{opts:?}");
             for o in &opts {
@@ -1923,7 +1952,7 @@ mod tests {
                 continue;
             }
             let q = question_by_key(&c, key);
-            let opts = japanese_distractors(&c, &q).unwrap();
+            let opts = distractor_meanings(&c, &q);
             let wrong_pos = opts.iter().any(|o| !meanings.get(o).is_some_and(|ps| ps.contains(pos)));
             let clash = opts.iter().any(|o| share_a_sense(o, &q.ja))
                 || opts.iter().enumerate().any(|(i, a)| opts[i + 1..].iter().any(|b| share_a_sense(a, b)));
@@ -1949,7 +1978,7 @@ mod tests {
             for key in keys {
                 let q = question_by_key(&c, &key);
                 for _ in 0..3 {
-                    println!("{} {} [{}] → {:?}", q.en, q.ja, q.group, japanese_distractors(&c, &q).unwrap());
+                    println!("{} {} [{}] → {:?}", q.en, q.ja, q.group, distractor_meanings(&c, &q));
                 }
             }
         }
@@ -2151,6 +2180,35 @@ mod tests {
             .unwrap();
         let sq = build_session_question(&c, word, "choice", false).unwrap();
         assert!(sq.grammar_note.is_none(), "only grammar questions carry an explanation");
+    }
+
+    /// Once answered, each Japanese option shows the English it translates: staycation's 持ち寄り夕食会
+    /// is a potluck. Every option's English is a question of the bank with that very meaning, and
+    /// the answer's is the question's own. Options already in English carry none.
+    #[test]
+    fn japanese_options_carry_their_english() {
+        let c = conn();
+        let mut stmt = c.prepare("SELECT 1 FROM questions WHERE en = ?1 AND ja = ?2").unwrap();
+        let mut checked = 0;
+        for mode in ["choice", "listening"] {
+            for tier in ["word", "compound", "idiom", "phrase", "example", "grammar"] {
+                for sq in session_questions(&c, mode, tier, "all", 15).unwrap() {
+                    if sq.question.choices.is_some() || sq.question.kind == "dialogue" {
+                        assert!(sq.option_en.is_empty(), "{} has English options", sq.question.key);
+                        continue;
+                    }
+                    assert_eq!(sq.option_en.len(), sq.options.len(), "{}", sq.question.key);
+                    for (ja, en) in sq.options.iter().zip(&sq.option_en) {
+                        if *ja == sq.answer {
+                            assert_eq!(en, &sq.question.en, "{}", sq.question.key);
+                        }
+                        assert!(stmt.exists(params![en, ja]).unwrap(), "{}: {ja} is not {en}", sq.question.key);
+                    }
+                    checked += 1;
+                }
+            }
+        }
+        assert!(checked >= 50, "only {checked} questions with Japanese options were served");
     }
 
     #[test]

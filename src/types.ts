@@ -113,6 +113,11 @@ export interface SessionQuestion {
   display: string;
   subDisplay?: string | null;
   options: string[];
+  /**
+   * the English of each option when the options are Japanese (野球 → baseball), shown in the wrong
+   * options once the question is answered; empty when the options are English already
+   */
+  optionEn: string[];
   answer: string;
   /** every English the grader accepts for typing: `answer` plus same-meaning siblings in the group */
   accepted: string[];

@@ -476,8 +476,11 @@ function relatedWords(key: string): string[] {
   return out;
 }
 
+/** A wrong option in Japanese with the English it translates. Mirrors commands::Distractor. */
+type Distractor = [ja: string, en: string];
+
 /** Mirrors commands::word_distractors: wrong meanings of the same part of speech. */
-function wordDistractors(q: Question): string[] | null {
+function wordDistractors(q: Question): Distractor[] | null {
   const pos = posOf[q.key];
   if (!pos) return null;
   const candidates = shuffle(questions.filter((o) => o.kind === "word" && posOf[o.key] === pos && o.id !== q.id && o.ja !== q.ja));
@@ -486,7 +489,7 @@ function wordDistractors(q: Question): string[] | null {
   const otherSenses = questions
     .filter((o) => o.kind === "word" && o.id !== q.id && o.en.toLowerCase() === q.en.toLowerCase())
     .map((o) => o.ja);
-  const picked: string[] = [];
+  const picked: Distractor[] = [];
   const pickedEn: string[] = [];
   const take = (fits: (c: Question) => boolean, checked: boolean, upTo: number) => {
     for (const c of candidates) {
@@ -497,12 +500,12 @@ function wordDistractors(q: Question): string[] | null {
         near.includes(c.en.toLowerCase()) ||
         pickedEn.includes(c.en.toLowerCase()) ||
         shareASense(c.ja, q.ja) ||
-        picked.some((p) => shareASense(p, c.ja)) ||
+        picked.some(([p]) => shareASense(p, c.ja)) ||
         (!checked && meaningsClose(c.ja, q.ja)) ||
         otherSenses.some((o) => meaningsClose(c.ja, o))
       )
         continue;
-      picked.push(c.ja);
+      picked.push([c.ja, c.en]);
       pickedEn.push(c.en.toLowerCase());
     }
   };
@@ -517,12 +520,12 @@ function wordDistractors(q: Question): string[] | null {
 }
 
 /** Three wrong translations from the tightest semantic circle available; mirrors the Rust side. */
-function japaneseDistractors(q: Question): string[] {
+function japaneseDistractors(q: Question): Distractor[] {
   if (q.kind === "word") {
     const opts = wordDistractors(q);
     if (opts && opts.length >= 3) return opts;
   }
-  const out: string[] = [];
+  const out: Distractor[] = [];
   const pools = [
     questions.filter((o) => o.id !== q.id && o.kind === q.kind && o.group === q.group && o.ja !== q.ja),
     questions.filter((o) => o.id !== q.id && o.kind === q.kind && o.category === q.category && o.ja !== q.ja),
@@ -532,11 +535,17 @@ function japaneseDistractors(q: Question): string[] {
   for (const pool of pools) {
     for (const o of shuffle(pool)) {
       if (out.length >= 3) break;
-      if (!out.includes(o.ja)) out.push(o.ja);
+      if (!out.some(([ja]) => ja === o.ja)) out.push([o.ja, o.en]);
     }
     if (out.length >= 3) break;
   }
   return out;
+}
+
+/** Mirrors commands::japanese_options: the four Japanese options, shuffled, and the English of each. */
+function japaneseOptions(q: Question): { options: string[]; optionEn: string[] } {
+  const opts = shuffle([...japaneseDistractors(q), [q.ja, q.en] as Distractor]);
+  return { options: opts.map(([ja]) => ja), optionEn: opts.map(([, en]) => en) };
 }
 
 /** Every English the bank treats as a correct rendering of this question's Japanese. */
@@ -1092,6 +1101,7 @@ function buildSessionQuestion(q: Question, mode: Mode, isReview: boolean): Sessi
         display: q.prompt ?? q.en,
         subDisplay: q.ja,
         options: shuffle(q.choices),
+        optionEn: [],
         answer: q.en,
         accepted: [q.en],
       };
@@ -1100,7 +1110,7 @@ function buildSessionQuestion(q: Question, mode: Mode, isReview: boolean): Sessi
       ...base,
       display: q.en,
       subDisplay: null,
-      options: shuffle([...japaneseDistractors(q), q.ja]),
+      ...japaneseOptions(q),
       answer: q.ja,
       accepted: [q.ja],
     };
@@ -1112,6 +1122,7 @@ function buildSessionQuestion(q: Question, mode: Mode, isReview: boolean): Sessi
       display: q.ja,
       subDisplay: q.prompt ?? null,
       options: [],
+      optionEn: [],
       answer: q.en,
       accepted: acceptedAnswers(q),
     };
@@ -1132,6 +1143,7 @@ function buildSessionQuestion(q: Question, mode: Mode, isReview: boolean): Sessi
         display: "",
         subDisplay: q.ja,
         options: shuffle([...opts, q.en]),
+        optionEn: [],
         answer: q.en,
         accepted: [q.en],
       };
@@ -1141,12 +1153,12 @@ function buildSessionQuestion(q: Question, mode: Mode, isReview: boolean): Sessi
       hideText: true,
       display: "",
       subDisplay: null,
-      options: shuffle([...japaneseDistractors(q), q.ja]),
+      ...japaneseOptions(q),
       answer: q.ja,
       accepted: [q.ja],
     };
   }
-  return { ...base, display: q.en, subDisplay: q.ja, options: [], answer: q.en, accepted: [q.en] };
+  return { ...base, display: q.en, subDisplay: q.ja, options: [], optionEn: [], answer: q.en, accepted: [q.en] };
 }
 
 /** Mirrors offers_mode in commands.rs: listening also plays anything recorded for speaking. */
