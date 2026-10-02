@@ -2,15 +2,19 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import GlossedText from "../components/GlossedText";
 import { DeleteButton } from "../components/IconButtons";
 import PencilIcon from "../components/PencilIcon";
+import { PlayModeTag } from "../components/PlayModeSwitch";
 import WordNotesPanel from "../components/WordNotes";
 import { api } from "../lib/api";
 import { loadDictionary, lookup, type Dictionary } from "../lib/dictionary";
 import { onRecipeChanged } from "../lib/recipe";
+import { formatKcal } from "../lib/scoring";
 import { playCrunch, playFanfare, playWrong } from "../lib/sfx";
 import { isTtsSupported, speak, stopSpeaking } from "../lib/speech";
 import {
+  PLAY_MODE_INFO,
   RECIPE_POS,
   RECIPE_POS_LABEL,
+  type PlayMode,
   type RecipePos,
   type RecipeReviewMode,
   type RecipeReviewResult,
@@ -19,6 +23,8 @@ import {
 } from "../types";
 
 interface Props {
+  /** がんばり / 通常 / お気軽, shown beside what a review earned */
+  playMode: PlayMode;
   /** a correct review adds to today's kcal, which the header and home show */
   onProgress: () => void;
   toast: (msg: string) => void;
@@ -37,10 +43,7 @@ const NO_MEANING = "（辞書に意味がありません）";
 const REVIEW_KCAL: Record<RecipeReviewMode, string> = { choice: "0.5", typing: "1" };
 const REPEAT_KCAL: Record<RecipeReviewMode, string> = { choice: "0.25", typing: "0.5" };
 
-/** 2 quarters → "0.5" */
-function quartersText(quarters: number): string {
-  return String(quarters / 4);
-}
+
 const REVIEW_TITLE: Record<RecipeReviewMode, string> = { choice: "選択式", typing: "記入式" };
 const REVIEW_ICON: Record<RecipeReviewMode, ReactNode> = { choice: "👆", typing: <PencilIcon /> };
 
@@ -286,7 +289,7 @@ function withGap(word: RecipeWord): string | null {
  * click; it can be narrowed by the start of the word and put in abc or added order, by part of
  * speech or not, or down to one part of speech.
  */
-export default function Recipe({ onProgress, toast }: Props) {
+export default function Recipe({ playMode, onProgress, toast }: Props) {
   const [words, setWords] = useState<RecipeWord[] | null>(null);
   const [dict, setDict] = useState<Dictionary | null>(null);
   /** the meanings of every pattern of 用法, the wrong options for a pattern in review */
@@ -379,6 +382,7 @@ export default function Recipe({ onProgress, toast }: Props) {
           words={words}
           dict={dict}
           usagePool={usagePool}
+          playMode={playMode}
           onAgain={(left) => {
             setRound((r) => r + 1);
             // Missed words are back in review now, even those that had been learned.
@@ -705,8 +709,8 @@ interface Answered {
   correct: boolean;
   /** the option picked, or what was typed */
   given: string;
-  /** what it paid, in quarter kcal: full the first time the word is right today, half after */
-  quarters: number;
+  /** what it paid after the play mode, in kcal: full the first time the word is right today, half after */
+  points: number;
   /** right, and the first right answer today: explain 習得 / まだ */
   decideHint: boolean;
   /** right again the same day, the first time this happens today: say why it paid half */
@@ -720,6 +724,7 @@ function RecipeReview({
   words,
   dict,
   usagePool,
+  playMode,
   onAgain,
   onDone,
   onProgress,
@@ -733,6 +738,7 @@ function RecipeReview({
   words: RecipeWord[];
   dict: Dictionary | null;
   usagePool: string[];
+  playMode: PlayMode;
   onAgain: (left: RecipeWord[]) => void;
   onDone: () => void;
   onProgress: () => void;
@@ -807,7 +813,7 @@ function RecipeReview({
         setAnswered({
           correct,
           given,
-          quarters: r.earnedQuarters,
+          points: r.points,
           decideHint: correct && firstToday("decide"),
           repeatNote: correct && r.repeat && firstToday("repeat"),
         });
@@ -1043,7 +1049,10 @@ function RecipeReview({
         <div className={"feedback " + (answered.correct ? "ok" : "ng")}>
           <div className="feedback-main">
             <div className="feedback-title">{answered.correct ? "正解！ サクサク🍪" : "ざんねん…"}</div>
-            <div className="feedback-kcal">+{quartersText(answered.quarters)} kcal</div>
+            <div className="feedback-kcal">
+              +{formatKcal(answered.points)} kcal
+              {answered.points > 0 && <PlayModeTag mode={playMode} />}
+            </div>
           </div>
           <div className="feedback-detail">
             {mode === "typing" && !answered.correct && answered.given && (
@@ -1072,7 +1081,7 @@ function RecipeReview({
                           ? "まだ覚えているなら「習得」、自信がなければ「まだ」で復習中に戻します。"
                           : "覚えたなら「習得」で習得済みに。なんとなく当たっただけなら「まだ」で復習中に残します。"),
                       answered.repeatNote &&
-                        `この単語は今日2回目以降の正解なので、カロリーは半分（${REPEAT_KCAL[mode]} kcal）です。`,
+                        `この単語は今日2回目以降の正解なので、カロリーは半分（${REPEAT_KCAL[mode]} kcal${playMode === "normal" ? "" : `、${PLAY_MODE_INFO[playMode].label} ×${PLAY_MODE_INFO[playMode].multiplier} の前`}）です。`,
                     ]
                       .filter(Boolean)
                       .join(" ")

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import GlossedText from "../components/GlossedText";
 import PronunciationTips, { HighlightedText } from "../components/PronunciationTips";
+import { PlayModeTag } from "../components/PlayModeSwitch";
 import WordNotesPanel from "../components/WordNotes";
 import { PHONEMES, STRESS_MARK } from "../lib/phonemes";
 import { ipaWords, loadPronunciations, type Pronunciations } from "../lib/pronunciation";
@@ -12,6 +13,7 @@ import {
   maskWord,
   PASS_SCORE,
   scorePronunciation,
+  formatKcal,
   scoredKind,
   scoresPerWord,
   type PronunciationScore,
@@ -38,6 +40,7 @@ import {
   MODE_LABEL,
   type AnswerResult,
   type KcalRates,
+  type PlayMode,
   type SessionMode,
   type SessionQuestion,
   type TierChoice,
@@ -56,6 +59,8 @@ interface Props {
   /** genre name or "all" */
   category: string;
   rates: KcalRates;
+  /** がんばり / 通常 / お気軽, shown beside what an answer earned */
+  playMode: PlayMode;
   onExit: () => void;
   onProgress: () => void;
   toast: (msg: string) => void;
@@ -114,7 +119,7 @@ function isMultiWord(q: SessionQuestion): boolean {
   return q.audioText.trim().includes(" ");
 }
 
-export default function Study({ mode, tier, category, rates, onExit, onProgress, toast }: Props) {
+export default function Study({ mode, tier, category, rates, playMode, onExit, onProgress, toast }: Props) {
   const [questions, setQuestions] = useState<SessionQuestion[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [idx, setIdx] = useState(0);
@@ -196,7 +201,7 @@ export default function Study({ mode, tier, category, rates, onExit, onProgress,
         });
         setTally((t) => ({
           correct: t.correct + (correct ? 1 : 0),
-          kcal: t.kcal + result.kcalEarned,
+          kcal: t.kcal + result.points,
           reviews: t.reviews + (result.isReview && correct ? 1 : 0),
         }));
         if (correct) playCrunch();
@@ -406,12 +411,13 @@ export default function Study({ mode, tier, category, rates, onExit, onProgress,
               <div className="feedback-title">
                 {feedback.correct
                   ? "正解！ サクサク🍪"
-                  : feedback.typing && feedback.result.kcalEarned > 0
+                  : feedback.typing && feedback.result.points > 0
                     ? `惜しい！ ${feedback.typing.mistakes}語ちがい🍪`
                     : "ざんねん…"}
               </div>
               <div className="feedback-kcal">
-                {feedback.result.kcalEarned > 0 ? `+${feedback.result.kcalEarned} kcal` : "+0 kcal"}
+                +{formatKcal(feedback.result.points)} kcal
+                {feedback.result.points > 0 && <PlayModeTag mode={playMode} />}
                 {feedback.result.isReview && feedback.correct && <span className="bonus"> 復習ボーナス ×{rates.reviewMultiplier}</span>}
               </div>
             </div>
@@ -1109,7 +1115,7 @@ function Summary({
             <div className="muted">正解数（{rate}%）</div>
           </div>
           <div>
-            <div className="summary-num accent">+{tally.kcal} kcal</div>
+            <div className="summary-num accent">+{formatKcal(tally.kcal)} kcal</div>
             <div className="muted">獲得カロリー</div>
           </div>
           <div>

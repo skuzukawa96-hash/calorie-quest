@@ -8,6 +8,7 @@ import { playCrunch, playFanfare } from "../lib/sfx";
 import {
   ALL_CATEGORIES,
   categoryIcon,
+  PLAY_MODE_INFO,
   POS_LABEL,
   posCategory,
   TIER_LABEL,
@@ -58,7 +59,9 @@ export default function Home({ dash, onStart, onExam, onExamReview, onChanged, g
 
   // What is still left to spend today; a goal is within reach once it fits in there.
   const budget = today.kcalEarned - today.kcalConsumed;
-  const need = (remaining: number, rate: number) => Math.ceil(remaining / rate);
+  // Questions to go at the play mode's rate: がんばり halves what each pays.
+  const modeRate = PLAY_MODE_INFO[user.playMode].multiplier;
+  const need = (remaining: number, rate: number) => Math.ceil(remaining / (rate * modeRate));
 
   const act = async (fn: () => Promise<void>) => {
     setBusy(true);

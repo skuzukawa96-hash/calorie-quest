@@ -40,6 +40,7 @@ import type {
   RelatedGroup,
   Mode,
   PartOfSpeech,
+  PlayMode,
   Question,
   RecipeAddResult,
   RecipeKind,
@@ -59,6 +60,7 @@ import type {
   WordPart,
   WordUsage,
 } from "../types";
+import { PLAY_MODES } from "../types";
 
 interface SeedQuestion {
   key: string;
@@ -117,8 +119,8 @@ interface MockState {
   snackTickets: SnackTicket[];
   /** 目標のお菓子（mirrors goal_snacks） */
   goals: number[];
-  /** レシピ復習の 0.25 kcal 単位の点、日ごと（mirrors daily_stats.recipe_quarter_kcal） */
-  recipeQuarters: Record<string, number>;
+  /** 1 kcal に満たない獲得の端数（1/8 kcal 単位）、日ごと（mirrors daily_stats.kcal_eighths） */
+  kcalEighths: Record<string, number>;
   /** the day each recipe word was last right (mirrors recipe_words.paid_on) */
   recipePaid: Record<number, string>;
   /** 試験 handed in (mirrors exam_attempts) */
@@ -281,6 +283,7 @@ function freshState(): MockState {
       currentStreak: 0,
       longestStreak: 0,
       lastStudyDate: null,
+      playMode: "normal",
     },
     history: {},
     daily: {},
@@ -292,7 +295,7 @@ function freshState(): MockState {
     saved: {},
     snackTickets: [],
     goals: [],
-    recipeQuarters: {},
+    kcalEighths: {},
     recipePaid: {},
     examAttempts: [],
     examMistakes: {},
@@ -315,23 +318,28 @@ function load(): MockState {
       // State saved before the word list or savings existed lacks them. Like the Rust migration,
       // days already over are closed at 0 rather than paid into savings all at once.
       const stored = JSON.parse(raw) as Partial<MockState> &
-        Omit<MockState, "recipe" | "savings" | "saved" | "snackTickets" | "goals" | "recipeQuarters" | "recipePaid" | "examAttempts" | "examMistakes"> & {
-          /** before quarters: the same count in halves */
+        Omit<MockState, "recipe" | "savings" | "saved" | "snackTickets" | "goals" | "kcalEighths" | "recipePaid" | "examAttempts" | "examMistakes"> & {
+          /** the day's recipe pay in halves, then in quarters, before eighths of any reward */
           recipeHalves?: Record<string, number>;
+          recipeQuarters?: Record<string, number>;
         };
       const closed = Object.fromEntries(Object.keys(stored.daily).filter((d) => d < today()).map((d) => [d, 0]));
+      const quarters =
+        stored.recipeQuarters ??
+        Object.fromEntries(Object.entries(stored.recipeHalves ?? {}).map(([d, n]) => [d, n * 2]));
       return {
         ...stored,
+        // Mirrors users.play_mode's default for state saved before modes existed.
+        user: { ...stored.user, playMode: stored.user.playMode ?? "normal" },
         recipe: stored.recipe ?? [],
         savings: stored.savings ?? 0,
         saved: stored.saved ?? closed,
         snackTickets: stored.snackTickets ?? [],
         // The single goal of earlier versions becomes the first entry of the list.
         goals: stored.goals ?? legacyGoal(stored.user),
-        // Mirrors the Rust migration: halves of a calorie become quarters.
-        recipeQuarters:
-          stored.recipeQuarters ??
-          Object.fromEntries(Object.entries(stored.recipeHalves ?? {}).map(([d, n]) => [d, n * 2])),
+        // Mirrors the Rust migration: only the pending fraction is kept, in eighths.
+        kcalEighths:
+          stored.kcalEighths ?? Object.fromEntries(Object.entries(quarters).map(([d, n]) => [d, (n % 4) * 2])),
         recipePaid: stored.recipePaid ?? {},
         examAttempts: stored.examAttempts ?? [],
         examMistakes: stored.examMistakes ?? {},
@@ -396,6 +404,26 @@ function daily(date: string): DailyStats {
     state.daily[date] = { date, kcalEarned: 0, kcalConsumed: 0, answered: 0, correct: 0 };
   }
   return state.daily[date];
+}
+
+/** Mirrors srs::apply_play_mode: がんばり ×0.5、通常 ×1、お気軽 ×1.5, in eighths of a kcal. */
+function applyPlayMode(eighths: number): number {
+  const e = Math.max(0, eighths);
+  const m = state.user.playMode;
+  return m === "hard" ? e / 2 : m === "easy" ? (e * 3) / 2 : e;
+}
+
+/**
+ * Mirrors commands::credit: pays `eighths` (1/8 kcal, before the play mode) into `date`. Whole kcal
+ * go to the day's earnings; a fraction waits for the next reward that day.
+ */
+function credit(date: string, eighths: number): { points: number; whole: number; pending: boolean } {
+  const scaled = applyPlayMode(eighths);
+  const total = (state.kcalEighths[date] ?? 0) + scaled;
+  const whole = Math.floor(total / 8);
+  state.kcalEighths[date] = total % 8;
+  daily(date).kcalEarned += whole;
+  return { points: scaled / 8, whole, pending: total % 8 > 0 };
 }
 function dueCount(): number {
   const t = today();
@@ -1428,8 +1456,8 @@ function finishExam(level: ExamLevel, answers: ExamAnswer[]): ExamResult {
       reviewAdded += 1;
     }
   }
+  const paid = credit(t, kcal * 8);
   const d = daily(t);
-  d.kcalEarned += kcal;
   d.answered += total;
   d.correct += correct;
   const { newTicket } = markStudied(t);
@@ -1439,7 +1467,8 @@ function finishExam(level: ExamLevel, answers: ExamAnswer[]): ExamResult {
     correct,
     total,
     passed,
-    kcalEarned: kcal,
+    kcalEarned: paid.whole,
+    points: paid.points,
     todayKcal: d.kcalEarned,
     streak: state.user.currentStreak,
     newTicket,
@@ -1465,13 +1494,19 @@ function answerExamReview(id: string, chosen: string): ExamReviewResult {
   if (correct) delete state.examMistakes[id];
   else if (waiting) state.examMistakes[id].misses += 1;
   const t = today();
+  const paid = credit(t, kcal * 8);
   const d = daily(t);
-  d.kcalEarned += kcal;
   d.answered += 1;
   d.correct += correct ? 1 : 0;
   markStudied(t);
   save();
-  return { correct, kcalEarned: kcal, todayKcal: d.kcalEarned, remaining: Object.keys(state.examMistakes).length };
+  return {
+    correct,
+    kcalEarned: paid.whole,
+    points: paid.points,
+    todayKcal: d.kcalEarned,
+    remaining: Object.keys(state.examMistakes).length,
+  };
 }
 
 /** Mirrors exam::overview. */
@@ -1548,8 +1583,8 @@ function submitAnswer(p: AnswerPayload): AnswerResult {
     lastStudiedAt: nowTs(),
     reviewMode: !p.correct || lowScore ? p.mode : (h.reviewMode ?? null),
   };
+  const paid = credit(t, kcal * 8);
   const d = daily(t);
-  d.kcalEarned += kcal;
   d.answered += 1;
   d.correct += p.correct ? 1 : 0;
 
@@ -1557,7 +1592,9 @@ function submitAnswer(p: AnswerPayload): AnswerResult {
   const u = state.user;
   save();
   return {
-    kcalEarned: kcal,
+    kcalEarned: paid.whole,
+    points: paid.points,
+    fractionPending: paid.pending,
     todayKcal: d.kcalEarned,
     streak: u.currentStreak,
     newTicket,
@@ -1842,9 +1879,17 @@ export async function mockInvoke<T>(cmd: string, args: Record<string, unknown>):
       const ticket = state.tickets.find((x) => !x.usedAt);
       if (!ticket) throw new Error("使えるチートデイチケットがありません");
       ticket.usedAt = nowTs();
-      daily(t).kcalEarned += RATES.cheatDayBonus;
+      const paid = credit(t, RATES.cheatDayBonus * 8);
       save();
-      return { kcalAdded: RATES.cheatDayBonus, todayKcal: daily(t).kcalEarned, ticketsLeft: ticketsAvailable() } as T;
+      return { kcalAdded: paid.whole, todayKcal: daily(t).kcalEarned, ticketsLeft: ticketsAvailable() } as T;
+    }
+    case "set_play_mode": {
+      // Mirrors commands::set_play_mode_in.
+      const mode = args.mode as PlayMode;
+      if (!PLAY_MODES.includes(mode)) throw new Error(`unknown play mode ${String(args.mode)}`);
+      state.user.playMode = mode;
+      save();
+      return mode as T;
     }
     case "get_stats":
       return getStats() as T;
@@ -1885,9 +1930,9 @@ export async function mockInvoke<T>(cmd: string, args: Record<string, unknown>):
     case "add_recipe_word":
       return addRecipeWord(args.entry as RecipeWordInput) as T;
     case "review_recipe_word": {
-      // Mirrors recipe::review and srs::recipe_quarter_kcal / recipe_kcal_gain: pay is counted in
-      // quarters per day (choice 0.5, typing 1 kcal the first time a word is right that day, half
-      // after) and only whole calories reach the budget.
+      // Mirrors recipe::review and srs::recipe_quarter_kcal: choice 0.5, typing 1 kcal the first
+      // time a word is right that day, half after; credit scales it by the play mode and only
+      // whole calories reach the budget.
       const full = args.mode === "choice" ? 2 : args.mode === "typing" ? 4 : 0;
       if (!full) throw new Error(`unknown review mode ${String(args.mode)}`);
       const w = recipeWord(Number(args.id));
@@ -1899,19 +1944,16 @@ export async function mockInvoke<T>(cmd: string, args: Record<string, unknown>):
       w.lastReviewedAt = now;
       if (!args.remembered) w.masteredAt = null;
       else state.recipePaid[w.id] = t;
-      const before = state.recipeQuarters[t] ?? 0;
-      const gained = args.remembered ? (repeat ? full / 2 : full) : 0;
-      const kcal = Math.floor((before + gained) / 4) - Math.floor(before / 4);
-      state.recipeQuarters[t] = before + gained;
-      daily(t).kcalEarned += kcal;
+      const quarters = args.remembered ? (repeat ? full / 2 : full) : 0;
+      const paid = credit(t, quarters * 2);
       save();
       return {
         entry: withPos(w),
-        earnedQuarters: gained,
+        points: paid.points,
         repeat,
-        kcalEarned: kcal,
+        kcalEarned: paid.whole,
         todayKcal: daily(t).kcalEarned,
-        fractionPending: (before + gained) % 4 !== 0,
+        fractionPending: paid.pending,
       } as T;
     }
     case "set_recipe_mastered": {

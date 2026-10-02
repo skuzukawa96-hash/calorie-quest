@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, runningInTauri } from "./lib/api";
+import PlayModeSwitch from "./components/PlayModeSwitch";
 import RecipeProvider from "./components/RecipeProvider";
 import { playFanfare } from "./lib/sfx";
 import { loadSpeechCapabilities } from "./lib/speech";
@@ -9,7 +10,7 @@ import Recipe from "./screens/Recipe";
 import Snacks from "./screens/Snacks";
 import Stats from "./screens/Stats";
 import Study from "./screens/Study";
-import type { Dashboard, ExamLevel, SessionMode, TierChoice } from "./types";
+import type { Dashboard, ExamLevel, PlayMode, SessionMode, TierChoice } from "./types";
 
 type Tab = "home" | "snacks" | "recipe" | "stats";
 
@@ -61,6 +62,19 @@ export default function App() {
     }
   }, [showToast]);
 
+  // がんばり → 通常 → お気軽: what is earned from now on is scaled by it.
+  const changePlayMode = useCallback(
+    async (mode: PlayMode) => {
+      try {
+        await api.setPlayMode(mode);
+        await refresh();
+      } catch (e) {
+        setError(String(e));
+      }
+    },
+    [refresh],
+  );
+
   useEffect(() => {
     void refresh();
     void loadSpeechCapabilities();
@@ -96,6 +110,7 @@ export default function App() {
           <div className="topbar-stats">
             {dash && (
               <>
+                <PlayModeSwitch mode={dash.user.playMode} onChange={(m) => void changePlayMode(m)} />
                 <span title="連続学習日数">🔥 {dash.user.currentStreak}日</span>
                 {/* What is left to eat today (earned minus eaten) over what was earned. */}
                 <span
@@ -126,6 +141,7 @@ export default function App() {
               kind={exam.kind}
               level={exam.kind === "exam" ? exam.level : undefined}
               overview={dash.exam}
+              playMode={dash.user.playMode}
               onExit={() => go("home")}
               onProgress={() => void refresh()}
               toast={showToast}
@@ -136,6 +152,7 @@ export default function App() {
               tier={session.tier}
               category={session.category}
               rates={dash.kcalRates}
+              playMode={dash.user.playMode}
               onExit={() => go("home")}
               onProgress={() => void refresh()}
               toast={showToast}
@@ -161,7 +178,7 @@ export default function App() {
               <Snacks dash={dash} onChanged={() => void refresh()} toast={showToast} />
             ) : null
           ) : tab === "recipe" ? (
-            <Recipe onProgress={() => void refresh()} toast={showToast} />
+            <Recipe playMode={dash?.user.playMode ?? "normal"} onProgress={() => void refresh()} toast={showToast} />
           ) : (
             <Stats onChanged={() => void refresh()} toast={showToast} />
           )}

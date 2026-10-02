@@ -149,7 +149,8 @@ CREATE TABLE IF NOT EXISTS users (
   last_study_date TEXT,
   goal_snack_id INTEGER,
   created_at TEXT NOT NULL,
-  savings_kcal INTEGER NOT NULL DEFAULT 0
+  savings_kcal INTEGER NOT NULL DEFAULT 0,
+  play_mode TEXT NOT NULL DEFAULT 'normal'
 );
 CREATE TABLE IF NOT EXISTS questions (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -205,7 +206,7 @@ CREATE TABLE IF NOT EXISTS daily_stats (
   answered INTEGER NOT NULL DEFAULT 0,
   correct INTEGER NOT NULL DEFAULT 0,
   saved_kcal INTEGER,
-  recipe_quarter_kcal INTEGER NOT NULL DEFAULT 0,
+  kcal_eighths INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (user_id, date)
 );
 CREATE TABLE IF NOT EXISTS snacks (
@@ -376,8 +377,9 @@ fn setup(conn: Connection) -> rusqlite::Result<Connection> {
             params![crate::util::today()],
         )?;
     }
-    // レシピの復習は 0.25 kcal 単位で貯まる。整数にならなかった端数をその日のうちだけ持ち越す。
-    // 0.5 kcal 単位だった列は名前を変え、値を2倍にして引き継ぐ。
+    // 1 kcal に満たない獲得の端数（1/8 kcal 単位）をその日のうちだけ持ち越す。前はレシピ復習の
+    // その日の合計を 0.5 kcal 単位（recipe_half_kcal）、次いで 0.25 kcal 単位（recipe_quarter_kcal）で
+    // 持っていたので、名前を変えて端数だけを引き継ぐ。
     if has_column(&conn, "daily_stats", "recipe_half_kcal")? {
         conn.execute_batch(
             "BEGIN;
@@ -386,7 +388,17 @@ fn setup(conn: Connection) -> rusqlite::Result<Connection> {
              COMMIT;",
         )?;
     }
-    ensure_column(&conn, "daily_stats", "recipe_quarter_kcal", "INTEGER NOT NULL DEFAULT 0")?;
+    if has_column(&conn, "daily_stats", "recipe_quarter_kcal")? {
+        conn.execute_batch(
+            "BEGIN;
+             ALTER TABLE daily_stats RENAME COLUMN recipe_quarter_kcal TO kcal_eighths;
+             UPDATE daily_stats SET kcal_eighths = (kcal_eighths % 4) * 2;
+             COMMIT;",
+        )?;
+    }
+    ensure_column(&conn, "daily_stats", "kcal_eighths", "INTEGER NOT NULL DEFAULT 0")?;
+    // がんばり（×0.5）/ 通常 / お気軽（×1.5）。
+    ensure_column(&conn, "users", "play_mode", "TEXT NOT NULL DEFAULT 'normal'")?;
     // レシピの単語がその日はじめて正解した日（同じ日の2回目からは半分を払う）。
     ensure_column(&conn, "recipe_words", "paid_on", "TEXT")?;
     ensure_column(&conn, "recipe_words", "kind", "TEXT NOT NULL DEFAULT 'word'")?;
@@ -1820,10 +1832,10 @@ mod tests {
         assert_eq!(word_parts().len(), list.len());
     }
 
-    /// Recipe reviews used to be counted in halves of a calorie. A database from then keeps its
-    /// pending fraction: the column is renamed and its halves become quarters.
+    /// Recipe reviews used to be counted in halves of a calorie, then quarters. A database from
+    /// then keeps its pending fraction: the column is renamed and becomes eighths.
     #[test]
-    fn recipe_halves_from_an_older_database_become_quarters() {
+    fn recipe_halves_from_an_older_database_become_eighths() {
         let c = Connection::open_in_memory().unwrap();
         c.execute_batch(
             "CREATE TABLE daily_stats (
@@ -1837,16 +1849,17 @@ mod tests {
         .unwrap();
         let c = setup(c).unwrap();
         assert!(!has_column(&c, "daily_stats", "recipe_half_kcal").unwrap());
-        let quarters: i64 = c
-            .query_row("SELECT recipe_quarter_kcal FROM daily_stats WHERE date = '2026-10-03'", [], |r| r.get(0))
+        assert!(!has_column(&c, "daily_stats", "recipe_quarter_kcal").unwrap());
+        let eighths: i64 = c
+            .query_row("SELECT kcal_eighths FROM daily_stats WHERE date = '2026-10-03'", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(quarters, 6, "1.5 kcal is six quarters");
+        assert_eq!(eighths, 4, "1.5 kcal of which 0.5 was pending: four eighths");
         // Opening it again changes nothing.
         let c = setup(c).unwrap();
         let again: i64 = c
-            .query_row("SELECT recipe_quarter_kcal FROM daily_stats WHERE date = '2026-10-03'", [], |r| r.get(0))
+            .query_row("SELECT kcal_eighths FROM daily_stats WHERE date = '2026-10-03'", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(again, 6);
+        assert_eq!(again, 4);
     }
 
     /// Related words are a side note to a word's answer, so they stay few and short: each family a

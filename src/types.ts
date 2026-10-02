@@ -164,7 +164,20 @@ export interface UserInfo {
   currentStreak: number;
   longestStreak: number;
   lastStudyDate?: string | null;
+  playMode: PlayMode;
 }
+
+/** 遊び方: がんばり（獲得カロリー ×0.5）/ 通常 / お気軽（×1.5）。Mirrors srs::PLAY_MODES. */
+export type PlayMode = "hard" | "normal" | "easy";
+
+/** The modes in the order the top bar's button cycles through them. */
+export const PLAY_MODES: PlayMode[] = ["hard", "normal", "easy"];
+
+export const PLAY_MODE_INFO: Record<PlayMode, { label: string; multiplier: number; desc: string }> = {
+  hard: { label: "がんばり", multiplier: 0.5, desc: "すべての獲得カロリーが半分（×0.5）" },
+  normal: { label: "通常", multiplier: 1, desc: "獲得カロリーはそのまま（等倍）" },
+  easy: { label: "お気軽", multiplier: 1.5, desc: "すべての獲得カロリーが1.5倍" },
+};
 
 export interface DailyStats {
   date: string;
@@ -349,8 +362,10 @@ export interface ExamResult {
   correct: number;
   total: number;
   passed: boolean;
-  /** the level's reward when passed, the effort bonus when not */
+  /** whole kcal added to today now */
   kcalEarned: number;
+  /** what the exam earned after the play mode: the level's reward when passed, the effort bonus when not */
+  points: number;
   todayKcal: number;
   streak: number;
   newTicket: boolean;
@@ -359,7 +374,10 @@ export interface ExamResult {
 
 export interface ExamReviewResult {
   correct: boolean;
+  /** whole kcal added to today now */
   kcalEarned: number;
+  /** what the answer earned after the play mode, in kcal (3 / 1.5 / 4.5) */
+  points: number;
   todayKcal: number;
   remaining: number;
 }
@@ -388,7 +406,12 @@ export interface AnswerPayload {
 }
 
 export interface AnswerResult {
+  /** whole kcal added to today now (with a fraction pending, it can differ from `points`) */
   kcalEarned: number;
+  /** what the answer earned after the play mode, in kcal: 0.5 for a word picked in がんばり */
+  points: number;
+  /** a fraction of a calorie waits for the next reward today */
+  fractionPending: boolean;
   todayKcal: number;
   streak: number;
   newTicket: boolean;
@@ -502,10 +525,10 @@ export type RecipeReviewMode = "choice" | "typing";
 export interface RecipeReviewResult {
   entry: RecipeWord;
   /**
-   * what the answer earned in quarter kcal: 2 / 4 (0.5 / 1 kcal) the first time the word is right
-   * today, 1 / 2 after that, 0 when wrong
+   * what the answer earned after the play mode, in kcal: 0.5 / 1 the first time the word is right
+   * today, half that after, 0 when wrong (then halved in がんばり, ×1.5 in お気軽)
    */
-  earnedQuarters: number;
+  points: number;
   /** the word had already been right today, so it paid half */
   repeat: boolean;
   /** whole kcal added to today just now; a fraction waits for the next right answer */

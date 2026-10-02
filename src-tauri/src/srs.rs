@@ -132,12 +132,30 @@ pub fn recipe_quarter_kcal(mode: &str, first_today: bool) -> Option<i64> {
     Some(if first_today { full } else { full / 2 })
 }
 
-/// その日のレシピ復習で貯まった 0.25 kcal 単位の点が `before` から `gained` 増えたとき、今日の
-/// 獲得カロリーに足す kcal。小数点以下は切り捨てるが、端数は捨てずにその日の次の正解と合わせる
-/// （0.5 + 0.25 + 0.25 = 1 kcal）。日付が変わると残った端数は切り捨てになる。
-pub fn recipe_kcal_gain(before: i64, gained: i64) -> i64 {
-    let before = before.max(0);
-    (before + gained.max(0)) / 4 - before / 4
+/// 獲得カロリーは 1/8 kcal 単位で数える。どの報酬も 1 kcal か 0.25 kcal の整数倍なので、
+/// がんばりモードで半分にしても、お気軽モードで 1.5 倍にしても割り切れる。
+pub const EIGHTHS: i64 = 8;
+
+/// 遊び方（モード）: がんばり（獲得カロリーが半分）・通常（等倍）・お気軽（1.5 倍）。
+pub const PLAY_MODES: [&str; 3] = ["hard", "normal", "easy"];
+
+/// A reward of `eighths` (1/8 kcal) under `play_mode`, still in eighths: がんばり ×0.5、通常 ×1、
+/// お気軽 ×1.5. An unknown mode counts as 通常.
+pub fn apply_play_mode(eighths: i64, play_mode: &str) -> i64 {
+    let eighths = eighths.max(0);
+    match play_mode {
+        "hard" => eighths / 2,
+        "easy" => eighths * 3 / 2,
+        _ => eighths,
+    }
+}
+
+/// The day's pending fraction (`pending` eighths) with `gained` eighths more: (whole kcal for the
+/// day's budget, eighths left waiting). 小数点以下は切り捨てるが、端数は捨てずにその日の次の報酬と
+/// 合わせる（0.5 + 0.25 + 0.25 = 1 kcal）。日付が変わると残った端数は切り捨てになる。
+pub fn split_kcal(pending: i64, gained: i64) -> (i64, i64) {
+    let total = pending.max(0) + gained.max(0);
+    (total / EIGHTHS, total % EIGHTHS)
 }
 
 /// その日に使わずに残ったカロリー。食べすぎた日（マイナス）は貯蓄を減らさず 0 とする。
@@ -261,15 +279,35 @@ mod tests {
         assert_eq!(recipe_quarter_kcal("choice", false), Some(1));
         assert_eq!(recipe_quarter_kcal("typing", false), Some(2));
         assert_eq!(recipe_quarter_kcal("speaking", true), None);
-        // Meanings picked in a row: 0.5 → 0, 1.0 → +1, 1.25 → 0, then 1.5, 1.75, 2.0 → +1.
-        assert_eq!(recipe_kcal_gain(0, 2), 0);
-        assert_eq!(recipe_kcal_gain(2, 2), 1);
-        assert_eq!(recipe_kcal_gain(4, 1), 0);
-        assert_eq!(recipe_kcal_gain(7, 1), 1);
-        // A word typed the first time is a whole calorie, whatever fraction is pending.
-        assert_eq!(recipe_kcal_gain(0, 4), 1);
-        assert_eq!(recipe_kcal_gain(3, 4), 1);
-        assert_eq!(recipe_kcal_gain(5, -2), 0, "nothing is ever taken back");
+    }
+
+    #[test]
+    fn play_modes_scale_every_reward_and_fractions_wait_for_the_next() {
+        // がんばり ×0.5、通常 ×1、お気軽 ×1.5, in eighths of a calorie.
+        assert_eq!(apply_play_mode(8, "hard"), 4);
+        assert_eq!(apply_play_mode(8, "normal"), 8);
+        assert_eq!(apply_play_mode(8, "easy"), 12);
+        assert_eq!(apply_play_mode(2, "hard"), 1, "a quarter halved is an eighth");
+        assert_eq!(apply_play_mode(2, "easy"), 3);
+        assert_eq!(apply_play_mode(16, "unknown"), 16, "anything else is 通常");
+        assert_eq!(apply_play_mode(-8, "easy"), 0, "nothing is ever taken back");
+        for m in PLAY_MODES {
+            for kcal in 0..20 {
+                for quarters in [kcal * 4, kcal * 4 + 1, kcal * 4 + 2] {
+                    let eighths = quarters * 2;
+                    let scaled = apply_play_mode(eighths, m) as f64;
+                    let exact = eighths as f64 * if m == "hard" { 0.5 } else if m == "easy" { 1.5 } else { 1.0 };
+                    assert_eq!(scaled, exact, "{m}: {eighths} eighths must divide evenly");
+                }
+            }
+        }
+        // Words picked in がんばり: 0.5 → 0, 1.0 → +1. A pending half joins the next reward.
+        assert_eq!(split_kcal(0, 4), (0, 4));
+        assert_eq!(split_kcal(4, 4), (1, 0));
+        assert_eq!(split_kcal(4, 12), (2, 0), "0.5 + 1.5 = 2");
+        assert_eq!(split_kcal(7, 1), (1, 0));
+        assert_eq!(split_kcal(3, 16), (2, 3));
+        assert_eq!(split_kcal(5, -2), (0, 5), "nothing is ever taken back");
     }
 
     #[test]

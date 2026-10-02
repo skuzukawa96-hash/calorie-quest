@@ -15,6 +15,8 @@
   --mint-bg: #e6f3ea;
   --berry: #d9534f;
   --berry-bg: #fbe6e5;
+  /* お気軽モード */
+  --sky: #3b7dd8;
   --shadow: 0 8px 22px rgba(91, 58, 33, 0.1);
   --radius: 18px;
   --font: "Segoe UI", "Yu Gothic UI", "Meiryo", "Hiragino Sans", "Noto Sans JP", system-ui, sans-serif;
@@ -131,6 +133,13 @@ p {
   font-size: 12px;
   letter-spacing: 0.08em;
 }
+/* At the window's default width (1040px) the play mode button needs the subtitle's room, or the
+   tabs break onto two lines. */
+@media (max-width: 1140px) {
+  .brand-sub {
+    display: none;
+  }
+}
 .tabs {
   display: flex;
   gap: 4px;
@@ -153,9 +162,99 @@ p {
 .topbar-stats {
   margin-left: auto;
   display: flex;
+  align-items: center;
   gap: 14px;
   font-weight: 600;
   color: var(--choco);
+  /* the play mode's explanation opens under the stats, aligned to their right edge */
+  position: relative;
+  flex-shrink: 0;
+}
+.topbar-stats > * {
+  white-space: nowrap;
+}
+/* 遊び方: がんばり red, 通常 green, お気軽 blue */
+.play-mode-btn {
+  border: none;
+  border-radius: 999px;
+  padding: 3px 12px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #fff;
+  cursor: pointer;
+}
+.play-mode-btn.hard,
+.play-mode-tag.hard {
+  background: var(--berry);
+}
+.play-mode-btn.normal,
+.play-mode-tag.normal {
+  background: var(--mint);
+}
+.play-mode-btn.easy,
+.play-mode-tag.easy {
+  background: var(--sky);
+}
+.play-mode-btn:hover {
+  filter: brightness(1.08);
+}
+.play-mode-tip {
+  display: none;
+  position: absolute;
+  right: 0;
+  top: calc(100% + 8px);
+  z-index: 30;
+  width: 330px;
+  max-width: calc(100vw - 32px);
+  padding: 10px 12px;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.5;
+  white-space: normal;
+}
+.play-mode:hover .play-mode-tip,
+.play-mode-btn:focus-visible + .play-mode-tip {
+  display: block;
+}
+.play-mode-line {
+  display: block;
+  padding: 2px 6px;
+  border-radius: 6px;
+}
+.play-mode-line.current {
+  background: var(--cream-2);
+}
+.play-mode-name {
+  margin-right: 6px;
+}
+.play-mode-name.hard {
+  color: var(--berry);
+}
+.play-mode-name.normal {
+  color: var(--mint);
+}
+.play-mode-name.easy {
+  color: var(--sky);
+}
+.play-mode-note {
+  display: block;
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 12px;
+}
+/* "がんばり ×0.5" beside what an answer earned */
+.play-mode-tag {
+  margin-left: 8px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  vertical-align: middle;
 }
 main {
   flex: 1;

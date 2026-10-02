@@ -143,23 +143,8 @@ pub fn review(conn: &mut Connection, id: i64, remembered: bool, mode: &str) -> C
     )
     .map_err(err)?;
 
-    tx.execute("INSERT OR IGNORE INTO daily_stats (user_id, date) VALUES (?1, ?2)", params![USER_ID, day])
-        .map_err(err)?;
-    let before: i64 = tx
-        .query_row(
-            "SELECT recipe_quarter_kcal FROM daily_stats WHERE user_id = ?1 AND date = ?2",
-            params![USER_ID, day],
-            |r| r.get(0),
-        )
-        .map_err(err)?;
-    let gained = if remembered { srs::recipe_quarter_kcal(mode, !repeat).unwrap_or(0) } else { 0 };
-    let kcal = srs::recipe_kcal_gain(before, gained);
-    tx.execute(
-        "UPDATE daily_stats SET recipe_quarter_kcal = recipe_quarter_kcal + ?3, kcal_earned = kcal_earned + ?4
-         WHERE user_id = ?1 AND date = ?2",
-        params![USER_ID, day, gained, kcal],
-    )
-    .map_err(err)?;
+    let quarters = if remembered { srs::recipe_quarter_kcal(mode, !repeat).unwrap_or(0) } else { 0 };
+    let paid = crate::commands::credit(&tx, &day, quarters * srs::EIGHTHS / 4).map_err(err)?;
     let today_kcal: i64 = tx
         .query_row(
             "SELECT kcal_earned FROM daily_stats WHERE user_id = ?1 AND date = ?2",
@@ -171,11 +156,11 @@ pub fn review(conn: &mut Connection, id: i64, remembered: bool, mode: &str) -> C
     tx.commit().map_err(err)?;
     Ok(RecipeReviewResult {
         entry,
-        earned_quarters: gained,
+        points: paid.points(),
         repeat,
-        kcal_earned: kcal,
+        kcal_earned: paid.whole,
         today_kcal,
-        fraction_pending: (before + gained) % 4 != 0,
+        fraction_pending: paid.pending,
     })
 }
 
@@ -370,17 +355,17 @@ mod tests {
 
         // 0.5 kcal: nothing whole yet, and nothing is lost either.
         let r = review(&mut c, ids[0], true, "choice").unwrap();
-        assert_eq!((r.earned_quarters, r.kcal_earned, r.today_kcal, r.fraction_pending), (2, 0, 0, true));
+        assert_eq!((r.points, r.kcal_earned, r.today_kcal, r.fraction_pending), (0.5, 0, 0, true));
         // A miss pays nothing and leaves the half waiting.
         let r = review(&mut c, ids[1], false, "choice").unwrap();
-        assert_eq!((r.earned_quarters, r.kcal_earned, r.fraction_pending), (0, 0, true));
+        assert_eq!((r.points, r.kcal_earned, r.fraction_pending), (0.0, 0, true));
         // The second half makes a calorie.
         let r = review(&mut c, ids[2], true, "choice").unwrap();
         assert_eq!((r.kcal_earned, r.today_kcal, r.fraction_pending), (1, 1, false));
         // A word typed is a calorie of its own; a pending half stays pending beside it.
         review(&mut c, ids[3], true, "choice").unwrap();
         let r = review(&mut c, ids[4], true, "typing").unwrap();
-        assert_eq!((r.earned_quarters, r.kcal_earned, r.today_kcal, r.fraction_pending), (4, 1, 2, true));
+        assert_eq!((r.points, r.kcal_earned, r.today_kcal, r.fraction_pending), (1.0, 1, 2, true));
         assert_eq!(kcal(&c), 2, "1.5 + 1 = 2.5 kcal, of which the half is not paid");
 
         assert!(review(&mut c, ids[0], true, "speaking").is_err());
@@ -398,36 +383,36 @@ mod tests {
 
         let first = review(&mut c, hear, true, "typing").unwrap();
         assert!(!first.repeat);
-        assert_eq!((first.earned_quarters, first.kcal_earned), (4, 1));
+        assert_eq!((first.points, first.kcal_earned), (1.0, 1));
         let learned_at = set_mastered(&c, hear, true).unwrap().mastered_at.expect("learned");
 
         // The same day, over the learned words again: still learned, still dated the first time,
         // and half a calorie for the same word typed again.
         let again = review(&mut c, hear, true, "typing").unwrap();
         assert!(again.repeat);
-        assert_eq!((again.earned_quarters, again.kcal_earned, again.today_kcal), (2, 0, 1));
+        assert_eq!((again.points, again.kcal_earned, again.today_kcal), (0.5, 0, 1));
         assert_eq!(again.entry.mastered_at.as_deref(), Some(learned_at.as_str()));
         assert_eq!(again.entry.reviews, 2);
         // A third time is half too: 1 + 0.5 + 0.5 makes the second calorie.
         let third = review(&mut c, hear, true, "typing").unwrap();
-        assert_eq!((third.earned_quarters, third.kcal_earned, third.today_kcal), (2, 1, 2));
+        assert_eq!((third.points, third.kcal_earned, third.today_kcal), (0.5, 1, 2));
         // Picked from four again that day: a quarter.
         let picked = review(&mut c, hear, true, "choice").unwrap();
-        assert_eq!((picked.earned_quarters, picked.kcal_earned), (1, 0));
+        assert_eq!((picked.points, picked.kcal_earned), (0.25, 0));
 
         // Forgotten: back into review, and a miss pays nothing.
         let forgot = review(&mut c, hear, false, "choice").unwrap();
         assert!(forgot.entry.mastered_at.is_none());
-        assert_eq!((forgot.earned_quarters, forgot.kcal_earned), (0, 0));
+        assert_eq!((forgot.points, forgot.kcal_earned), (0.0, 0));
 
         // Another word still pays in full today: 2.25 + 1 = 3.25 kcal, 3 of them paid.
         let other = review(&mut c, bag, true, "typing").unwrap();
         assert!(!other.repeat);
-        assert_eq!((other.earned_quarters, other.today_kcal, other.fraction_pending), (4, 3, true));
+        assert_eq!((other.points, other.today_kcal, other.fraction_pending), (1.0, 3, true));
 
         // The next day the word pays in full again.
         c.execute("UPDATE recipe_words SET paid_on = '2000-01-01' WHERE id = ?1", params![hear]).unwrap();
-        assert_eq!(review(&mut c, hear, true, "typing").unwrap().earned_quarters, 4);
+        assert_eq!(review(&mut c, hear, true, "typing").unwrap().points, 1.0);
     }
 
     #[test]

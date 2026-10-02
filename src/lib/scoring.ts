@@ -219,6 +219,11 @@ export function answerWordCount(answer: string): number {
   return answer.split(/\s+/).filter((w) => /[\p{L}\p{N}]/u.test(w)).length;
 }
 
+/** 0.5 → "0.5", 2 → "2", 0.125 → "0.125": what a reward is worth, as shown. */
+export function formatKcal(points: number): string {
+  return String(Math.round(points * 1000) / 1000);
+}
+
 /** Mirrors srs::scores_per_word: typing a sentence (例文・長文・フレーズ) pays 1 kcal a word. */
 export function scoresPerWord(kind: string, mode: string): boolean {
   return mode === "typing" && (kind === "phrase" || kind === "sentence" || kind === "expression");

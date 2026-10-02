@@ -36,6 +36,7 @@ pub fn run() {
             commands::delete_consumption,
             commands::eat_with_ticket,
             commands::redeem_cheat_ticket,
+            commands::set_play_mode,
             commands::get_stats,
             commands::get_dictionary,
             commands::get_idioms,

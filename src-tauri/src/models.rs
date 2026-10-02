@@ -191,6 +191,8 @@ pub struct UserInfo {
     pub current_streak: i64,
     pub longest_streak: i64,
     pub last_study_date: Option<String>,
+    /// がんばり hard (earnings ×0.5) / 通常 normal / お気軽 easy (×1.5)
+    pub play_mode: String,
 }
 
 #[derive(Debug, Clone, Default, Serialize)]
@@ -346,8 +348,11 @@ pub struct ExamResult {
     pub correct: i64,
     pub total: i64,
     pub passed: bool,
-    /// what this exam earned: the level's reward when passed, the effort bonus when not
+    /// whole kcal added to today now
     pub kcal_earned: i64,
+    /// what this exam earned after the play mode: the level's reward when passed, the effort
+    /// bonus when not
+    pub points: f64,
     pub today_kcal: i64,
     pub streak: i64,
     pub new_ticket: bool,
@@ -359,7 +364,10 @@ pub struct ExamResult {
 #[serde(rename_all = "camelCase")]
 pub struct ExamReviewResult {
     pub correct: bool,
+    /// whole kcal added to today now
     pub kcal_earned: i64,
+    /// what the answer earned after the play mode, in kcal (3 / 1.5 / 4.5)
+    pub points: f64,
     pub today_kcal: i64,
     /// exam questions still waiting in review
     pub remaining: i64,
@@ -398,7 +406,12 @@ pub struct AnswerPayload {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AnswerResult {
+    /// whole kcal added to today now (with a fraction pending, it can differ from `points`)
     pub kcal_earned: i64,
+    /// what the answer earned after the play mode, in kcal: 0.5 for a word picked in がんばり
+    pub points: f64,
+    /// a fraction of a calorie waits for the next reward today
+    pub fraction_pending: bool,
     pub today_kcal: i64,
     pub streak: i64,
     pub new_ticket: bool,
@@ -522,9 +535,9 @@ pub struct RecipeAddResult {
 #[serde(rename_all = "camelCase")]
 pub struct RecipeReviewResult {
     pub entry: RecipeWord,
-    /// what the answer earned, in quarter kcal: 2 / 4 (0.5 / 1 kcal) the first time the word is
-    /// right today, 1 / 2 after that, 0 when wrong
-    pub earned_quarters: i64,
+    /// what the answer earned after the play mode, in kcal: 0.5 / 1 the first time the word is
+    /// right today, half that after, 0 when wrong (then halved in がんばり, ×1.5 in お気軽)
+    pub points: f64,
     /// the word had already been right today, so it paid half
     pub repeat: bool,
     /// whole kcal added to today just now (a fraction waits for the next right answer)

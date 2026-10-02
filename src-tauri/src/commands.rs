@@ -22,7 +22,7 @@ pub(crate) fn err<E: std::fmt::Display>(e: E) -> String {
 
 fn load_user(conn: &Connection) -> rusqlite::Result<UserInfo> {
     conn.query_row(
-        "SELECT id, name, total_study_days, current_streak, longest_streak, last_study_date
+        "SELECT id, name, total_study_days, current_streak, longest_streak, last_study_date, play_mode
          FROM users WHERE id = ?1",
         params![USER_ID],
         |r| {
@@ -33,9 +33,61 @@ fn load_user(conn: &Connection) -> rusqlite::Result<UserInfo> {
                 current_streak: r.get(3)?,
                 longest_streak: r.get(4)?,
                 last_study_date: r.get(5)?,
+                play_mode: r.get(6)?,
             })
         },
     )
+}
+
+/// The play mode the learner picked (`users.play_mode`): hard / normal / easy.
+pub(crate) fn play_mode(conn: &Connection) -> rusqlite::Result<String> {
+    conn.query_row("SELECT play_mode FROM users WHERE id = ?1", params![USER_ID], |r| r.get(0))
+}
+
+/// What a reward did to the day.
+pub(crate) struct Credit {
+    /// the reward after the play mode, in eighths of a kcal (shown as 0.5 / 1.5 kcal …)
+    pub eighths: i64,
+    /// whole kcal added to the day's earnings now
+    pub whole: i64,
+    /// a fraction of a calorie waits for the next reward today
+    pub pending: bool,
+}
+
+impl Credit {
+    /// The reward in kcal, as shown to the learner.
+    pub fn points(&self) -> f64 {
+        self.eighths as f64 / srs::EIGHTHS as f64
+    }
+}
+
+/// Pays a reward of `eighths` (1/8 kcal, before the play mode) into `day`: scaled by the play mode
+/// (がんばり ×0.5、通常 ×1、お気軽 ×1.5), whole kcal go to the day's earnings and a fraction waits in
+/// `daily_stats.kcal_eighths` for the next reward that day (dropped when the day ends). Every kcal
+/// earned goes through here: answers, recipe reviews, exams and the cheat-day bonus.
+pub(crate) fn credit(conn: &Connection, day: &str, eighths: i64) -> rusqlite::Result<Credit> {
+    conn.execute("INSERT OR IGNORE INTO daily_stats (user_id, date) VALUES (?1, ?2)", params![USER_ID, day])?;
+    let pending: i64 = conn.query_row(
+        "SELECT kcal_eighths FROM daily_stats WHERE user_id = ?1 AND date = ?2",
+        params![USER_ID, day],
+        |r| r.get(0),
+    )?;
+    let scaled = srs::apply_play_mode(eighths, &play_mode(conn)?);
+    let (whole, rest) = srs::split_kcal(pending, scaled);
+    conn.execute(
+        "UPDATE daily_stats SET kcal_earned = kcal_earned + ?3, kcal_eighths = ?4 WHERE user_id = ?1 AND date = ?2",
+        params![USER_ID, day, whole, rest],
+    )?;
+    Ok(Credit { eighths: scaled, whole, pending: rest > 0 })
+}
+
+/// Switches the play mode; what is earned from then on is scaled by it.
+pub fn set_play_mode_in(conn: &Connection, mode: &str) -> Result<String, String> {
+    if !srs::PLAY_MODES.contains(&mode) {
+        return Err(format!("unknown play mode {mode}"));
+    }
+    conn.execute("UPDATE users SET play_mode = ?1 WHERE id = ?2", params![mode, USER_ID]).map_err(err)?;
+    Ok(mode.to_string())
 }
 
 pub(crate) fn load_daily(conn: &Connection, date: &str) -> rusqlite::Result<DailyStats> {
@@ -963,13 +1015,11 @@ pub fn record_answer(conn: &mut Connection, payload: &AnswerPayload) -> Result<A
     )
     .map_err(err)?;
 
+    // The log keeps what the question pays; the play mode scales it on the way to the day.
+    let paid = credit(&tx, &today, kcal * srs::EIGHTHS).map_err(err)?;
     tx.execute(
-        "INSERT INTO daily_stats (user_id, date, kcal_earned, answered, correct) VALUES (?1, ?2, ?3, 1, ?4)
-         ON CONFLICT(user_id, date) DO UPDATE SET
-           kcal_earned = kcal_earned + excluded.kcal_earned,
-           answered = answered + 1,
-           correct = correct + excluded.correct",
-        params![USER_ID, today, kcal, payload.correct as i64],
+        "UPDATE daily_stats SET answered = answered + 1, correct = correct + ?3 WHERE user_id = ?1 AND date = ?2",
+        params![USER_ID, today, payload.correct as i64],
     )
     .map_err(err)?;
 
@@ -978,7 +1028,9 @@ pub fn record_answer(conn: &mut Connection, payload: &AnswerPayload) -> Result<A
     let today_stats = load_daily(&tx, &today).map_err(err)?;
     tx.commit().map_err(err)?;
     Ok(AnswerResult {
-        kcal_earned: kcal,
+        kcal_earned: paid.whole,
+        points: paid.points(),
+        fraction_pending: paid.pending,
         today_kcal: today_stats.kcal_earned,
         streak,
         new_ticket,
@@ -1038,21 +1090,22 @@ pub fn redeem_ticket(conn: &Connection) -> Result<RedeemResult, String> {
         params![now_ts(), ticket_id],
     )
     .map_err(err)?;
-    conn.execute(
-        "INSERT INTO daily_stats (user_id, date, kcal_earned) VALUES (?1, ?2, ?3)
-         ON CONFLICT(user_id, date) DO UPDATE SET kcal_earned = kcal_earned + excluded.kcal_earned",
-        params![USER_ID, today, srs::CHEAT_DAY_BONUS],
-    )
-    .map_err(err)?;
+    let paid = credit(conn, &today, srs::CHEAT_DAY_BONUS * srs::EIGHTHS).map_err(err)?;
     let stats = load_daily(conn, &today).map_err(err)?;
     Ok(RedeemResult {
-        kcal_added: srs::CHEAT_DAY_BONUS,
+        kcal_added: paid.whole,
         today_kcal: stats.kcal_earned,
         tickets_left: tickets_available(conn).map_err(err)?,
     })
 }
 
 /* ---------- Tauri commands ---------- */
+
+#[tauri::command]
+pub fn set_play_mode(state: State<'_, AppState>, mode: String) -> CmdResult<String> {
+    let conn = state.db.lock().map_err(err)?;
+    set_play_mode_in(&conn, &mode)
+}
 
 #[tauri::command]
 pub fn get_dashboard(state: State<'_, AppState>) -> CmdResult<Dashboard> {
@@ -1597,6 +1650,40 @@ mod tests {
         let r = answer(&mut c, qid, "speaking", true, Some(65.0));
         assert_eq!(r.kcal_earned, 3, "3.25 rounds down");
         assert!(r.needs_review, "scores under 70 are scheduled for review");
+    }
+
+    /// がんばり halves every reward, お気軽 makes it 1.5 times: a word picked pays 0.5 / 1 / 1.5 kcal,
+    /// and a fraction waits for the next reward of the day. The mode is the learner's setting.
+    #[test]
+    fn play_modes_scale_what_every_answer_pays() {
+        let mut c = conn();
+        assert_eq!(load_user(&c).unwrap().play_mode, "normal");
+        assert!(set_play_mode_in(&c, "lazy").is_err());
+
+        set_play_mode_in(&c, "hard").unwrap();
+        assert_eq!(load_user(&c).unwrap().play_mode, "hard");
+        let id = question_id(&c, "w001");
+        let first = answer(&mut c, id, "choice", true, None);
+        assert_eq!((first.points, first.kcal_earned, first.today_kcal, first.fraction_pending), (0.5, 0, 0, true));
+        let id = question_id(&c, "w002");
+        let second = answer(&mut c, id, "choice", true, None);
+        assert_eq!((second.points, second.kcal_earned, second.today_kcal, second.fraction_pending), (0.5, 1, 1, false));
+
+        set_play_mode_in(&c, "easy").unwrap();
+        let id = question_id(&c, "w003");
+        let easy = answer(&mut c, id, "choice", true, None);
+        assert_eq!((easy.points, easy.kcal_earned, easy.today_kcal), (1.5, 1, 2));
+        let id = question_id(&c, "i002");
+        let idiom = answer(&mut c, id, "typing", true, None);
+        assert_eq!((idiom.points, idiom.kcal_earned, idiom.today_kcal), (7.5, 8, 10), "0.5 pending + 7.5 = 8");
+
+        set_play_mode_in(&c, "normal").unwrap();
+        let id = question_id(&c, "w004");
+        let normal = answer(&mut c, id, "choice", true, None);
+        assert_eq!((normal.points, normal.kcal_earned, normal.today_kcal), (1.0, 1, 11));
+        let id = question_id(&c, "w005");
+        let wrong = answer(&mut c, id, "choice", false, None);
+        assert_eq!((wrong.points, wrong.kcal_earned), (0.0, 0));
     }
 
     /// The first word question of the 複合語 tab.

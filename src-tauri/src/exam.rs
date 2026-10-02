@@ -16,10 +16,11 @@ use rusqlite::{params, Connection, OptionalExtension};
 use serde::Deserialize;
 use tauri::State;
 
-use crate::commands::{err, load_daily, mark_studied, CmdResult, Studied, USER_ID};
+use crate::commands::{credit, err, load_daily, mark_studied, CmdResult, Studied, USER_ID};
 use crate::models::{
     ExamAnswer, ExamLevelInfo, ExamOverview, ExamQuestion, ExamResult, ExamReviewResult, WordNotes,
 };
+use crate::srs;
 use crate::util::{now_ts, shuffle, today};
 use crate::AppState;
 
@@ -312,13 +313,10 @@ pub fn finish(conn: &mut Connection, level: &str, answers: &[ExamAnswer]) -> Res
             review_added += fresh as i64;
         }
     }
+    let paid = credit(&tx, &today, kcal * srs::EIGHTHS).map_err(err)?;
     tx.execute(
-        "INSERT INTO daily_stats (user_id, date, kcal_earned, answered, correct) VALUES (?1, ?2, ?3, ?4, ?5)
-         ON CONFLICT(user_id, date) DO UPDATE SET
-           kcal_earned = kcal_earned + excluded.kcal_earned,
-           answered = answered + excluded.answered,
-           correct = correct + excluded.correct",
-        params![USER_ID, today, kcal, total, correct],
+        "UPDATE daily_stats SET answered = answered + ?3, correct = correct + ?4 WHERE user_id = ?1 AND date = ?2",
+        params![USER_ID, today, total, correct],
     )
     .map_err(err)?;
     let Studied { streak, new_ticket, .. } = mark_studied(&tx, &today, &now).map_err(err)?;
@@ -329,7 +327,8 @@ pub fn finish(conn: &mut Connection, level: &str, answers: &[ExamAnswer]) -> Res
         correct,
         total,
         passed,
-        kcal_earned: kcal,
+        kcal_earned: paid.whole,
+        points: paid.points(),
         today_kcal,
         streak,
         new_ticket,
@@ -384,20 +383,17 @@ pub fn answer_review(conn: &mut Connection, id: &str, chosen: &str) -> Result<Ex
         )
         .map_err(err)?;
     }
+    let paid = credit(&tx, &today, kcal * srs::EIGHTHS).map_err(err)?;
     tx.execute(
-        "INSERT INTO daily_stats (user_id, date, kcal_earned, answered, correct) VALUES (?1, ?2, ?3, 1, ?4)
-         ON CONFLICT(user_id, date) DO UPDATE SET
-           kcal_earned = kcal_earned + excluded.kcal_earned,
-           answered = answered + 1,
-           correct = correct + excluded.correct",
-        params![USER_ID, today, kcal, correct as i64],
+        "UPDATE daily_stats SET answered = answered + 1, correct = correct + ?3 WHERE user_id = ?1 AND date = ?2",
+        params![USER_ID, today, correct as i64],
     )
     .map_err(err)?;
     mark_studied(&tx, &today, &now).map_err(err)?;
     let today_kcal = load_daily(&tx, &today).map_err(err)?.kcal_earned;
     let remaining = review_count(&tx, None).map_err(err)?;
     tx.commit().map_err(err)?;
-    Ok(ExamReviewResult { correct, kcal_earned: kcal, today_kcal, remaining })
+    Ok(ExamReviewResult { correct, kcal_earned: paid.whole, points: paid.points(), today_kcal, remaining })
 }
 
 pub fn overview(conn: &Connection) -> rusqlite::Result<ExamOverview> {

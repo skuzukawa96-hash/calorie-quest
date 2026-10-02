@@ -11,6 +11,7 @@ import type {
   ExamResult,
   ExamReviewResult,
   NativeRecognition,
+  PlayMode,
   RecipeAddResult,
   RecipeReviewMode,
   RecipeReviewResult,
@@ -60,6 +61,8 @@ export const api = {
   getTodayConsumption: () => call<ConsumptionEntry[]>("get_today_consumption"),
   deleteConsumption: (id: number) => call<DailyStats>("delete_consumption", { id }),
   redeemCheatTicket: () => call<RedeemResult>("redeem_cheat_ticket"),
+  /** がんばり / 通常 / お気軽: what is earned from now on is scaled by it */
+  setPlayMode: (mode: PlayMode) => call<PlayMode>("set_play_mode", { mode }),
   getStats: () => call<Stats>("get_stats"),
   getDictionary: () => call<Record<string, string>>("get_dictionary"),
   getIdioms: () => call<string[]>("get_idioms"),

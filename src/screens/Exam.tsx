@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import GlossedText from "../components/GlossedText";
+import { PlayModeTag } from "../components/PlayModeSwitch";
 import WordNotesPanel from "../components/WordNotes";
 import { api } from "../lib/api";
 import { loadDictionary, type Dictionary } from "../lib/dictionary";
+import { formatKcal } from "../lib/scoring";
 import { playCrunch, playFanfare, playWrong } from "../lib/sfx";
 import { isTtsSupported, speak, stopSpeaking } from "../lib/speech";
 import {
@@ -13,6 +15,7 @@ import {
   type ExamPart,
   type ExamQuestion,
   type ExamResult,
+  type PlayMode,
 } from "../types";
 
 const GLOSS_KEY = "cq-show-gloss";
@@ -24,6 +27,8 @@ interface Props {
   kind: "exam" | "review";
   level?: ExamLevel;
   overview: ExamOverview;
+  /** がんばり / 通常 / お気軽, shown beside what was earned */
+  playMode: PlayMode;
   onExit: () => void;
   onProgress: () => void;
   toast: (msg: string) => void;
@@ -61,7 +66,7 @@ function say(text: string) {
  * as soon as it is answered, with its explanation; the score is handed in at the end. The review
  * goes over the exam questions missed, one at a time, paying for each put right.
  */
-export default function Exam({ kind, level, overview, onExit, onProgress, toast }: Props) {
+export default function Exam({ kind, level, overview, playMode, onExit, onProgress, toast }: Props) {
   const [questions, setQuestions] = useState<ExamQuestion[] | null>(null);
   const [round, setRound] = useState(0);
   const [idx, setIdx] = useState(0);
@@ -106,9 +111,9 @@ export default function Exam({ kind, level, overview, onExit, onProgress, toast 
         setBusy(true);
         try {
           const r = await api.answerExamReview(current.id, choice);
-          setAnswered((a) => ({ ...a, [current.id]: { chosen: choice, correct: r.correct, kcal: r.kcalEarned } }));
+          setAnswered((a) => ({ ...a, [current.id]: { chosen: choice, correct: r.correct, kcal: r.points } }));
           setRemaining(r.remaining);
-          if (r.kcalEarned > 0) onProgress();
+          if (r.points > 0) onProgress();
         } catch (e) {
           toast(String(e));
           return;
@@ -192,6 +197,7 @@ export default function Exam({ kind, level, overview, onExit, onProgress, toast 
         answered={answered}
         overview={overview}
         label={levelInfo?.label ?? ""}
+        playMode={playMode}
         onAgain={() => setRound((r) => r + 1)}
         onExit={onExit}
       />
@@ -206,7 +212,9 @@ export default function Exam({ kind, level, overview, onExit, onProgress, toast 
           <div className="exam-score">
             <b>{correctCount}</b> / {questions.length} 問正解
           </div>
-          <div className="exam-kcal">おやつ予算 +{earned} kcal</div>
+          <div className="exam-kcal">
+            おやつ予算 +{formatKcal(earned)} kcal{earned > 0 && <PlayModeTag mode={playMode} />}
+          </div>
           <p className="muted">
             {reviewDone.remaining > 0
               ? `まだ復習が ${reviewDone.remaining} 問あります。間違えた問題は正解するまで残ります。`
@@ -332,7 +340,7 @@ export default function Exam({ kind, level, overview, onExit, onProgress, toast 
               <div className="feedback-title">{mine.correct ? "正解！" : "不正解…"}</div>
               <div className="feedback-kcal">
                 {kind === "review"
-                  ? `+${mine.kcal ?? 0} kcal`
+                  ? `+${formatKcal(mine.kcal ?? 0)} kcal`
                   : `${correctCount} / ${Object.keys(answered).length} 問正解`}
               </div>
             </div>
@@ -541,6 +549,7 @@ function ExamResultView({
   answered,
   overview,
   label,
+  playMode,
   onAgain,
   onExit,
 }: {
@@ -549,6 +558,7 @@ function ExamResultView({
   answered: Record<string, Answered>;
   overview: ExamOverview;
   label: string;
+  playMode: PlayMode;
   onAgain: () => void;
   onExit: () => void;
 }) {
@@ -567,7 +577,8 @@ function ExamResultView({
           <span className="muted small">　合格ライン {overview.passPercent}%</span>
         </div>
         <div className="exam-kcal">
-          おやつ予算 +{result.kcalEarned} kcal
+          おやつ予算 +{formatKcal(result.points)} kcal
+          <PlayModeTag mode={playMode} />
           {!result.passed && <span className="muted small">（挑戦ボーナス）</span>}
         </div>
         <ul className="exam-parts">
