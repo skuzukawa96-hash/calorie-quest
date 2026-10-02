@@ -1305,6 +1305,21 @@ main {
   border-color: var(--caramel-light);
   cursor: pointer;
 }
+/* お菓子引換券 in use: the 引換券 buttons are out on the goals and in the 図鑑 */
+.badge.ticket.active {
+  background: var(--caramel);
+  border-color: var(--caramel-dark);
+  color: #fff;
+}
+.ticket-note {
+  margin: 4px 0 10px;
+  padding: 6px 12px;
+  background: #fdf0d5;
+  border: 1px dashed var(--caramel-light);
+  border-radius: 10px;
+  color: var(--caramel-dark);
+  font-size: 13px;
+}
 .badge.savings {
   background: #fdeef2;
   border-color: #f3cdd8;

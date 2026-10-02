@@ -8,6 +8,9 @@ import type { ConsumptionEntry, Dashboard, Snack } from "../types";
 interface Props {
   dash: Dashboard;
   onChanged: () => void;
+  /** お菓子引換券 in use: each snack shows a 引換券 button (the home's goals show them too) */
+  ticketMode: boolean;
+  onTicketMode: (on: boolean) => void;
   toast: (msg: string) => void;
 }
 
@@ -78,7 +81,7 @@ function sortSnacks(snacks: Snack[], { key, dir }: SortState): Snack[] {
   return snacks.slice().sort((a, b) => sign * compare(key, a, b) || a.calories - b.calories || a.id - b.id);
 }
 
-export default function Snacks({ dash, onChanged, toast }: Props) {
+export default function Snacks({ dash, onChanged, ticketMode, onTicketMode, toast }: Props) {
   const [snacks, setSnacks] = useState<Snack[]>(dash.snacks);
   const [log, setLog] = useState<ConsumptionEntry[]>([]);
   const [name, setName] = useState("");
@@ -101,6 +104,7 @@ export default function Snacks({ dash, onChanged, toast }: Props) {
   const { today, savings } = dash;
   const budget = today.kcalEarned - today.kcalConsumed;
   const tickets = savings.snackTickets;
+  const showTickets = ticketMode && tickets > 0;
 
   const run = async (fn: () => Promise<void>) => {
     setBusy(true);
@@ -155,7 +159,20 @@ export default function Snacks({ dash, onChanged, toast }: Props) {
             <span>
               🐷 貯蓄 <b>{savings.balance.toLocaleString()}</b> / {savings.perTicket.toLocaleString()} kcal
             </span>
-            {tickets > 0 && <span className="badge ticket">🎟 お菓子引換券 ×{tickets}</span>}
+            {tickets > 0 && (
+              <button
+                className={"badge ticket" + (ticketMode ? " active" : "")}
+                aria-pressed={ticketMode}
+                onClick={() => onTicketMode(!ticketMode)}
+                title={
+                  ticketMode
+                    ? "もう一度押すと「引換券」ボタンを隠します"
+                    : "押すと、図鑑のお菓子とホームの目標のお菓子に「引換券」ボタンが出ます"
+                }
+              >
+                🎟 お菓子引換券 ×{tickets}
+              </button>
+            )}
           </div>
           <div className="savings-track">
             <div style={{ width: `${Math.min(100, (savings.balance / savings.perTicket) * 100)}%` }} />
@@ -208,7 +225,10 @@ export default function Snacks({ dash, onChanged, toast }: Props) {
           </div>
         </div>
         <p className="muted small">☆ を押すと目標になり、ホームに「あと何問で食べられるか」が表示されます（いくつでも登録できます）。</p>
-        <ul className={"snack-list" + (tickets > 0 ? " with-tickets" : "")}>
+        {showTickets && (
+          <p className="ticket-note">🎟 引換券を使うお菓子の「引換券」を押してください。カロリーを使わずに食べられます。</p>
+        )}
+        <ul className={"snack-list" + (showTickets ? " with-tickets" : "")}>
           {shown.map((s) => {
             const isGoal = goalIds.has(s.id);
             const affordable = budget >= s.calories;
@@ -245,7 +265,7 @@ export default function Snacks({ dash, onChanged, toast }: Props) {
                       })
                     }
                   />
-                  {tickets > 0 && (
+                  {showTickets && (
                     <button
                       className="btn-small ticket"
                       disabled={busy}

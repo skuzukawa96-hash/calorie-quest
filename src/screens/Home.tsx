@@ -30,6 +30,9 @@ interface Props {
   onExamReview: () => void;
   onChanged: () => void;
   goToSnacks: () => void;
+  /** お菓子引換券 in use: each goal shows a 引換券 button (the 図鑑 shows them too) */
+  ticketMode: boolean;
+  onTicketMode: (on: boolean) => void;
   toast: (msg: string) => void;
 }
 
@@ -49,7 +52,17 @@ const EXAM_DESC: Record<ExamLevel, [string, string]> = {
   toeic800: ["TOEIC 800点が目安", "仮定法・倒置や推測を問う読解"],
 };
 
-export default function Home({ dash, onStart, onExam, onExamReview, onChanged, goToSnacks, toast }: Props) {
+export default function Home({
+  dash,
+  onStart,
+  onExam,
+  onExamReview,
+  onChanged,
+  goToSnacks,
+  ticketMode,
+  onTicketMode,
+  toast,
+}: Props) {
   const [tier, setTier] = useState<TierChoice>("word");
   const [category, setCategory] = useState<string>(ALL_CATEGORIES);
   const [redeeming, setRedeeming] = useState(false);
@@ -79,6 +92,12 @@ export default function Home({ dash, onStart, onExam, onExamReview, onChanged, g
       await api.logSnackEaten(s.id);
       playCrunch();
       toast(`${s.icon} ${s.name}（${s.calories} kcal）を食べました。取り消しはお菓子図鑑から`);
+    });
+  const eatWithTicket = (s: Snack) =>
+    act(async () => {
+      await api.eatWithTicket(s.id);
+      playCrunch();
+      toast(`🎟 引換券で ${s.icon} ${s.name} を食べました（カロリーは使っていません）`);
     });
   const dropGoal = (s: Snack) =>
     act(async () => {
@@ -136,7 +155,16 @@ export default function Home({ dash, onStart, onExam, onExamReview, onChanged, g
               🐷 貯蓄 {savings.balance.toLocaleString()} / {savings.perTicket.toLocaleString()} kcal
             </button>
             {savings.snackTickets > 0 && (
-              <button className="badge ticket" onClick={goToSnacks} title="お菓子図鑑で、好きなお菓子をカロリーを使わずに食べられます">
+              <button
+                className={"badge ticket" + (ticketMode ? " active" : "")}
+                aria-pressed={ticketMode}
+                onClick={() => onTicketMode(!ticketMode)}
+                title={
+                  ticketMode
+                    ? "もう一度押すと「引換券」ボタンを隠します"
+                    : "押すと、目標のお菓子とお菓子図鑑に「引換券」ボタンが出ます（カロリーを使わずに食べられます）"
+                }
+              >
                 🎟 お菓子引換券 ×{savings.snackTickets}
               </button>
             )}
@@ -164,6 +192,12 @@ export default function Home({ dash, onStart, onExam, onExamReview, onChanged, g
             {adding ? "閉じる" : "＋ 目標追加"}
           </button>
         </div>
+        {ticketMode && (
+          <p className="ticket-note">
+            🎟 引換券を使うお菓子の「引換券」を押してください。カロリーを使わずに食べられます
+            {goalSnacks.length === 0 ? "（目標のお菓子がないので、お菓子図鑑から使えます）" : "（目標にないお菓子はお菓子図鑑から）"}。
+          </p>
+        )}
         {adding && (
           <GoalAdder
             snacks={dash.snacks}
@@ -203,6 +237,16 @@ export default function Home({ dash, onStart, onExam, onExamReview, onChanged, g
                   )}
                   <div className="goal-actions">
                     <EatButton affordable={remaining === 0} disabled={busy} onClick={() => void eat(g)} />
+                    {ticketMode && (
+                      <button
+                        className="btn-small ticket"
+                        disabled={busy}
+                        title="お菓子引換券を1枚使って、カロリーを使わずに食べます"
+                        onClick={() => void eatWithTicket(g)}
+                      >
+                        🎟 引換券
+                      </button>
+                    )}
                     <DeleteButton label="目標から外す（お菓子図鑑には残ります）" disabled={busy} onClick={() => void dropGoal(g)} />
                   </div>
                 </li>

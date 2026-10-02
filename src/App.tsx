@@ -39,6 +39,14 @@ export default function App() {
   const [exam, setExam] = useState<ExamSession | null>(null);
   const [toast, setToast] = useState<string | null>(null);
 
+  // お菓子引換券: clicking the badge shows a 引換券 button on each goal (home) and each snack of the
+  // 図鑑, and clicking it again hides them. The buttons go away with the last ticket.
+  const [ticketMode, setTicketMode] = useState(false);
+  const snackTickets = dash?.savings.snackTickets ?? 0;
+  useEffect(() => {
+    if (snackTickets === 0) setTicketMode(false);
+  }, [snackTickets]);
+
   const showToast = useCallback((msg: string, ms = 3000) => {
     setToast(msg);
     window.setTimeout(() => setToast((cur) => (cur === msg ? null : cur)), ms);
@@ -166,6 +174,8 @@ export default function App() {
                 onExamReview={() => setExam({ kind: "review" })}
                 onChanged={() => void refresh()}
                 goToSnacks={() => go("snacks")}
+                ticketMode={ticketMode}
+                onTicketMode={setTicketMode}
                 toast={showToast}
               />
             ) : (
@@ -175,7 +185,13 @@ export default function App() {
             )
           ) : tab === "snacks" ? (
             dash ? (
-              <Snacks dash={dash} onChanged={() => void refresh()} toast={showToast} />
+              <Snacks
+                dash={dash}
+                onChanged={() => void refresh()}
+                ticketMode={ticketMode}
+                onTicketMode={setTicketMode}
+                toast={showToast}
+              />
             ) : null
           ) : tab === "recipe" ? (
             <Recipe playMode={dash?.user.playMode ?? "normal"} onProgress={() => void refresh()} toast={showToast} />
