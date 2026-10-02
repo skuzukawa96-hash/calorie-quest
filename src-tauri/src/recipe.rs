@@ -131,10 +131,10 @@ pub fn usage_meanings() -> Vec<String> {
 }
 
 /// One word reviewed in `mode` ("choice": its meaning picked from four, "typing": the English
-/// written from the meaning) from the tab `target`. Where the answer moves the word depends on the
-/// tab: in すべて / 復習中 a right answer makes it learned and a wrong one leaves it; in 習得済み /
-/// 除外中 a wrong answer puts it back into review (復習中, and so すべて) and a right one leaves it.
-/// A wrong answer counts as a miss wherever it is. Pay is counted in quarters per day, so two
+/// written from the meaning) from the tab `target`. A right answer in すべて / 復習中 makes the
+/// word learned, and in 習得済み / 除外中 leaves it where it is; the learner can still say まだ, which
+/// puts it back into review (`set_mastered`). A wrong answer puts it back into review (復習中, and
+/// so すべて) from any tab, learned or taken off, and counts as a miss. Pay is counted in quarters per day, so two
 /// meanings picked make a whole calorie; whatever fraction is left when the day ends is dropped. A
 /// word pays in full the first time it is right in a day and half after that.
 pub fn review(conn: &mut Connection, id: i64, remembered: bool, mode: &str, target: &str) -> CmdResult<RecipeReviewResult> {
@@ -143,7 +143,7 @@ pub fn review(conn: &mut Connection, id: i64, remembered: bool, mode: &str, targ
         return Err(format!("unknown review target {target}"));
     }
     let learned = remembered && matches!(target, "all" | "learning");
-    let back = !remembered && matches!(target, "mastered" | "excluded");
+    let back = !remembered;
     let tx = conn.transaction().map_err(err)?;
     let now = now_ts();
     let day = today();
@@ -350,9 +350,8 @@ mod tests {
         assert!(list(&c).unwrap().is_empty());
     }
 
-    /// In すべて / 復習中 a right answer makes a word learned and a wrong one leaves it where it is;
-    /// in 習得済み / 除外中 a wrong answer puts it back into review and a right one leaves it. Every
-    /// wrong answer counts as a miss.
+    /// In すべて / 復習中 a right answer makes a word learned; in 習得済み / 除外中 it leaves it where
+    /// it is. A wrong answer puts it back into review from any tab, and counts as a miss.
     #[test]
     fn where_a_review_moves_a_word_depends_on_its_tab() {
         let mut c = db::init_in_memory().unwrap();
@@ -367,12 +366,13 @@ mod tests {
         assert_eq!((right.reviews, right.misses), (2, 1));
         let learned_at = right.mastered_at.clone().expect("right in 復習中 is learned");
 
-        // すべて: a learned word answered wrong stays learned; right keeps the day it was learned.
-        let wrong = review(&mut c, hear, false, "choice", "all").unwrap().entry;
-        assert_eq!(wrong.mastered_at.as_deref(), Some(learned_at.as_str()));
-        assert_eq!(wrong.misses, 2);
+        // すべて: right keeps the day it was learned; a learned word answered wrong goes back into review.
         let right = review(&mut c, hear, true, "choice", "all").unwrap().entry;
         assert_eq!(right.mastered_at.as_deref(), Some(learned_at.as_str()));
+        let wrong = review(&mut c, hear, false, "choice", "all").unwrap().entry;
+        assert!(wrong.mastered_at.is_none());
+        assert_eq!(wrong.misses, 2);
+        assert!(review(&mut c, hear, true, "choice", "all").unwrap().entry.mastered_at.is_some());
 
         // 習得済み: right stays learned, wrong goes back into review.
         assert!(review(&mut c, hear, true, "choice", "mastered").unwrap().entry.mastered_at.is_some());

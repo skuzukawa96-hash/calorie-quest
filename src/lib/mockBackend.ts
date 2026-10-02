@@ -1946,8 +1946,8 @@ export async function mockInvoke<T>(cmd: string, args: Record<string, unknown>):
       if (!["all", "learning", "mastered", "excluded"].includes(target)) throw new Error(`unknown review target ${target}`);
       const w = recipeWord(Number(args.id));
       const now = nowTs();
-      // Mirrors recipe::review: in すべて / 復習中 right makes the word learned, in 習得済み /
-      // 除外中 wrong puts it back into review; a wrong answer is a miss anywhere.
+      // Mirrors recipe::review: in すべて / 復習中 right makes the word learned; wrong puts it back
+      // into review from any tab, and is a miss.
       const repeat = state.recipePaid[w.id] === t;
       w.reviews += 1;
       w.lastReviewedAt = now;
@@ -1956,10 +1956,8 @@ export async function mockInvoke<T>(cmd: string, args: Record<string, unknown>):
         if (target === "all" || target === "learning") w.masteredAt = w.masteredAt ?? now;
       } else {
         w.misses = (w.misses ?? 0) + 1;
-        if (target === "mastered" || target === "excluded") {
-          w.masteredAt = null;
-          w.excludedAt = null;
-        }
+        w.masteredAt = null;
+        w.excludedAt = null;
       }
       const quarters = args.remembered ? (repeat ? full / 2 : full) : 0;
       const paid = credit(t, quarters * 2);
