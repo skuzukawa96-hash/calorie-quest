@@ -102,8 +102,8 @@ export default function App() {
                   title={`今日の残りカロリー / 獲得カロリー（消費 ${dash.today.kcalConsumed} kcal）`}
                 >
                   🍩{" "}
-                  <span className={dash.today.kcalEarned - dash.today.kcalConsumed < 0 ? "negative" : undefined}>
-                    {dash.today.kcalEarned - dash.today.kcalConsumed}kcal
+                  <span className={dash.today.kcalEarned - dash.today.kcalConsumed < 0 ? "negative" : "positive"}>
+                    {dash.today.kcalEarned - dash.today.kcalConsumed}
                   </span>
                   /{dash.today.kcalEarned}kcal
                 </span>
