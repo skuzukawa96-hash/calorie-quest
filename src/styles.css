@@ -1705,7 +1705,7 @@ main {
   font-size: 17px;
   transition: border-color 0.12s ease, background 0.12s ease;
 }
-.option:hover:not(:disabled) {
+button.option:hover:not(:disabled) {
   border-color: var(--caramel);
   background: #fff8ec;
 }
@@ -1716,10 +1716,6 @@ main {
 .option.wrong {
   border-color: var(--berry);
   background: var(--berry-bg);
-}
-/* Answered: the options are there to be read now (the English of the wrong ones), not faded out. */
-.options.answered .option:disabled {
-  opacity: 1;
 }
 /* The Japanese, and once answered a wrong option's English beside it (or below it when long). */
 .option-text {

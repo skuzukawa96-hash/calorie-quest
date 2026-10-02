@@ -566,9 +566,10 @@ function ChoiceCard({
   // smaller line, so the four options stay alike.
   const wrongEn = (i: number) => (chosen && q.options[i] !== q.answer ? q.optionEn[i] : undefined);
   const enBelow = q.optionEn.some((en, i) => q.options[i] !== q.answer && (en.split(" ").length > 3 || en.length > 22));
-  // A word, a compound or an idiom can be right-clicked into the recipe like any English on screen
-  // (a compound or an idiom is offered whole first, then the word clicked). Phrases and sentences
-  // are left as text. The meaning sits beside it already, so no hover meanings.
+  // Clicking it reads it aloud whole: a compound, an idiom or a sentence, not the one word clicked.
+  // A word, a compound or an idiom can also be right-clicked into the recipe like any English on
+  // screen (a compound or an idiom is offered whole first, then the word clicked); phrases and
+  // sentences cannot. The meaning sits beside it already, so no hover meanings.
   const canSave = q.question.kind === "word" || q.question.kind === "idiom";
   return (
     <>
@@ -583,7 +584,7 @@ function ChoiceCard({
           {...recipeContext(q, q.display)}
         />
       </div>
-      <div className={"options" + (chosen ? " answered" : "")}>
+      <div className="options">
         {q.options.map((opt, i) => {
           let cls = "option";
           if (chosen) {
@@ -591,23 +592,60 @@ function ChoiceCard({
             else if (opt === chosen) cls += " wrong";
           }
           const en = wrongEn(i);
-          return (
-            <button key={opt + i} className={cls} disabled={disabled} onClick={() => onAnswer(opt)}>
+          const body = (
+            <>
               <span className="option-num">{i + 1}</span>
               <span className="option-text">
                 <span>{opt}</span>
                 {en && (
                   <span className={"option-en" + (enBelow ? " below" : "")} lang="en">
-                    {canSave ? <GlossedText text={en} dict={dict} enabled={false} context="" /> : en}
+                    {canSave ? (
+                      <GlossedText text={en} dict={dict} enabled={false} context="" speakAll />
+                    ) : (
+                      <SpokenLine text={en} />
+                    )}
                   </span>
                 )}
               </span>
+            </>
+          );
+          // Answered, an option is no longer a control but something to read. Chromium does not
+          // let a click inside a disabled button bubble past it, so the English in it could not be
+          // clicked to hear it.
+          return chosen ? (
+            <div key={opt + i} className={cls}>
+              {body}
+            </div>
+          ) : (
+            <button key={opt + i} className={cls} disabled={disabled} onClick={() => onAnswer(opt)}>
+              {body}
             </button>
           );
         })}
       </div>
       <div className="muted small">キーボードの 1〜4 でも回答できます</div>
     </>
+  );
+}
+
+/** A phrase or a sentence read aloud whole on click, marked while it plays. */
+function SpokenLine({ text }: { text: string }) {
+  const [saying, setSaying] = useState(false);
+  if (!isTtsSupported()) return <>{text}</>;
+  return (
+    <span
+      className={"speakable can-speak" + (saying ? " saying" : "")}
+      title="クリックで発音"
+      onClick={(e) => {
+        e.stopPropagation();
+        setSaying(true);
+        speak(text)
+          .catch(() => undefined)
+          .finally(() => setSaying(false));
+      }}
+    >
+      {text}
+    </span>
   );
 }
 

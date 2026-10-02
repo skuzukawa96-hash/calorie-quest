@@ -33,7 +33,15 @@ interface Props {
   contextJa?: string | null;
   /** A word or phrase to mark, such as the recipe entry this example sentence belongs to. */
   highlight?: string;
+  /**
+   * What a click on any word reads aloud, when not that word alone: the whole compound, idiom or
+   * sentence an answered option's English is ("safety net", not "safety").
+   */
+  speakAll?: boolean;
 }
+
+/** `saying` while the whole text is read aloud (speakAll), rather than one word of it. */
+const ALL = -1;
 
 interface Tip {
   x: number;
@@ -118,7 +126,7 @@ function givesAway(gloss: string, answer: string | null | undefined): boolean {
  * underlined as one and show the phrase's meaning above the word's own: "doggy" alone is 犬の,
  * but here it is part of 持ち帰り用の袋.
  */
-export default function GlossedText({ text, dict, enabled, className, withhold, context, contextJa, highlight }: Props) {
+export default function GlossedText({ text, dict, enabled, className, withhold, context, contextJa, highlight, speakAll }: Props) {
   const [tip, setTip] = useState<Tip | null>(null);
   const [saying, setSaying] = useState<number | null>(null);
   const [stashed, setStashed] = useState<number | null>(null);
@@ -234,7 +242,7 @@ export default function GlossedText({ text, dict, enabled, className, withhold, 
           phrase ? "phrase" : "",
           canSpeak ? "can-speak" : "",
           isActive(i) ? "active" : "",
-          saying === i ? "saying" : "",
+          saying === i || saying === ALL ? "saying" : "",
           stashed === i ? "stashed" : "",
         ]
           .filter(Boolean)
@@ -249,7 +257,10 @@ export default function GlossedText({ text, dict, enabled, className, withhold, 
             onClick={(e) => {
               e.stopPropagation();
               if (gloss || phrase) show(e.currentTarget);
-              if (canSpeak) say(part, i);
+              if (canSpeak) {
+                if (speakAll) say(text, ALL);
+                else say(part, i);
+              }
             }}
             onContextMenu={
               addToRecipe
