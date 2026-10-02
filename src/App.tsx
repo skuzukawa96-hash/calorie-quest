@@ -97,12 +97,15 @@ export default function App() {
             {dash && (
               <>
                 <span title="連続学習日数">🔥 {dash.user.currentStreak}日</span>
-                {/* What is left to eat today, as on the home screen's bar: earned minus eaten. */}
+                {/* What is left to eat today (earned minus eaten) over what was earned. */}
                 <span
-                  title={`今日の残りカロリー（獲得 ${dash.today.kcalEarned} − 消費 ${dash.today.kcalConsumed} kcal）`}
-                  className={dash.today.kcalEarned - dash.today.kcalConsumed < 0 ? "negative" : undefined}
+                  title={`今日の残りカロリー / 獲得カロリー（消費 ${dash.today.kcalConsumed} kcal）`}
                 >
-                  🍩 残り {dash.today.kcalEarned - dash.today.kcalConsumed} kcal
+                  🍩{" "}
+                  <span className={dash.today.kcalEarned - dash.today.kcalConsumed < 0 ? "negative" : undefined}>
+                    {dash.today.kcalEarned - dash.today.kcalConsumed}kcal
+                  </span>
+                  /{dash.today.kcalEarned}kcal
                 </span>
               </>
             )}
