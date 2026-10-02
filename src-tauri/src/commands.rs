@@ -1312,16 +1312,18 @@ pub fn load_stats(conn: &Connection) -> CmdResult<Stats> {
     };
 
     let start = date_plus(-13);
-    let mut by_date: HashMap<String, (i64, i64, i64)> = HashMap::new();
+    let mut by_date: HashMap<String, (i64, i64, i64, i64)> = HashMap::new();
     {
         let mut stmt = conn
-            .prepare("SELECT date, kcal_earned, answered, correct FROM daily_stats WHERE user_id = ?1 AND date >= ?2")
+            .prepare(
+                "SELECT date, kcal_earned, kcal_consumed, answered, correct FROM daily_stats WHERE user_id = ?1 AND date >= ?2",
+            )
             .map_err(err)?;
         let rows = stmt
             .query_map(params![USER_ID, start], |r| {
                 Ok((
                     r.get::<_, String>(0)?,
-                    (r.get::<_, i64>(1)?, r.get::<_, i64>(2)?, r.get::<_, i64>(3)?),
+                    (r.get::<_, i64>(1)?, r.get::<_, i64>(2)?, r.get::<_, i64>(3)?, r.get::<_, i64>(4)?),
                 ))
             })
             .map_err(err)?;
@@ -1333,8 +1335,8 @@ pub fn load_stats(conn: &Connection) -> CmdResult<Stats> {
     let last_14_days = (0..14)
         .map(|i| {
             let date = date_plus(i - 13);
-            let (k, a, c) = by_date.get(&date).copied().unwrap_or((0, 0, 0));
-            DayPoint { date, kcal_earned: k, answered: a, correct: c }
+            let (k, e, a, c) = by_date.get(&date).copied().unwrap_or((0, 0, 0, 0));
+            DayPoint { date, kcal_earned: k, kcal_consumed: e, answered: a, correct: c }
         })
         .collect();
 
@@ -1387,6 +1389,31 @@ pub fn load_stats(conn: &Connection) -> CmdResult<Stats> {
         )
         .map_err(err)?;
 
+    // The study answers by tab and mode: what they earned at 通常 (the play mode left aside), how
+    // many, how many right. Recipe reviews, exams and the cheat-day bonus are not questions of a
+    // tab, so they are not here.
+    let breakdown = {
+        let mut stmt = conn
+            .prepare(
+                "SELECT q.tier, a.mode, COALESCE(SUM(a.kcal), 0), COUNT(*), COALESCE(SUM(a.correct), 0)
+                 FROM answer_log a JOIN questions q ON q.id = a.question_id
+                 WHERE a.user_id = ?1 GROUP BY q.tier, a.mode ORDER BY q.tier, a.mode",
+            )
+            .map_err(err)?;
+        let rows = stmt
+            .query_map(params![USER_ID], |r| {
+                Ok(StatCell {
+                    tier: r.get(0)?,
+                    mode: r.get(1)?,
+                    kcal: r.get(2)?,
+                    answered: r.get(3)?,
+                    correct: r.get(4)?,
+                })
+            })
+            .map_err(err)?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(err)?
+    };
+
     Ok(Stats {
         total_study_days: user.total_study_days,
         current_streak: user.current_streak,
@@ -1400,6 +1427,7 @@ pub fn load_stats(conn: &Connection) -> CmdResult<Stats> {
         tickets,
         review_due: due_review_count(conn).map_err(err)?,
         review_pending,
+        breakdown,
     })
 }
 
@@ -1517,6 +1545,34 @@ mod tests {
         }
         let g = s.weak_questions.iter().find(|w| w.question.id == grammar).unwrap();
         assert_eq!(g.question.point.as_deref(), Some("time-clause-tense"));
+    }
+
+    /// 記録 by tab and mode: what the study answers earned at 通常 (whatever the play mode), how
+    /// many there were and how many were right, one cell per tab and mode.
+    #[test]
+    fn stats_break_the_answers_down_by_tab_and_mode() {
+        let mut c = conn();
+        let word = question_id(&c, "w001");
+        let idiom = question_id(&c, "i002");
+        answer(&mut c, word, "choice", true, None); // 1 kcal
+        answer(&mut c, word, "choice", false, None);
+        set_play_mode_in(&c, "hard").unwrap();
+        answer(&mut c, idiom, "typing", true, None); // 5 kcal at 通常, 2.5 paid
+        let s = load_stats(&c).unwrap();
+        let cell = |tier: &str, mode: &str| s.breakdown.iter().find(|b| b.tier == tier && b.mode == mode).cloned();
+        let w = cell("word", "choice").expect("英単語 × 選択");
+        assert_eq!((w.kcal, w.answered, w.correct), (1, 2, 1));
+        let i = cell("idiom", "typing").expect("慣用句 × 記入");
+        assert_eq!((i.kcal, i.answered, i.correct), (5, 1, 1), "counted at 通常 though がんばり paid 2.5");
+        assert!(cell("word", "typing").is_none(), "a pair never answered has no cell");
+        assert_eq!(s.breakdown.iter().map(|b| b.answered).sum::<i64>(), s.total_answered);
+
+        // The fortnight's chart is what the days earned (after the play mode) and ate.
+        log_eaten(&c, snack_id(&c, "プリン")).unwrap();
+        let s = load_stats(&c).unwrap();
+        let day = s.last_14_days.last().unwrap();
+        assert_eq!(day.date, today());
+        assert_eq!((day.kcal_earned, day.kcal_consumed), (3, 150), "1 + 2.5 under がんばり, the half kept for later");
     }
 
     #[test]

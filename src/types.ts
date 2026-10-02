@@ -446,7 +446,10 @@ export interface Ticket {
 
 export interface DayPoint {
   date: string;
+  /** what the day earned, after the play mode (as on the home) */
   kcalEarned: number;
+  /** the snacks eaten that day */
+  kcalConsumed: number;
   answered: number;
   correct: number;
 }
@@ -472,6 +475,17 @@ export interface Stats {
   tickets: Ticket[];
   reviewDue: number;
   reviewPending: number;
+  /** the study answers by tab and mode (英単語 × 選択 …), for 累計獲得カロリー / 累計回答数 / 正答率 */
+  breakdown: StatCell[];
+}
+
+/** The study answers of one tab in one mode: what they earned at 通常 (the play mode left aside), how many, how many right. */
+export interface StatCell {
+  tier: Tier;
+  mode: Mode;
+  kcal: number;
+  answered: number;
+  correct: number;
 }
 
 /** One entry of お菓子作りレシピ, the learner's own word list. */

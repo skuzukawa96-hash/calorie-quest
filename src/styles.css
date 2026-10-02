@@ -2562,35 +2562,127 @@ button.wp-link.open {
   font-weight: 700;
   color: var(--choco);
 }
-.chart {
-  display: grid;
-  grid-template-columns: repeat(14, 1fr);
-  gap: 6px;
-  height: 160px;
-  align-items: end;
+/* 累計獲得カロリー / 累計回答数 / 正答率: buttons that open their breakdown */
+.stat.stat-toggle {
+  border: 1px solid transparent;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
 }
-.chart-col {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  height: 100%;
+.stat.stat-toggle:hover {
+  border-color: var(--caramel-light);
 }
-.chart-bar-wrap {
-  flex: 1;
+.stat.stat-toggle.open {
+  background: #fdf0d5;
+  border-color: var(--caramel);
+}
+.stat-caret {
+  font-size: 11px;
+  color: var(--caramel-dark);
+}
+/* The breakdown by tab and mode, between 学習記録 and the chart */
+.breakdown-scroll {
+  overflow-x: auto;
+}
+.breakdown-table {
   width: 100%;
-  display: flex;
-  align-items: flex-end;
+  border-collapse: collapse;
+  font-size: 14px;
 }
-.chart-bar {
-  width: 100%;
-  background: linear-gradient(180deg, #e8b46b, var(--caramel));
-  border-radius: 6px 6px 2px 2px;
-  min-height: 2px;
+.breakdown-table th,
+.breakdown-table td {
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--line);
+  text-align: right;
+  white-space: nowrap;
 }
-.chart-label {
-  font-size: 10.5px;
+.breakdown-table thead th {
   color: var(--muted);
-  margin-top: 4px;
+  font-weight: 600;
+  font-size: 12.5px;
+}
+.breakdown-table th:first-child {
+  text-align: left;
+  color: var(--choco);
+}
+.breakdown-table td.empty {
+  color: var(--muted);
+}
+.breakdown-table td.total,
+.breakdown-table tfoot th {
+  font-weight: 700;
+  color: var(--choco);
+}
+.breakdown-table tfoot td,
+.breakdown-table tfoot th {
+  border-bottom: none;
+  background: var(--cream);
+}
+.breakdown-table td.grand {
+  color: var(--caramel-dark);
+}
+/* The fortnight's kcal as a line, over an axis from the lowest day to the highest */
+.line-chart svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.line-chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 18px;
+  margin: -4px 0 6px;
+}
+.lc-key {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.lc-swatch {
+  display: inline-block;
+  width: 16px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--caramel);
+}
+.lc-key.consumed .lc-swatch {
+  background: var(--berry);
+}
+.lc-grid {
+  stroke: var(--line);
+  stroke-width: 1;
+}
+.lc-axis,
+.lc-unit {
+  fill: var(--muted);
+  font-size: 11px;
+}
+.lc-area {
+  fill: rgba(201, 138, 62, 0.12);
+}
+.lc-line {
+  fill: none;
+  stroke: var(--caramel);
+  stroke-width: 2.5;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+.lc-dot {
+  fill: #fff;
+  stroke: var(--caramel);
+  stroke-width: 2;
+}
+.lc-dot.max {
+  fill: var(--caramel);
+}
+.lc-line.consumed {
+  stroke: var(--berry);
+}
+.lc-dot.consumed {
+  stroke: var(--berry);
+}
+.lc-dot.consumed.max {
+  fill: var(--berry);
 }
 .weak-table {
   width: 100%;

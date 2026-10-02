@@ -454,7 +454,10 @@ pub struct Ticket {
 #[serde(rename_all = "camelCase")]
 pub struct DayPoint {
     pub date: String,
+    /// what the day earned, after the play mode (as on the home)
     pub kcal_earned: i64,
+    /// the snacks eaten that day
+    pub kcal_consumed: i64,
     pub answered: i64,
     pub correct: i64,
 }
@@ -569,4 +572,18 @@ pub struct Stats {
     pub tickets: Vec<Ticket>,
     pub review_due: i64,
     pub review_pending: i64,
+    /// the study answers by tab and mode (英単語 × 選択 …), for 累計獲得カロリー / 累計回答数 / 正答率
+    pub breakdown: Vec<StatCell>,
+}
+
+/// The study answers of one tab (word / compound / grammar / idiom / phrase / example) in one mode
+/// (choice / typing / speaking / listening).
+#[derive(Debug, Clone, Serialize)]
+pub struct StatCell {
+    pub tier: String,
+    pub mode: String,
+    /// what they earned at 通常, in kcal (the play mode left aside)
+    pub kcal: i64,
+    pub answered: i64,
+    pub correct: i64,
 }

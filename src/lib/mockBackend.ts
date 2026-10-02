@@ -121,6 +121,8 @@ interface MockState {
   goals: number[];
   /** 1 kcal に満たない獲得の端数（1/8 kcal 単位）、日ごと（mirrors daily_stats.kcal_eighths） */
   kcalEighths: Record<string, number>;
+  /** the study answers by "tier|mode": kcal at 通常, answered, right (what answer_log sums to) */
+  answerTotals: Record<string, { kcal: number; answered: number; correct: number }>;
   /** the day each recipe word was last right (mirrors recipe_words.paid_on) */
   recipePaid: Record<number, string>;
   /** 試験 handed in (mirrors exam_attempts) */
@@ -296,6 +298,7 @@ function freshState(): MockState {
     snackTickets: [],
     goals: [],
     kcalEighths: {},
+    answerTotals: {},
     recipePaid: {},
     examAttempts: [],
     examMistakes: {},
@@ -318,7 +321,10 @@ function load(): MockState {
       // State saved before the word list or savings existed lacks them. Like the Rust migration,
       // days already over are closed at 0 rather than paid into savings all at once.
       const stored = JSON.parse(raw) as Partial<MockState> &
-        Omit<MockState, "recipe" | "savings" | "saved" | "snackTickets" | "goals" | "kcalEighths" | "recipePaid" | "examAttempts" | "examMistakes"> & {
+        Omit<
+          MockState,
+          "recipe" | "savings" | "saved" | "snackTickets" | "goals" | "kcalEighths" | "answerTotals" | "recipePaid" | "examAttempts" | "examMistakes"
+        > & {
           /** the day's recipe pay in halves, then in quarters, before eighths of any reward */
           recipeHalves?: Record<string, number>;
           recipeQuarters?: Record<string, number>;
@@ -340,6 +346,7 @@ function load(): MockState {
         // Mirrors the Rust migration: only the pending fraction is kept, in eighths.
         kcalEighths:
           stored.kcalEighths ?? Object.fromEntries(Object.entries(quarters).map(([d, n]) => [d, (n % 4) * 2])),
+        answerTotals: stored.answerTotals ?? {},
         recipePaid: stored.recipePaid ?? {},
         examAttempts: stored.examAttempts ?? [],
         examMistakes: stored.examMistakes ?? {},
@@ -1587,6 +1594,14 @@ function submitAnswer(p: AnswerPayload): AnswerResult {
   const d = daily(t);
   d.answered += 1;
   d.correct += p.correct ? 1 : 0;
+  // Mirrors answer_log (kcal at 通常), for the 記録 by tab and mode.
+  const cellKey = `${q.tier}|${p.mode}`;
+  const cell = state.answerTotals[cellKey] ?? { kcal: 0, answered: 0, correct: 0 };
+  state.answerTotals[cellKey] = {
+    kcal: (cell.kcal ?? 0) + kcal,
+    answered: cell.answered + 1,
+    correct: cell.correct + (p.correct ? 1 : 0),
+  };
 
   const { firstStudyToday, newTicket } = markStudied(t);
   const u = state.user;
@@ -1614,7 +1629,13 @@ function getStats(): Stats {
   for (let i = -13; i <= 0; i++) {
     const date = datePlus(i);
     const d = state.daily[date];
-    last14Days.push({ date, kcalEarned: d?.kcalEarned ?? 0, answered: d?.answered ?? 0, correct: d?.correct ?? 0 });
+    last14Days.push({
+      date,
+      kcalEarned: d?.kcalEarned ?? 0,
+      kcalConsumed: d?.kcalConsumed ?? 0,
+      answered: d?.answered ?? 0,
+      correct: d?.correct ?? 0,
+    });
   }
   const weakQuestions: WeakQuestion[] = Object.entries(state.history)
     .filter(([, h]) => h.needsReview || h.wrong > 0)
@@ -1639,6 +1660,13 @@ function getStats(): Stats {
     tickets: state.tickets.slice().reverse().slice(0, 20),
     reviewDue: dueCount(),
     reviewPending: Object.values(state.history).filter((h) => h.needsReview).length,
+    // Mirrors the breakdown of load_stats.
+    breakdown: Object.entries(state.answerTotals)
+      .map(([key, v]) => {
+        const [tier, mode] = key.split("|") as [Tier, Mode];
+        return { tier, mode, kcal: v.kcal ?? 0, answered: v.answered, correct: v.correct };
+      })
+      .sort((a, b) => a.tier.localeCompare(b.tier) || a.mode.localeCompare(b.mode)),
   };
 }
 
@@ -1905,10 +1933,13 @@ export async function mockInvoke<T>(cmd: string, args: Record<string, unknown>):
       // (reset_progress in Rust leaves recipe_words and goal_snacks alone too, forgetting only the
       // day each word last paid, which went with the day's kcal).
       const { snacks, recipe, goals } = state;
+      const playMode = state.user.playMode;
       state = freshState();
       state.snacks = snacks;
       state.recipe = recipe;
       state.goals = goals;
+      // The play mode is a setting, as users.play_mode is left alone in Rust.
+      state.user.playMode = playMode;
       save();
       return undefined as T;
     }
