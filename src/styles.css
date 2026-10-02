@@ -1727,6 +1727,20 @@ button.option:hover:not(:disabled) {
 .option-en {
   color: var(--mint);
 }
+/* An answered wrong option: a click anywhere in it reads its English aloud. */
+.option.speaks {
+  cursor: pointer;
+}
+.option.speaks:hover {
+  box-shadow: 0 0 0 3px rgba(201, 138, 62, 0.18);
+}
+.option.speaks.saying {
+  box-shadow: 0 0 0 3px rgba(201, 138, 62, 0.4);
+}
+.option.saying .option-en {
+  background: #fde7b8;
+  border-radius: 4px;
+}
 .option-en.below {
   flex-basis: 100%;
   margin-top: 3px;

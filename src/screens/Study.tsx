@@ -559,6 +559,8 @@ function ChoiceCard({
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   }, [q, disabled, onAnswer]);
+  // The option whose English is being read aloud, marked until it ends.
+  const [saying, setSaying] = useState<number | null>(null);
 
   const isGrammar = !!q.question.choices;
   // Once answered, each wrong option shows the English it translates. Words and short idioms sit
@@ -566,11 +568,19 @@ function ChoiceCard({
   // smaller line, so the four options stay alike.
   const wrongEn = (i: number) => (chosen && q.options[i] !== q.answer ? q.optionEn[i] : undefined);
   const enBelow = q.optionEn.some((en, i) => q.options[i] !== q.answer && (en.split(" ").length > 3 || en.length > 22));
-  // Clicking it reads it aloud whole: a compound, an idiom or a sentence, not the one word clicked.
-  // A word, a compound or an idiom can also be right-clicked into the recipe like any English on
-  // screen (a compound or an idiom is offered whole first, then the word clicked); phrases and
-  // sentences cannot. The meaning sits beside it already, so no hover meanings.
+  // A click anywhere in the option reads the English aloud whole: a compound, an idiom or a
+  // sentence, never the one word under the mouse. A word, a compound or an idiom can also be
+  // right-clicked into the recipe like any English on screen (a compound or an idiom is offered
+  // whole first, then the word clicked); phrases and sentences cannot. The meaning sits beside it
+  // already, so no hover meanings.
   const canSave = q.question.kind === "word" || q.question.kind === "idiom";
+  const canSpeak = isTtsSupported();
+  const sayOption = (i: number, en: string) => {
+    setSaying(i);
+    speak(en)
+      .catch(() => undefined)
+      .finally(() => setSaying((cur) => (cur === i ? null : cur)));
+  };
   return (
     <>
       <div className="prompt-label">{isGrammar ? "空欄に入る語を選ぼう" : "この英語の意味は？"}</div>
@@ -599,24 +609,29 @@ function ChoiceCard({
                 <span>{opt}</span>
                 {en && (
                   <span className={"option-en" + (enBelow ? " below" : "")} lang="en">
-                    {canSave ? (
-                      <GlossedText text={en} dict={dict} enabled={false} context="" speakAll />
-                    ) : (
-                      <SpokenLine text={en} />
-                    )}
+                    {canSave ? <GlossedText text={en} dict={dict} enabled={false} context="" speakOnClick={false} /> : en}
                   </span>
                 )}
               </span>
             </>
           );
-          // Answered, an option is no longer a control but something to read. Chromium does not
-          // let a click inside a disabled button bubble past it, so the English in it could not be
-          // clicked to hear it.
-          return chosen ? (
-            <div key={opt + i} className={cls}>
-              {body}
-            </div>
-          ) : (
+          // Answered, an option is no longer a control but something to read and hear. (Chromium
+          // does not let a click inside a disabled button bubble past it, so a disabled button
+          // could not take the click.)
+          if (chosen) {
+            const speaks = !!en && canSpeak;
+            return (
+              <div
+                key={opt + i}
+                className={cls + (speaks ? " speaks" : "") + (saying === i ? " saying" : "")}
+                title={speaks ? "クリックで読み上げ" : undefined}
+                onClick={speaks ? () => sayOption(i, en) : undefined}
+              >
+                {body}
+              </div>
+            );
+          }
+          return (
             <button key={opt + i} className={cls} disabled={disabled} onClick={() => onAnswer(opt)}>
               {body}
             </button>
@@ -625,27 +640,6 @@ function ChoiceCard({
       </div>
       <div className="muted small">キーボードの 1〜4 でも回答できます</div>
     </>
-  );
-}
-
-/** A phrase or a sentence read aloud whole on click, marked while it plays. */
-function SpokenLine({ text }: { text: string }) {
-  const [saying, setSaying] = useState(false);
-  if (!isTtsSupported()) return <>{text}</>;
-  return (
-    <span
-      className={"speakable can-speak" + (saying ? " saying" : "")}
-      title="クリックで発音"
-      onClick={(e) => {
-        e.stopPropagation();
-        setSaying(true);
-        speak(text)
-          .catch(() => undefined)
-          .finally(() => setSaying(false));
-      }}
-    >
-      {text}
-    </span>
   );
 }
 

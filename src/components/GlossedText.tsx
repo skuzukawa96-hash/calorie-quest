@@ -34,14 +34,11 @@ interface Props {
   /** A word or phrase to mark, such as the recipe entry this example sentence belongs to. */
   highlight?: string;
   /**
-   * What a click on any word reads aloud, when not that word alone: the whole compound, idiom or
-   * sentence an answered option's English is ("safety net", not "safety").
+   * Off: a click is left to what holds the text. An answered option reads its whole English when
+   * clicked anywhere in it, so its words only take the right-click that saves them.
    */
-  speakAll?: boolean;
+  speakOnClick?: boolean;
 }
-
-/** `saying` while the whole text is read aloud (speakAll), rather than one word of it. */
-const ALL = -1;
 
 interface Tip {
   x: number;
@@ -126,11 +123,21 @@ function givesAway(gloss: string, answer: string | null | undefined): boolean {
  * underlined as one and show the phrase's meaning above the word's own: "doggy" alone is 犬の,
  * but here it is part of 持ち帰り用の袋.
  */
-export default function GlossedText({ text, dict, enabled, className, withhold, context, contextJa, highlight, speakAll }: Props) {
+export default function GlossedText({
+  text,
+  dict,
+  enabled,
+  className,
+  withhold,
+  context,
+  contextJa,
+  highlight,
+  speakOnClick = true,
+}: Props) {
   const [tip, setTip] = useState<Tip | null>(null);
   const [saying, setSaying] = useState<number | null>(null);
   const [stashed, setStashed] = useState<number | null>(null);
-  const canSpeak = isTtsSupported();
+  const canSpeak = speakOnClick && isTtsSupported();
   const addToRecipe = useAddToRecipe();
 
   // Which piece belongs to which phrase. Digit-only pieces are skipped when counting words, the
@@ -242,7 +249,7 @@ export default function GlossedText({ text, dict, enabled, className, withhold, 
           phrase ? "phrase" : "",
           canSpeak ? "can-speak" : "",
           isActive(i) ? "active" : "",
-          saying === i || saying === ALL ? "saying" : "",
+          saying === i ? "saying" : "",
           stashed === i ? "stashed" : "",
         ]
           .filter(Boolean)
@@ -255,12 +262,11 @@ export default function GlossedText({ text, dict, enabled, className, withhold, 
             onMouseEnter={gloss || phrase ? (e) => show(e.currentTarget) : undefined}
             onMouseLeave={gloss || phrase ? () => setTip(null) : undefined}
             onClick={(e) => {
+              // Nothing to show, and reading aloud is the holder's: let the click through.
+              if (!speakOnClick && !gloss && !phrase) return;
               e.stopPropagation();
               if (gloss || phrase) show(e.currentTarget);
-              if (canSpeak) {
-                if (speakAll) say(text, ALL);
-                else say(part, i);
-              }
+              if (canSpeak) say(part, i);
             }}
             onContextMenu={
               addToRecipe
