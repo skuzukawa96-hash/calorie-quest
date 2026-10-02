@@ -568,12 +568,7 @@ function ExamResultView({
         </div>
         <div className="exam-kcal">
           おやつ予算 +{result.kcalEarned} kcal
-          {result.alreadyPaid && (
-            <span className="muted small">
-              （今日の{result.passed ? "合格報酬" : "挑戦ボーナス"}はこのレベルで受け取り済み）
-            </span>
-          )}
-          {!result.passed && !result.alreadyPaid && <span className="muted small">（挑戦ボーナス）</span>}
+          {!result.passed && <span className="muted small">（挑戦ボーナス）</span>}
         </div>
         <ul className="exam-parts">
           {byPart.map((p) => (

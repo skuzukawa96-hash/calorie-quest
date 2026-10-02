@@ -219,8 +219,38 @@ export function answerWordCount(answer: string): number {
   return answer.split(/\s+/).filter((w) => /[\p{L}\p{N}]/u.test(w)).length;
 }
 
-/** 中難易度の記入問題は1語 1 kcal、ヒント1語ごとに −1 kcal（`srs::scores_per_word`）。 */
 /** Mirrors srs::scores_per_word: typing a sentence (例文・長文・フレーズ) pays 1 kcal a word. */
 export function scoresPerWord(kind: string, mode: string): boolean {
   return mode === "typing" && (kind === "phrase" || kind === "sentence" || kind === "expression");
+}
+
+/**
+ * Mirrors srs::Scored / srs::scored: what a question counts as for its reward. A compound is a
+ * word question of the 複合語 tab (a phrasal verb is a 英単語); everything not a word or an idiom
+ * is a sentence (文法・フレーズ・例文・会話).
+ */
+export type Scored = "word" | "compound" | "idiom" | "sentence";
+
+export function scoredKind(kind: string, tier: string): Scored {
+  if (kind === "word") return tier === "compound" ? "compound" : "word";
+  return kind === "idiom" ? "idiom" : "sentence";
+}
+
+/** Mirrors srs::typing_kcal and srs::spoken_kcal (1 point = 1 kcal). */
+const TYPING_KCAL: Record<Scored, number> = { word: 2, compound: 4, idiom: 5, sentence: 0 };
+const SPOKEN_KCAL: Record<Scored, number> = { word: 1, compound: 2, idiom: 3, sentence: 5 };
+
+/** Mirrors srs::kcal_for for a correct answer: choice 1 for a word and 2 for the rest. */
+export function kcalFor(s: Scored, mode: string, score: number | null): number {
+  if (mode === "choice") return s === "word" ? 1 : 2;
+  if (mode === "typing") return TYPING_KCAL[s];
+  if (mode === "speaking") return Math.round((SPOKEN_KCAL[s] * Math.min(100, Math.max(0, score ?? 100))) / 100);
+  return SPOKEN_KCAL[s];
+}
+
+/** Mirrors srs::apply_hint_penalty: a word with a revealed hint pays 0, the rest halve per hint. */
+export function hintPenalty(s: Scored, kcal: number, hints: number): number {
+  if (hints <= 0) return kcal;
+  if (s === "word") return 0;
+  return Math.round(kcal / 2 ** Math.min(30, hints));
 }

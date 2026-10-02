@@ -185,12 +185,10 @@ export interface Snack {
 }
 
 export interface KcalRates {
-  low: number;
-  mid: number;
-  high: number;
-  /** any choice question but a word */
+  /** a word picked from four: what the goals are counted in (あと何問) */
+  wordChoice: number;
+  /** any other question picked from four */
   choice: number;
-  idiomTyping: number;
   reviewMultiplier: number;
   cheatDayBonus: number;
 }
@@ -297,14 +295,12 @@ export const EXAM_PART_LABEL: Record<ExamPart, string> = {
 export interface ExamLevelInfo {
   level: ExamLevel;
   label: string;
-  /** kcal for passing, once a day per level */
+  /** kcal for passing, every time */
   reward: number;
   attempts: number;
   bestCorrect: number | null;
   bestTotal: number | null;
   passedEver: boolean;
-  paidPassToday: boolean;
-  paidEffortToday: boolean;
   reviewCount: number;
 }
 
@@ -353,9 +349,8 @@ export interface ExamResult {
   correct: number;
   total: number;
   passed: boolean;
+  /** the level's reward when passed, the effort bonus when not */
   kcalEarned: number;
-  reward: number;
-  alreadyPaid: boolean;
   todayKcal: number;
   streak: number;
   newTicket: boolean;
@@ -506,13 +501,18 @@ export type RecipeReviewMode = "choice" | "typing";
 
 export interface RecipeReviewResult {
   entry: RecipeWord;
-  /** the answer earned its 0.5 / 1 kcal: right, and the word had not paid yet today */
-  counted: boolean;
-  /** whole kcal added to today just now; half a calorie waits for the next one */
+  /**
+   * what the answer earned in quarter kcal: 2 / 4 (0.5 / 1 kcal) the first time the word is right
+   * today, 1 / 2 after that, 0 when wrong
+   */
+  earnedQuarters: number;
+  /** the word had already been right today, so it paid half */
+  repeat: boolean;
+  /** whole kcal added to today just now; a fraction waits for the next right answer */
   kcalEarned: number;
   todayKcal: number;
-  /** 0.5 kcal is waiting for the next correct pick today */
-  halfPending: boolean;
+  /** a fraction of a calorie is waiting for the next right answer today */
+  fractionPending: boolean;
 }
 
 export interface SpeechCapabilities {

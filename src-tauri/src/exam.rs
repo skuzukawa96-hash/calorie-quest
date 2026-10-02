@@ -5,10 +5,9 @@
 //! a whole sentence: Part 6) and 読解 (a passage and questions on it: Part 7). The questions of each
 //! part are drawn at random from the level's pool in `data/exam-*.json`.
 //!
-//! 70% or more passes and pays the level's reward; less pays a flat 30 kcal for trying. Either is
-//! paid once a day per level, or an exam clicked through would pay again and again. A question
-//! missed goes into the exam's own review (apart from the study review); put right there it pays
-//! 3 kcal and leaves the review.
+//! 70% or more passes and pays the level's reward; less pays a flat 30 kcal for trying. Both are
+//! paid every time an exam is handed in. A question missed goes into the exam's own review (apart
+//! from the study review); put right there it pays 3 kcal and leaves the review.
 
 use std::collections::HashMap;
 use std::sync::OnceLock;
@@ -270,14 +269,6 @@ pub fn build_exam(level: &str) -> Result<Vec<ExamQuestion>, String> {
     Ok(out)
 }
 
-fn paid_today(conn: &Connection, level: &str, passed: bool) -> rusqlite::Result<bool> {
-    conn.query_row(
-        "SELECT EXISTS (SELECT 1 FROM exam_attempts WHERE user_id = ?1 AND level = ?2 AND date = ?3 AND passed = ?4 AND kcal > 0)",
-        params![USER_ID, level, today(), passed as i64],
-        |r| r.get(0),
-    )
-}
-
 /// Grades an exam handed in, pays for it and puts the questions missed into the exam review
 /// (those answered right leave it).
 pub fn finish(conn: &mut Connection, level: &str, answers: &[ExamAnswer]) -> Result<ExamResult, String> {
@@ -298,9 +289,7 @@ pub fn finish(conn: &mut Connection, level: &str, answers: &[ExamAnswer]) -> Res
     let (today, now) = (today(), now_ts());
 
     let tx = conn.transaction().map_err(err)?;
-    let reward = if passed { reward(level) } else { EFFORT_KCAL };
-    let already_paid = paid_today(&tx, level, passed).map_err(err)?;
-    let kcal = if already_paid { 0 } else { reward };
+    let kcal = if passed { reward(level) } else { EFFORT_KCAL };
     tx.execute(
         "INSERT INTO exam_attempts (user_id, level, date, total, correct, passed, kcal, finished_at)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
@@ -341,8 +330,6 @@ pub fn finish(conn: &mut Connection, level: &str, answers: &[ExamAnswer]) -> Res
         total,
         passed,
         kcal_earned: kcal,
-        reward,
-        already_paid,
         today_kcal,
         streak,
         new_ticket,
@@ -437,8 +424,6 @@ pub fn overview(conn: &Connection) -> rusqlite::Result<ExamOverview> {
             best_correct: best.map(|b| b.0),
             best_total: best.map(|b| b.1),
             passed_ever,
-            paid_pass_today: paid_today(conn, level, true)?,
-            paid_effort_today: paid_today(conn, level, false)?,
             review_count: review_count(conn, Some(level))?,
         });
     }
@@ -578,31 +563,30 @@ mod tests {
         }
     }
 
-    /// 70% passes and pays the level's reward, less pays 30 for trying; each once a day per level.
+    /// 70% passes and pays the level's reward, less pays 30 for trying, every time an exam is
+    /// handed in.
     #[test]
-    fn exams_pay_once_a_day_per_level_and_outcome() {
+    fn exams_pay_every_time() {
         let mut c = conn();
         let exam = build_exam("toeic600").unwrap();
         let fail = finish(&mut c, "toeic600", &answers(&exam, 20)).unwrap();
         assert!(!fail.passed);
         assert_eq!(fail.kcal_earned, EFFORT_KCAL);
         let again = finish(&mut c, "toeic600", &answers(&exam, 5)).unwrap();
-        assert_eq!(again.kcal_earned, 0);
-        assert!(again.already_paid);
+        assert_eq!(again.kcal_earned, EFFORT_KCAL, "a second try the same day pays too");
         let pass = finish(&mut c, "toeic600", &answers(&exam, 21)).unwrap();
         assert!(pass.passed, "21 of 30 is 70%");
         assert_eq!(pass.kcal_earned, 150);
-        assert_eq!(finish(&mut c, "toeic600", &answers(&exam, 30)).unwrap().kcal_earned, 0);
-        // Another level pays on its own.
+        assert_eq!(finish(&mut c, "toeic600", &answers(&exam, 30)).unwrap().kcal_earned, 150);
         let basic = build_exam("basic").unwrap();
         assert_eq!(finish(&mut c, "basic", &answers(&basic, 30)).unwrap().kcal_earned, 100);
         let today_kcal = load_daily(&c, &today()).unwrap().kcal_earned;
-        assert_eq!(today_kcal, EFFORT_KCAL + 150 + 100);
+        assert_eq!(today_kcal, EFFORT_KCAL * 2 + 150 * 2 + 100);
         let o = overview(&c).unwrap();
         let t600 = o.levels.iter().find(|l| l.level == "toeic600").unwrap();
         assert_eq!(t600.attempts, 4);
         assert_eq!((t600.best_correct, t600.best_total), (Some(30), Some(30)));
-        assert!(t600.paid_pass_today && t600.paid_effort_today && t600.passed_ever);
+        assert!(t600.passed_ever);
     }
 
     /// Questions missed go into the exam review, apart from the study review; put right there

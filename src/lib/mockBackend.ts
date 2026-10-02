@@ -17,7 +17,7 @@ import examBasic from "../../src-tauri/data/exam-basic.json";
 import exam600 from "../../src-tauri/data/exam-600.json";
 import exam800 from "../../src-tauri/data/exam-800.json";
 import { expandDictionary, lemmas, tokenize, type Dictionary } from "./dictionary";
-import { answerWordCount, scoresPerWord } from "./scoring";
+import { answerWordCount, hintPenalty, kcalFor, scoredKind, scoresPerWord } from "./scoring";
 import type {
   AnswerPayload,
   AnswerResult,
@@ -117,9 +117,9 @@ interface MockState {
   snackTickets: SnackTicket[];
   /** 目標のお菓子（mirrors goal_snacks） */
   goals: number[];
-  /** レシピ復習の 0.5 kcal 単位の点、日ごと（mirrors daily_stats.recipe_half_kcal） */
-  recipeHalves: Record<string, number>;
-  /** the day each recipe word last paid (mirrors recipe_words.paid_on) */
+  /** レシピ復習の 0.25 kcal 単位の点、日ごと（mirrors daily_stats.recipe_quarter_kcal） */
+  recipeQuarters: Record<string, number>;
+  /** the day each recipe word was last right (mirrors recipe_words.paid_on) */
   recipePaid: Record<number, string>;
   /** 試験 handed in (mirrors exam_attempts) */
   examAttempts: ExamAttempt[];
@@ -145,7 +145,7 @@ interface SnackTicket {
   consumptionId: number | null;
 }
 
-const RATES = { low: 2, mid: 4, high: 10, choice: 4, idiomTyping: 6, reviewMultiplier: 1.5, cheatDayBonus: 300 };
+const RATES = { wordChoice: 1, choice: 2, reviewMultiplier: 1.5, cheatDayBonus: 300 };
 
 /**
  * Mirrors db::tier_of: the hand-sorted example sentences, else the kind decides the tab. A word of
@@ -292,7 +292,7 @@ function freshState(): MockState {
     saved: {},
     snackTickets: [],
     goals: [],
-    recipeHalves: {},
+    recipeQuarters: {},
     recipePaid: {},
     examAttempts: [],
     examMistakes: {},
@@ -314,7 +314,11 @@ function load(): MockState {
     if (raw) {
       // State saved before the word list or savings existed lacks them. Like the Rust migration,
       // days already over are closed at 0 rather than paid into savings all at once.
-      const stored = JSON.parse(raw) as Partial<MockState> & Omit<MockState, "recipe" | "savings" | "saved" | "snackTickets" | "goals" | "recipeHalves" | "recipePaid" | "examAttempts" | "examMistakes">;
+      const stored = JSON.parse(raw) as Partial<MockState> &
+        Omit<MockState, "recipe" | "savings" | "saved" | "snackTickets" | "goals" | "recipeQuarters" | "recipePaid" | "examAttempts" | "examMistakes"> & {
+          /** before quarters: the same count in halves */
+          recipeHalves?: Record<string, number>;
+        };
       const closed = Object.fromEntries(Object.keys(stored.daily).filter((d) => d < today()).map((d) => [d, 0]));
       return {
         ...stored,
@@ -324,7 +328,10 @@ function load(): MockState {
         snackTickets: stored.snackTickets ?? [],
         // The single goal of earlier versions becomes the first entry of the list.
         goals: stored.goals ?? legacyGoal(stored.user),
-        recipeHalves: stored.recipeHalves ?? {},
+        // Mirrors the Rust migration: halves of a calorie become quarters.
+        recipeQuarters:
+          stored.recipeQuarters ??
+          Object.fromEntries(Object.entries(stored.recipeHalves ?? {}).map(([d, n]) => [d, n * 2])),
         recipePaid: stored.recipePaid ?? {},
         examAttempts: stored.examAttempts ?? [],
         examMistakes: stored.examMistakes ?? {},
@@ -1394,11 +1401,6 @@ function buildExam(level: ExamLevel): ExamQuestion[] {
   );
 }
 
-function examPaidToday(level: ExamLevel, passed: boolean): boolean {
-  const t = today();
-  return state.examAttempts.some((a) => a.level === level && a.date === t && a.passed === passed && a.kcal > 0);
-}
-
 /** Mirrors exam::finish. */
 function finishExam(level: ExamLevel, answers: ExamAnswer[]): ExamResult {
   if (!EXAM_LEVELS.includes(level)) throw new Error(`unknown exam level ${level}`);
@@ -1413,9 +1415,8 @@ function finishExam(level: ExamLevel, answers: ExamAnswer[]): ExamResult {
   const passed = examPasses(correct, total);
   const t = today();
   const now = nowTs();
-  const reward = passed ? EXAM_REWARD[level] : EXAM.effortKcal;
-  const alreadyPaid = examPaidToday(level, passed);
-  const kcal = alreadyPaid ? 0 : reward;
+  // Every exam handed in pays (mirrors exam::finish).
+  const kcal = passed ? EXAM_REWARD[level] : EXAM.effortKcal;
   state.examAttempts.push({ level, date: t, total, correct, passed, kcal, finishedAt: now });
   let reviewAdded = 0;
   for (const g of graded) {
@@ -1439,8 +1440,6 @@ function finishExam(level: ExamLevel, answers: ExamAnswer[]): ExamResult {
     total,
     passed,
     kcalEarned: kcal,
-    reward,
-    alreadyPaid,
     todayKcal: d.kcalEarned,
     streak: state.user.currentStreak,
     newTicket,
@@ -1491,8 +1490,6 @@ function examOverview(): ExamOverview {
       bestCorrect: best ? best.correct : null,
       bestTotal: best ? best.total : null,
       passedEver: mine.some((a) => a.passed),
-      paidPassToday: examPaidToday(level, true),
-      paidEffortToday: examPaidToday(level, false),
       reviewCount: mistakes.filter((m) => m.level === level).length,
     };
   });
@@ -1513,24 +1510,20 @@ function submitAnswer(p: AnswerPayload): AnswerResult {
   const h = state.history[q.key] ?? { level: 0, needsReview: false, nextDue: null, correct: 0, wrong: 0, lastScore: null, lastStudiedAt: "" };
   const isDueReview = h.needsReview && h.nextDue !== null && h.nextDue <= t;
   const lowScore = p.mode === "speaking" && (p.score ?? 100) < 70;
-  const base = RATES[q.difficulty];
   const hints = Math.max(0, p.hintsUsed ?? 0);
-  // srs.rs と同じ: 文の記入問題は1語 1 kcal、開示1語ごとに −1。ほかは開示1語ごとに半分。
+  // srs.rs と同じ: 文の記入問題は1語 1 kcal、開示1語ごとに −1。ほかは scored の配点。
   const perWord = scoresPerWord(q.kind, p.mode);
+  const s = scoredKind(q.kind, q.tier);
   let kcal = 0;
   if (p.correct) {
     if (perWord) kcal = Math.max(0, answerWordCount(q.en) - hints);
-    else if (p.mode === "speaking") kcal = Math.round((base * Math.min(100, Math.max(0, p.score ?? 100))) / 100);
-    // srs::kcal_for: choice pays 4 for anything but a word, an idiom typed 6; the rest by level.
-    else if (p.mode === "choice" && q.kind !== "word") kcal = RATES.choice;
-    else if (p.mode === "typing" && q.kind === "idiom") kcal = RATES.idiomTyping;
-    else kcal = base;
+    else kcal = kcalFor(s, p.mode, p.score ?? null);
     if (isDueReview) kcal = Math.round(kcal * RATES.reviewMultiplier);
   } else if (perWord && p.mistakes !== undefined) {
     // srs::per_word_kcal: a slip costs the word it was in, not the whole answer.
     kcal = Math.max(0, answerWordCount(q.en) - hints - Math.max(1, p.mistakes));
   }
-  if (!perWord) kcal = Math.round(kcal / 2 ** Math.min(30, hints));
+  if (!perWord) kcal = hintPenalty(s, kcal, hints);
   let level = h.level;
   let needsReview = false;
   let nextDue: string | null = null;
@@ -1892,26 +1885,34 @@ export async function mockInvoke<T>(cmd: string, args: Record<string, unknown>):
     case "add_recipe_word":
       return addRecipeWord(args.entry as RecipeWordInput) as T;
     case "review_recipe_word": {
-      // Mirrors recipe::review and srs::recipe_half_kcal / recipe_kcal_gain: pay is counted in
-      // halves per day (choice 0.5, typing 1 kcal) and only whole calories reach the budget.
-      const halves = args.mode === "choice" ? 1 : args.mode === "typing" ? 2 : 0;
-      if (!halves) throw new Error(`unknown review mode ${String(args.mode)}`);
+      // Mirrors recipe::review and srs::recipe_quarter_kcal / recipe_kcal_gain: pay is counted in
+      // quarters per day (choice 0.5, typing 1 kcal the first time a word is right that day, half
+      // after) and only whole calories reach the budget.
+      const full = args.mode === "choice" ? 2 : args.mode === "typing" ? 4 : 0;
+      if (!full) throw new Error(`unknown review mode ${String(args.mode)}`);
       const w = recipeWord(Number(args.id));
       const now = nowTs();
-      // A word pays once a day. Right leaves it where it is (the learner marks it learned with
-      // 習得 / まだ, which is set_recipe_mastered); wrong puts it back into review.
-      const counted = !!args.remembered && state.recipePaid[w.id] !== t;
+      // Right leaves it where it is (the learner marks it learned with 習得 / まだ, which is
+      // set_recipe_mastered); wrong puts it back into review.
+      const repeat = state.recipePaid[w.id] === t;
       w.reviews += 1;
       w.lastReviewedAt = now;
       if (!args.remembered) w.masteredAt = null;
-      if (counted) state.recipePaid[w.id] = t;
-      const before = state.recipeHalves[t] ?? 0;
-      const gained = counted ? halves : 0;
-      const kcal = Math.floor((before + gained) / 2) - Math.floor(before / 2);
-      state.recipeHalves[t] = before + gained;
+      else state.recipePaid[w.id] = t;
+      const before = state.recipeQuarters[t] ?? 0;
+      const gained = args.remembered ? (repeat ? full / 2 : full) : 0;
+      const kcal = Math.floor((before + gained) / 4) - Math.floor(before / 4);
+      state.recipeQuarters[t] = before + gained;
       daily(t).kcalEarned += kcal;
       save();
-      return { entry: withPos(w), counted, kcalEarned: kcal, todayKcal: daily(t).kcalEarned, halfPending: (before + gained) % 2 === 1 } as T;
+      return {
+        entry: withPos(w),
+        earnedQuarters: gained,
+        repeat,
+        kcalEarned: kcal,
+        todayKcal: daily(t).kcalEarned,
+        fractionPending: (before + gained) % 4 !== 0,
+      } as T;
     }
     case "set_recipe_mastered": {
       const w = recipeWord(Number(args.id));

@@ -4,14 +4,9 @@ use crate::util::date_plus;
 /// Review intervals in days, indexed by SRS level (翌日 → 3日後 → 1週間後 → 2週間後 → 1か月後).
 pub const INTERVALS: [i64; 5] = [1, 3, 7, 14, 30];
 
-/// kcal per correct answer. 10 correct = 20 / 40 / 100 kcal.
-pub const KCAL_LOW: i64 = 2;
-pub const KCAL_MID: i64 = 4;
-pub const KCAL_HIGH: i64 = 10;
-/// 英単語以外の選択問題は、種類にかかわらず 4 kcal。
-pub const KCAL_CHOICE: i64 = 4;
-/// 慣用句の記入問題は 6 kcal（例文・長文・フレーズの記入は 1語 1 kcal）。
-pub const KCAL_IDIOM_TYPING: i64 = 6;
+/// 選択問題は英単語 1 kcal、それ以外（複合語・慣用句・文法・フレーズ・例文）は 2 kcal。
+pub const KCAL_WORD_CHOICE: i64 = 1;
+pub const KCAL_CHOICE: i64 = 2;
 pub const REVIEW_MULTIPLIER: f64 = 1.5;
 pub const CHEAT_DAY_BONUS: i64 = 300;
 /// 使わずに残ったカロリーの貯蓄が、この量に達するごとにお菓子引換券1枚になる。
@@ -20,31 +15,62 @@ pub const SAVINGS_PER_TICKET: i64 = 2000;
 /// Pronunciation score below which the question is scheduled for review even if it "passed".
 pub const SPEAKING_REVIEW_THRESHOLD: f64 = 70.0;
 
-pub fn base_kcal(difficulty: &str) -> i64 {
-    match difficulty {
-        "low" => KCAL_LOW,
-        "mid" => KCAL_MID,
-        "high" => KCAL_HIGH,
-        _ => KCAL_LOW,
+/// What a question counts as for its reward: 英単語, 複合語 (a word question in the 複合語 tab:
+/// several words, a phrasal verb being a 英単語), 慣用句, or a sentence (文法・フレーズ・例文・会話).
+/// The level a question is marked with does not count.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Scored {
+    Word,
+    Compound,
+    Idiom,
+    Sentence,
+}
+
+pub fn scored(kind: &str, tier: &str) -> Scored {
+    match kind {
+        "word" if tier == "compound" => Scored::Compound,
+        "word" => Scored::Word,
+        "idiom" => Scored::Idiom,
+        _ => Scored::Sentence,
     }
 }
 
-/// kcal for a correct answer. Listening and speaking follow the question's level (低2/中4/高10,
-/// speaking scaled by the score); choice pays 4 for anything but a word, and typing an idiom 6.
-/// Typing a sentence (例文・長文・フレーズ) is paid per word instead, see `scores_per_word`.
-pub fn kcal_for(kind: &str, difficulty: &str, mode: &str, correct: bool, score: Option<f64>) -> i64 {
+/// 記入問題: 英単語 2、複合語 4、慣用句 5 kcal。文（例文・長文・フレーズ）は1語 1 kcal で、
+/// `per_word_kcal` が別に数える。
+pub fn typing_kcal(s: Scored) -> i64 {
+    match s {
+        Scored::Word => 2,
+        Scored::Compound => 4,
+        Scored::Idiom => 5,
+        Scored::Sentence => 0,
+    }
+}
+
+/// 聞く（ヒアリング）・話す（発音）問題: 英単語 1、複合語 2、慣用句 3、文法・フレーズ・例文 5 kcal。
+pub fn spoken_kcal(s: Scored) -> i64 {
+    match s {
+        Scored::Word => 1,
+        Scored::Compound => 2,
+        Scored::Idiom => 3,
+        Scored::Sentence => 5,
+    }
+}
+
+/// kcal for a correct answer, by what the question is and how it was asked. Speaking is scaled
+/// by the recognizer's score (80 points of a 5 kcal sentence is 4).
+pub fn kcal_for(s: Scored, mode: &str, correct: bool, score: Option<f64>) -> i64 {
     if !correct {
         return 0;
     }
-    let base = base_kcal(difficulty);
     match mode {
+        "choice" if s == Scored::Word => KCAL_WORD_CHOICE,
+        "choice" => KCAL_CHOICE,
+        "typing" => typing_kcal(s),
         "speaking" => {
-            let s = score.unwrap_or(100.0).clamp(0.0, 100.0);
-            ((base as f64) * s / 100.0).round() as i64
+            let score = score.unwrap_or(100.0).clamp(0.0, 100.0);
+            ((spoken_kcal(s) as f64) * score / 100.0).round() as i64
         }
-        "choice" if kind != "word" => KCAL_CHOICE,
-        "typing" if kind == "idiom" => KCAL_IDIOM_TYPING,
-        _ => base,
+        _ => spoken_kcal(s),
     }
 }
 
@@ -80,29 +106,38 @@ pub fn per_word_kcal(answer: &str, correct: bool, hints_used: i64, mistakes: Opt
     (answer_word_count(answer) - hints_used.max(0) - missed).max(0)
 }
 
-/// ヒントで1語開示するごとに獲得カロリーを半分にする（中難易度の記入問題以外）。
+/// 記入問題のヒント（文の記入は `per_word_kcal` が1語ごとに減点する）。英単語は1語でも開示すると
+/// 0 kcal、複合語・慣用句は1語開示するごとに半分（四捨五入）。
 /// 回数は 0..=30 に丸める（`2f64.powi` が無限大になって i64 変換が飽和するのを防ぐ）。
-pub fn apply_hint_penalty(kcal: i64, hints_used: i64) -> i64 {
+pub fn apply_hint_penalty(s: Scored, kcal: i64, hints_used: i64) -> i64 {
+    if hints_used <= 0 {
+        return kcal;
+    }
+    if s == Scored::Word {
+        return 0;
+    }
     let halvings = hints_used.clamp(0, 30) as i32;
     ((kcal as f64) / 2f64.powi(halvings)).round() as i64
 }
 
-/// お菓子作りレシピの復習で1語正解したときのカロリーを 0.5 kcal 単位で数えたもの。
-/// 意味を4択で選ぶと 0.5 kcal、日本語から英語を書くと 1 kcal。
-pub fn recipe_half_kcal(mode: &str) -> Option<i64> {
-    match mode {
-        "choice" => Some(1),
-        "typing" => Some(2),
-        _ => None,
-    }
+/// お菓子作りレシピの復習で1語正解したときのカロリーを 0.25 kcal 単位で数えたもの。その日はじめて
+/// 正解した語は、意味を4択で選ぶと 0.5 kcal、日本語から英語を書くと 1 kcal。同じ日の2回目からは
+/// その半分（0.25 / 0.5 kcal）で、3回目以降も同じ。
+pub fn recipe_quarter_kcal(mode: &str, first_today: bool) -> Option<i64> {
+    let full = match mode {
+        "choice" => 2,
+        "typing" => 4,
+        _ => return None,
+    };
+    Some(if first_today { full } else { full / 2 })
 }
 
-/// その日のレシピ復習で貯まった 0.5 kcal 単位の点が `before` から `gained` 増えたとき、今日の
+/// その日のレシピ復習で貯まった 0.25 kcal 単位の点が `before` から `gained` 増えたとき、今日の
 /// 獲得カロリーに足す kcal。小数点以下は切り捨てるが、端数は捨てずにその日の次の正解と合わせる
-/// （0.5 + 0.5 = 1 kcal）。日付が変わると残った 0.5 kcal は切り捨てになる。
+/// （0.5 + 0.25 + 0.25 = 1 kcal）。日付が変わると残った端数は切り捨てになる。
 pub fn recipe_kcal_gain(before: i64, gained: i64) -> i64 {
     let before = before.max(0);
-    (before + gained.max(0)) / 2 - before / 2
+    (before + gained.max(0)) / 4 - before / 4
 }
 
 /// その日に使わずに残ったカロリー。食べすぎた日（マイナス）は貯蓄を減らさず 0 とする。
@@ -140,35 +175,52 @@ mod tests {
 
     #[test]
     fn kcal_matches_spec() {
-        // Words keep their level: 2 kcal whichever way they are asked.
-        assert_eq!(kcal_for("word", "low", "choice", true, None) * 10, 20);
-        assert_eq!(kcal_for("word", "low", "typing", true, None), 2);
-        // Anything else picked from four pays 4, whatever its level.
-        for kind in ["grammar", "phrase", "expression", "idiom", "sentence"] {
-            let level = if matches!(kind, "idiom" | "sentence") { "high" } else { "mid" };
-            assert_eq!(kcal_for(kind, level, "choice", true, None), 4, "{kind}");
+        use Scored::*;
+        // What a question counts as: a compound is a word question of the 複合語 tab, a phrasal
+        // verb a 英単語; every sentence-like kind is a sentence.
+        assert_eq!(scored("word", "word"), Word);
+        assert_eq!(scored("word", "compound"), Compound);
+        assert_eq!(scored("idiom", "idiom"), Idiom);
+        for kind in ["grammar", "phrase", "sentence", "expression", "dialogue"] {
+            assert_eq!(scored(kind, "example"), Sentence, "{kind}");
         }
-        // An idiom typed pays 6; listening and speaking keep the level's rate.
-        assert_eq!(kcal_for("idiom", "high", "typing", true, None), 6);
-        assert_eq!(kcal_for("idiom", "high", "listening", true, None), 10);
-        assert_eq!(kcal_for("expression", "mid", "listening", true, None), 4);
-        assert_eq!(kcal_for("idiom", "high", "speaking", true, Some(100.0)) * 10, 100);
-        assert_eq!(kcal_for("sentence", "high", "speaking", true, Some(80.0)), 8);
-        assert_eq!(kcal_for("idiom", "high", "speaking", false, Some(20.0)), 0);
+        assert_eq!(scored("phrase", "idiom"), Sentence, "a sentence using an idiom is a sentence");
+
+        // 選択: 英単語 1、それ以外 2。
+        assert_eq!(kcal_for(Word, "choice", true, None), 1);
+        for s in [Compound, Idiom, Sentence] {
+            assert_eq!(kcal_for(s, "choice", true, None), 2, "{s:?}");
+        }
+        // 記入: 英単語 2、複合語 4、慣用句 5。
+        assert_eq!(kcal_for(Word, "typing", true, None), 2);
+        assert_eq!(kcal_for(Compound, "typing", true, None), 4);
+        assert_eq!(kcal_for(Idiom, "typing", true, None), 5);
+        // ヒアリング・発音: 英単語 1、複合語 2、慣用句 3、文 5。発音はスコアで按分。
+        for (s, kcal) in [(Word, 1), (Compound, 2), (Idiom, 3), (Sentence, 5)] {
+            assert_eq!(kcal_for(s, "listening", true, None), kcal, "{s:?}");
+            assert_eq!(kcal_for(s, "speaking", true, Some(100.0)), kcal, "{s:?}");
+        }
+        assert_eq!(kcal_for(Sentence, "speaking", true, Some(80.0)), 4);
+        assert_eq!(kcal_for(Idiom, "speaking", false, Some(20.0)), 0);
+        assert_eq!(kcal_for(Sentence, "choice", false, None), 0);
         assert_eq!(apply_review_bonus(10), 15);
     }
 
     #[test]
-    fn each_revealed_hint_word_halves_the_reward() {
-        assert_eq!(apply_hint_penalty(10, 0), 10);
-        assert_eq!(apply_hint_penalty(10, 1), 5);
-        assert_eq!(apply_hint_penalty(10, 2), 3, "2.5 rounds up");
-        assert_eq!(apply_hint_penalty(10, 3), 1);
-        assert_eq!(apply_hint_penalty(0, 3), 0, "a wrong answer stays at zero");
-        assert_eq!(apply_hint_penalty(10, -1), 10, "negative counts never add kcal");
-        assert_eq!(apply_hint_penalty(10, 99), 0, "an absurd count just zeroes the reward");
+    fn a_hint_zeroes_a_word_and_halves_a_compound_or_an_idiom() {
+        use Scored::*;
+        assert_eq!(apply_hint_penalty(Word, 2, 0), 2);
+        assert_eq!(apply_hint_penalty(Word, 2, 1), 0, "one revealed word and a word pays nothing");
+        assert_eq!(apply_hint_penalty(Word, 3, 2), 0, "nor does its review");
+        assert_eq!(apply_hint_penalty(Compound, 4, 1), 2);
+        assert_eq!(apply_hint_penalty(Compound, 4, 2), 1);
+        assert_eq!(apply_hint_penalty(Idiom, 5, 1), 3, "2.5 rounds up");
+        assert_eq!(apply_hint_penalty(Idiom, 5, 2), 1);
+        assert_eq!(apply_hint_penalty(Idiom, 0, 3), 0, "a wrong answer stays at zero");
+        assert_eq!(apply_hint_penalty(Idiom, 10, -1), 10, "negative counts never add kcal");
+        assert_eq!(apply_hint_penalty(Idiom, 10, 99), 0, "an absurd count just zeroes the reward");
         assert!(
-            apply_hint_penalty(i64::MAX, i64::MAX) < i64::MAX,
+            apply_hint_penalty(Idiom, i64::MAX, i64::MAX) < i64::MAX,
             "huge counts must not overflow the exponent and saturate back up"
         );
     }
@@ -202,17 +254,21 @@ mod tests {
     }
 
     #[test]
-    fn recipe_reviews_pay_half_a_calorie_or_one_and_drop_the_last_half() {
-        assert_eq!(recipe_half_kcal("choice"), Some(1));
-        assert_eq!(recipe_half_kcal("typing"), Some(2));
-        assert_eq!(recipe_half_kcal("speaking"), None);
-        // Three meanings picked in a row: 0.5 → 0, 1.0 → +1, 1.5 → 0.
-        assert_eq!(recipe_kcal_gain(0, 1), 0);
-        assert_eq!(recipe_kcal_gain(1, 1), 1);
-        assert_eq!(recipe_kcal_gain(2, 1), 0);
-        // A word typed is a whole calorie, whatever half is pending.
-        assert_eq!(recipe_kcal_gain(0, 2), 1);
-        assert_eq!(recipe_kcal_gain(3, 2), 1);
+    fn recipe_reviews_pay_in_quarters_and_half_after_the_first_time_a_day() {
+        // The first right answer of the day for a word: 0.5 / 1 kcal; again that day: half of it.
+        assert_eq!(recipe_quarter_kcal("choice", true), Some(2));
+        assert_eq!(recipe_quarter_kcal("typing", true), Some(4));
+        assert_eq!(recipe_quarter_kcal("choice", false), Some(1));
+        assert_eq!(recipe_quarter_kcal("typing", false), Some(2));
+        assert_eq!(recipe_quarter_kcal("speaking", true), None);
+        // Meanings picked in a row: 0.5 → 0, 1.0 → +1, 1.25 → 0, then 1.5, 1.75, 2.0 → +1.
+        assert_eq!(recipe_kcal_gain(0, 2), 0);
+        assert_eq!(recipe_kcal_gain(2, 2), 1);
+        assert_eq!(recipe_kcal_gain(4, 1), 0);
+        assert_eq!(recipe_kcal_gain(7, 1), 1);
+        // A word typed the first time is a whole calorie, whatever fraction is pending.
+        assert_eq!(recipe_kcal_gain(0, 4), 1);
+        assert_eq!(recipe_kcal_gain(3, 4), 1);
         assert_eq!(recipe_kcal_gain(5, -2), 0, "nothing is ever taken back");
     }
 

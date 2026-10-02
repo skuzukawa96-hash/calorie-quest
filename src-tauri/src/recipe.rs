@@ -119,12 +119,12 @@ pub fn usage_meanings() -> Vec<String> {
 /// One word reviewed in `mode` ("choice": its meaning picked from four, "typing": the English
 /// written from the meaning). Right pays into today's kcal and leaves the word where it is: a
 /// right answer may be a lucky one, so the learner says whether the word is learned
-/// (`set_mastered`, the 習得 / まだ buttons). Wrong puts it back into review, learned or not. Pay is counted in halves
-/// per day, so two meanings picked make a whole calorie; whatever half is left when the day ends is
-/// dropped. A word pays once a day at most, so going over the learned words again and again is
-/// practice, not a source of calories.
+/// (`set_mastered`, the 習得 / まだ buttons). Wrong puts it back into review, learned or not. Pay is
+/// counted in quarters per day, so two meanings picked make a whole calorie; whatever fraction is
+/// left when the day ends is dropped. A word pays in full the first time it is right in a day and
+/// half after that, so going over the learned words again still counts, for less.
 pub fn review(conn: &mut Connection, id: i64, remembered: bool, mode: &str) -> CmdResult<RecipeReviewResult> {
-    let halves = srs::recipe_half_kcal(mode).ok_or_else(|| format!("unknown review mode {mode}"))?;
+    srs::recipe_quarter_kcal(mode, true).ok_or_else(|| format!("unknown review mode {mode}"))?;
     let tx = conn.transaction().map_err(err)?;
     let now = now_ts();
     let day = today();
@@ -133,13 +133,13 @@ pub fn review(conn: &mut Connection, id: i64, remembered: bool, mode: &str) -> C
         .optional()
         .map_err(err)?
         .ok_or_else(|| "その単語はレシピにありません".to_string())?;
-    let counted = remembered && paid_on.as_deref() != Some(day.as_str());
+    let repeat = paid_on.as_deref() == Some(day.as_str());
     tx.execute(
         "UPDATE recipe_words SET reviews = reviews + 1, last_reviewed_at = ?2,
          mastered_at = CASE WHEN ?3 THEN mastered_at ELSE NULL END,
-         paid_on = CASE WHEN ?4 THEN ?5 ELSE paid_on END
+         paid_on = CASE WHEN ?3 THEN ?4 ELSE paid_on END
          WHERE id = ?1",
-        params![id, now, remembered, counted, day],
+        params![id, now, remembered, day],
     )
     .map_err(err)?;
 
@@ -147,15 +147,15 @@ pub fn review(conn: &mut Connection, id: i64, remembered: bool, mode: &str) -> C
         .map_err(err)?;
     let before: i64 = tx
         .query_row(
-            "SELECT recipe_half_kcal FROM daily_stats WHERE user_id = ?1 AND date = ?2",
+            "SELECT recipe_quarter_kcal FROM daily_stats WHERE user_id = ?1 AND date = ?2",
             params![USER_ID, day],
             |r| r.get(0),
         )
         .map_err(err)?;
-    let gained = if counted { halves } else { 0 };
+    let gained = if remembered { srs::recipe_quarter_kcal(mode, !repeat).unwrap_or(0) } else { 0 };
     let kcal = srs::recipe_kcal_gain(before, gained);
     tx.execute(
-        "UPDATE daily_stats SET recipe_half_kcal = recipe_half_kcal + ?3, kcal_earned = kcal_earned + ?4
+        "UPDATE daily_stats SET recipe_quarter_kcal = recipe_quarter_kcal + ?3, kcal_earned = kcal_earned + ?4
          WHERE user_id = ?1 AND date = ?2",
         params![USER_ID, day, gained, kcal],
     )
@@ -171,10 +171,11 @@ pub fn review(conn: &mut Connection, id: i64, remembered: bool, mode: &str) -> C
     tx.commit().map_err(err)?;
     Ok(RecipeReviewResult {
         entry,
-        counted,
+        earned_quarters: gained,
+        repeat,
         kcal_earned: kcal,
         today_kcal,
-        half_pending: (before + gained) % 2 == 1,
+        fraction_pending: (before + gained) % 4 != 0,
     })
 }
 
@@ -369,17 +370,17 @@ mod tests {
 
         // 0.5 kcal: nothing whole yet, and nothing is lost either.
         let r = review(&mut c, ids[0], true, "choice").unwrap();
-        assert_eq!((r.kcal_earned, r.today_kcal, r.half_pending), (0, 0, true));
+        assert_eq!((r.earned_quarters, r.kcal_earned, r.today_kcal, r.fraction_pending), (2, 0, 0, true));
         // A miss pays nothing and leaves the half waiting.
         let r = review(&mut c, ids[1], false, "choice").unwrap();
-        assert_eq!((r.kcal_earned, r.half_pending), (0, true));
+        assert_eq!((r.earned_quarters, r.kcal_earned, r.fraction_pending), (0, 0, true));
         // The second half makes a calorie.
         let r = review(&mut c, ids[2], true, "choice").unwrap();
-        assert_eq!((r.kcal_earned, r.today_kcal, r.half_pending), (1, 1, false));
+        assert_eq!((r.kcal_earned, r.today_kcal, r.fraction_pending), (1, 1, false));
         // A word typed is a calorie of its own; a pending half stays pending beside it.
         review(&mut c, ids[3], true, "choice").unwrap();
         let r = review(&mut c, ids[4], true, "typing").unwrap();
-        assert_eq!((r.kcal_earned, r.today_kcal, r.half_pending), (1, 2, true));
+        assert_eq!((r.earned_quarters, r.kcal_earned, r.today_kcal, r.fraction_pending), (4, 1, 2, true));
         assert_eq!(kcal(&c), 2, "1.5 + 1 = 2.5 kcal, of which the half is not paid");
 
         assert!(review(&mut c, ids[0], true, "speaking").is_err());
@@ -387,39 +388,46 @@ mod tests {
     }
 
     /// Learned words can be gone over again: right leaves them learned (from the day they were
-    /// first learned), wrong puts them back into review. Either way a word pays once a day.
+    /// first learned), wrong puts them back into review. A word pays in full the first time it is
+    /// right in a day (0.5 / 1 kcal) and half that every time after (0.25 / 0.5 kcal).
     #[test]
-    fn a_learned_word_reviewed_again_stays_learned_or_goes_back() {
+    fn a_word_right_again_the_same_day_pays_half() {
         let mut c = db::init_in_memory().unwrap();
         let hear = add(&c, &input("hear", "")).unwrap().entry.id;
         let bag = add(&c, &input("doggy bag", "")).unwrap().entry.id;
 
         let first = review(&mut c, hear, true, "typing").unwrap();
-        assert!(first.counted);
-        assert_eq!(first.kcal_earned, 1);
+        assert!(!first.repeat);
+        assert_eq!((first.earned_quarters, first.kcal_earned), (4, 1));
         let learned_at = set_mastered(&c, hear, true).unwrap().mastered_at.expect("learned");
 
         // The same day, over the learned words again: still learned, still dated the first time,
-        // but no second calorie for the same word.
+        // and half a calorie for the same word typed again.
         let again = review(&mut c, hear, true, "typing").unwrap();
-        assert!(!again.counted);
-        assert_eq!((again.kcal_earned, again.today_kcal), (0, 1));
+        assert!(again.repeat);
+        assert_eq!((again.earned_quarters, again.kcal_earned, again.today_kcal), (2, 0, 1));
         assert_eq!(again.entry.mastered_at.as_deref(), Some(learned_at.as_str()));
         assert_eq!(again.entry.reviews, 2);
+        // A third time is half too: 1 + 0.5 + 0.5 makes the second calorie.
+        let third = review(&mut c, hear, true, "typing").unwrap();
+        assert_eq!((third.earned_quarters, third.kcal_earned, third.today_kcal), (2, 1, 2));
+        // Picked from four again that day: a quarter.
+        let picked = review(&mut c, hear, true, "choice").unwrap();
+        assert_eq!((picked.earned_quarters, picked.kcal_earned), (1, 0));
 
-        // Forgotten: back into review, and a miss pays nothing whether or not it was paid before.
+        // Forgotten: back into review, and a miss pays nothing.
         let forgot = review(&mut c, hear, false, "choice").unwrap();
         assert!(forgot.entry.mastered_at.is_none());
-        assert_eq!((forgot.counted, forgot.kcal_earned), (false, 0));
+        assert_eq!((forgot.earned_quarters, forgot.kcal_earned), (0, 0));
 
-        // Another word still pays today.
+        // Another word still pays in full today: 2.25 + 1 = 3.25 kcal, 3 of them paid.
         let other = review(&mut c, bag, true, "typing").unwrap();
-        assert!(other.counted);
-        assert_eq!(other.today_kcal, 2);
+        assert!(!other.repeat);
+        assert_eq!((other.earned_quarters, other.today_kcal, other.fraction_pending), (4, 3, true));
 
-        // The next day the word pays again.
+        // The next day the word pays in full again.
         c.execute("UPDATE recipe_words SET paid_on = '2000-01-01' WHERE id = ?1", params![hear]).unwrap();
-        assert!(review(&mut c, hear, true, "typing").unwrap().counted);
+        assert_eq!(review(&mut c, hear, true, "typing").unwrap().earned_quarters, 4);
     }
 
     #[test]

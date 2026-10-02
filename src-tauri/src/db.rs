@@ -205,7 +205,7 @@ CREATE TABLE IF NOT EXISTS daily_stats (
   answered INTEGER NOT NULL DEFAULT 0,
   correct INTEGER NOT NULL DEFAULT 0,
   saved_kcal INTEGER,
-  recipe_half_kcal INTEGER NOT NULL DEFAULT 0,
+  recipe_quarter_kcal INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (user_id, date)
 );
 CREATE TABLE IF NOT EXISTS snacks (
@@ -376,9 +376,18 @@ fn setup(conn: Connection) -> rusqlite::Result<Connection> {
             params![crate::util::today()],
         )?;
     }
-    // レシピの復習は 0.5 kcal 単位で貯まる。整数にならなかった端数をその日のうちだけ持ち越す。
-    ensure_column(&conn, "daily_stats", "recipe_half_kcal", "INTEGER NOT NULL DEFAULT 0")?;
-    // レシピの単語は1日1回だけカロリーを払う。最後に払った日。
+    // レシピの復習は 0.25 kcal 単位で貯まる。整数にならなかった端数をその日のうちだけ持ち越す。
+    // 0.5 kcal 単位だった列は名前を変え、値を2倍にして引き継ぐ。
+    if has_column(&conn, "daily_stats", "recipe_half_kcal")? {
+        conn.execute_batch(
+            "BEGIN;
+             ALTER TABLE daily_stats RENAME COLUMN recipe_half_kcal TO recipe_quarter_kcal;
+             UPDATE daily_stats SET recipe_quarter_kcal = recipe_quarter_kcal * 2;
+             COMMIT;",
+        )?;
+    }
+    ensure_column(&conn, "daily_stats", "recipe_quarter_kcal", "INTEGER NOT NULL DEFAULT 0")?;
+    // レシピの単語がその日はじめて正解した日（同じ日の2回目からは半分を払う）。
     ensure_column(&conn, "recipe_words", "paid_on", "TEXT")?;
     ensure_column(&conn, "recipe_words", "kind", "TEXT NOT NULL DEFAULT 'word'")?;
     // A missed question comes back for review in the mode it was missed in (a phrase got wrong by
@@ -415,13 +424,15 @@ fn setup(conn: Connection) -> rusqlite::Result<Connection> {
 /// Adds a column to an existing table (databases created by older builds).
 /// Adds a column to an existing database; returns whether it had to (a fresh database already has
 /// it from `SCHEMA`), so a migration can run once alongside it.
+fn has_column(conn: &Connection, table: &str, column: &str) -> rusqlite::Result<bool> {
+    let mut stmt = conn.prepare(&format!("PRAGMA table_info({table})"))?;
+    let names = stmt.query_map([], |r| r.get::<_, String>(1))?;
+    let found = names.filter_map(Result::ok).any(|n| n == column);
+    Ok(found)
+}
+
 fn ensure_column(conn: &Connection, table: &str, column: &str, ddl: &str) -> rusqlite::Result<bool> {
-    let exists = {
-        let mut stmt = conn.prepare(&format!("PRAGMA table_info({table})"))?;
-        let names = stmt.query_map([], |r| r.get::<_, String>(1))?;
-        let found = names.filter_map(Result::ok).any(|n| n == column);
-        found
-    };
+    let exists = has_column(conn, table, column)?;
     if !exists {
         conn.execute_batch(&format!("ALTER TABLE {table} ADD COLUMN {column} {ddl}"))?;
     }
@@ -1807,6 +1818,35 @@ mod tests {
             assert!(distance(&joined, &en) <= 2, "{}: the parts spell {joined:?}", w.en);
         }
         assert_eq!(word_parts().len(), list.len());
+    }
+
+    /// Recipe reviews used to be counted in halves of a calorie. A database from then keeps its
+    /// pending fraction: the column is renamed and its halves become quarters.
+    #[test]
+    fn recipe_halves_from_an_older_database_become_quarters() {
+        let c = Connection::open_in_memory().unwrap();
+        c.execute_batch(
+            "CREATE TABLE daily_stats (
+               user_id INTEGER NOT NULL, date TEXT NOT NULL,
+               kcal_earned INTEGER NOT NULL DEFAULT 0, kcal_consumed INTEGER NOT NULL DEFAULT 0,
+               answered INTEGER NOT NULL DEFAULT 0, correct INTEGER NOT NULL DEFAULT 0,
+               saved_kcal INTEGER, recipe_half_kcal INTEGER NOT NULL DEFAULT 0,
+               PRIMARY KEY (user_id, date));
+             INSERT INTO daily_stats (user_id, date, recipe_half_kcal) VALUES (1, '2026-10-03', 3);",
+        )
+        .unwrap();
+        let c = setup(c).unwrap();
+        assert!(!has_column(&c, "daily_stats", "recipe_half_kcal").unwrap());
+        let quarters: i64 = c
+            .query_row("SELECT recipe_quarter_kcal FROM daily_stats WHERE date = '2026-10-03'", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(quarters, 6, "1.5 kcal is six quarters");
+        // Opening it again changes nothing.
+        let c = setup(c).unwrap();
+        let again: i64 = c
+            .query_row("SELECT recipe_quarter_kcal FROM daily_stats WHERE date = '2026-10-03'", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(again, 6);
     }
 
     /// Related words are a side note to a word's answer, so they stay few and short: each family a

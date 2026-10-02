@@ -178,8 +178,8 @@ export default function Home({ dash, onStart, onExam, onExamReview, onChanged, g
               const filled = Math.min(100, (Math.max(0, budget) / g.calories) * 100);
               // One line per goal: the word count leads, the other kinds of question are in the tooltip.
               const breakdown =
-                `あと ${remaining} kcal：英単語なら ${need(remaining, kcalRates.low)} 問、` +
-                `文法・慣用句・フレーズ・例文の選択問題なら ${need(remaining, kcalRates.choice)} 問`;
+                `あと ${remaining} kcal：英単語なら ${need(remaining, kcalRates.wordChoice)} 問、` +
+                `複合語・文法・慣用句・フレーズ・例文の選択問題なら ${need(remaining, kcalRates.choice)} 問`;
               return (
                 <li key={g.id} className={"goal-row" + (ate ? " eaten" : "") + (remaining === 0 ? " reached" : "")}>
                   <span className="goal-icon">{g.icon}</span>
@@ -195,7 +195,7 @@ export default function Home({ dash, onStart, onExam, onExamReview, onChanged, g
                     <span className="goal-status reached">🎉 食べられます</span>
                   ) : (
                     <span className="goal-status" title={breakdown}>
-                      あと <b>{need(remaining, kcalRates.low)}</b> 問<span className="goal-status-kind">英単語</span>
+                      あと <b>{need(remaining, kcalRates.wordChoice)}</b> 問<span className="goal-status-kind">英単語</span>
                     </span>
                   )}
                   <div className="goal-actions">
@@ -297,7 +297,7 @@ export default function Home({ dash, onStart, onExam, onExamReview, onChanged, g
           </span>
         </div>
         <p className="muted exam-intro">
-          応答問題（リスニング）→ 短文穴埋め → 長文穴埋め → 読解問題の順に出題されます。合格すると難易度に応じたカロリー、不合格でも挑戦ボーナス {dash.exam.effortKcal} kcal（どちらも各レベル1日1回）。
+          応答問題（リスニング）→ 短文穴埋め → 長文穴埋め → 読解問題の順に出題されます。合格すると難易度に応じたカロリー、不合格でも挑戦ボーナス {dash.exam.effortKcal} kcal（何回受けてももらえます）。
         </p>
         <div className="mode-grid exam-grid">
           {dash.exam.levels.map((l) => {
@@ -316,7 +316,6 @@ export default function Home({ dash, onStart, onExam, onExamReview, onChanged, g
                   <span className="exam-reward">合格 +{l.reward} kcal</span>
                   <span className="muted">{best ? `ベスト ${best}` : "未受験"}</span>
                 </div>
-                {l.paidPassToday && <div className="muted small">今日の合格報酬は受取済み</div>}
                 <div className="mode-cta">{dash.exam.questionCount}問に挑戦 →</div>
               </button>
             );

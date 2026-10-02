@@ -218,12 +218,10 @@ pub struct Snack {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct KcalRates {
-    pub low: i64,
-    pub mid: i64,
-    pub high: i64,
-    /// any choice question but a word
+    /// a word picked from four: what the goals are counted in (あと何問)
+    pub word_choice: i64,
+    /// any other question picked from four
     pub choice: i64,
-    pub idiom_typing: i64,
     pub review_multiplier: f64,
     pub cheat_day_bonus: i64,
 }
@@ -285,8 +283,6 @@ pub struct ExamLevelInfo {
     pub best_total: Option<i64>,
     pub passed_ever: bool,
     /// today's pass or try at this level has been paid already
-    pub paid_pass_today: bool,
-    pub paid_effort_today: bool,
     /// questions of this level waiting in the exam review
     pub review_count: i64,
 }
@@ -350,11 +346,8 @@ pub struct ExamResult {
     pub correct: i64,
     pub total: i64,
     pub passed: bool,
-    /// what this exam earned (0 when today's pay for this outcome was had already)
+    /// what this exam earned: the level's reward when passed, the effort bonus when not
     pub kcal_earned: i64,
-    /// what the outcome pays (合格なら reward、不合格なら effort)
-    pub reward: i64,
-    pub already_paid: bool,
     pub today_kcal: i64,
     pub streak: i64,
     pub new_ticket: bool,
@@ -529,13 +522,16 @@ pub struct RecipeAddResult {
 #[serde(rename_all = "camelCase")]
 pub struct RecipeReviewResult {
     pub entry: RecipeWord,
-    /// the answer earned its 0.5 / 1 kcal: right, and the word had not paid yet today
-    pub counted: bool,
-    /// whole kcal added to today just now (0.5 kcal waits for the next half)
+    /// what the answer earned, in quarter kcal: 2 / 4 (0.5 / 1 kcal) the first time the word is
+    /// right today, 1 / 2 after that, 0 when wrong
+    pub earned_quarters: i64,
+    /// the word had already been right today, so it paid half
+    pub repeat: bool,
+    /// whole kcal added to today just now (a fraction waits for the next right answer)
     pub kcal_earned: i64,
     pub today_kcal: i64,
-    /// half a calorie is waiting for the next correct pick today
-    pub half_pending: bool,
+    /// a fraction of a calorie is waiting for the next right answer today
+    pub fraction_pending: bool,
 }
 
 #[derive(Debug, Serialize)]

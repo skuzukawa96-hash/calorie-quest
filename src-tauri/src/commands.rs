@@ -304,11 +304,8 @@ fn parts_of_speech(conn: &Connection) -> rusqlite::Result<Vec<PartOfSpeechInfo>>
 
 fn kcal_rates() -> KcalRates {
     KcalRates {
-        low: srs::KCAL_LOW,
-        mid: srs::KCAL_MID,
-        high: srs::KCAL_HIGH,
+        word_choice: srs::KCAL_WORD_CHOICE,
         choice: srs::KCAL_CHOICE,
-        idiom_typing: srs::KCAL_IDIOM_TYPING,
         review_multiplier: srs::REVIEW_MULTIPLIER,
         cheat_day_bonus: srs::CHEAT_DAY_BONUS,
     }
@@ -871,13 +868,14 @@ pub fn record_answer(conn: &mut Connection, payload: &AnswerPayload) -> Result<A
     let today = today();
     let now = now_ts();
 
-    let (kind, difficulty, answer): (String, String, String) = tx
+    let (kind, tier, answer): (String, String, String) = tx
         .query_row(
-            "SELECT kind, difficulty, en FROM questions WHERE id = ?1",
+            "SELECT kind, tier, en FROM questions WHERE id = ?1",
             params![payload.question_id],
             |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
         )
         .map_err(|_| format!("question {} not found", payload.question_id))?;
+    let scored = srs::scored(&kind, &tier);
 
     let hist: Option<(i64, i64, Option<String>)> = tx
         .query_row(
@@ -906,13 +904,13 @@ pub fn record_answer(conn: &mut Connection, payload: &AnswerPayload) -> Result<A
         // 1語 1 kcal、ヒント1語ごとに −1 kcal。復習の ×1.5 はその結果に掛ける。
         srs::per_word_kcal(&answer, payload.correct, hints_used, payload.mistakes)
     } else {
-        srs::kcal_for(&kind, &difficulty, &payload.mode, payload.correct, payload.score)
+        srs::kcal_for(scored, &payload.mode, payload.correct, payload.score)
     };
     if is_due_review && payload.correct {
         kcal = srs::apply_review_bonus(kcal);
     }
     if !per_word {
-        kcal = srs::apply_hint_penalty(kcal, hints_used);
+        kcal = srs::apply_hint_penalty(scored, kcal, hints_used);
     }
     let (new_level, new_needs_review, new_next_due) =
         srs::next_state(level, in_review, payload.correct, low_score);
@@ -1424,12 +1422,12 @@ mod tests {
     }
 
     #[test]
-    fn correct_low_answer_earns_two_kcal() {
+    fn a_word_picked_from_four_earns_one_kcal() {
         let mut c = conn();
         let qid = question_id(&c, "w001");
         let r = answer(&mut c, qid, "choice", true, None);
-        assert_eq!(r.kcal_earned, 2);
-        assert_eq!(r.today_kcal, 2);
+        assert_eq!(r.kcal_earned, 1);
+        assert_eq!(r.today_kcal, 1);
         assert!(r.first_study_today);
         assert_eq!(r.streak, 1);
         assert!(!r.needs_review);
@@ -1502,7 +1500,7 @@ mod tests {
 
         let r = answer(&mut c, qid, "choice", true, None);
         assert!(r.is_review);
-        assert_eq!(r.kcal_earned, 3, "2 kcal x 1.5 rounded");
+        assert_eq!(r.kcal_earned, 2, "1 kcal x 1.5 rounded");
         let (level, needs, due) = history(&c, qid);
         assert_eq!((level, needs), (1, 1));
         assert_eq!(due.as_deref(), Some(date_plus(3).as_str()));
@@ -1592,46 +1590,75 @@ mod tests {
     #[test]
     fn speaking_score_scales_kcal_and_low_scores_go_to_review() {
         let mut c = conn();
-        let qid = question_id(&c, "i001"); // high difficulty: 10 kcal
+        let qid = question_id(&c, "p001"); // a sentence spoken: 5 kcal
         let r = answer(&mut c, qid, "speaking", true, Some(80.0));
-        assert_eq!(r.kcal_earned, 8);
+        assert_eq!(r.kcal_earned, 4);
         assert!(!r.needs_review);
         let r = answer(&mut c, qid, "speaking", true, Some(65.0));
-        assert_eq!(r.kcal_earned, 7, "6.5 rounds up");
+        assert_eq!(r.kcal_earned, 3, "3.25 rounds down");
         assert!(r.needs_review, "scores under 70 are scheduled for review");
     }
 
-    #[test]
-    fn revealed_hint_words_halve_the_reward() {
-        let mut c = conn();
-        let qid = question_id(&c, "i001"); // an idiom typed: 6 kcal
-        let r = answer_with_hints(&mut c, qid, "typing", true, None, Some(2));
-        assert_eq!(r.kcal_earned, 2, "6 kcal halved twice, 1.5 rounds up");
-        assert_eq!(r.today_kcal, 2, "the daily total only counts what was earned");
+    /// The first word question of the 複合語 tab.
+    fn compound_id(c: &Connection) -> i64 {
+        c.query_row("SELECT id FROM questions WHERE kind = 'word' AND tier = 'compound' ORDER BY id LIMIT 1", [], |r| r.get(0))
+            .unwrap()
     }
 
-    /// Idioms and long sentences picked from four pay 4 like everything but words; an idiom typed
-    /// pays 6, a long sentence typed one per word; listening keeps the old rate of their level.
     #[test]
-    fn idioms_and_sentences_pay_the_new_rates() {
+    fn a_revealed_hint_zeroes_a_word_and_halves_a_compound_or_an_idiom() {
         let mut c = conn();
+        let idiom = question_id(&c, "i001"); // an idiom typed: 5 kcal
+        let r = answer_with_hints(&mut c, idiom, "typing", true, None, Some(2));
+        assert_eq!(r.kcal_earned, 1, "5 kcal halved twice, 1.25 rounds down");
+        assert_eq!(r.today_kcal, 1, "the daily total only counts what was earned");
+        let compound = compound_id(&c); // a compound typed: 4 kcal
+        assert_eq!(answer_with_hints(&mut c, compound, "typing", true, None, Some(1)).kcal_earned, 2);
+        let word = question_id(&c, "w001"); // a word typed: 2 kcal, nothing with a hint
+        assert_eq!(answer_with_hints(&mut c, word, "typing", true, None, Some(1)).kcal_earned, 0);
+        let word = question_id(&c, "w002");
+        assert_eq!(answer_with_hints(&mut c, word, "typing", true, None, Some(0)).kcal_earned, 2);
+    }
+
+    /// The points for each kind of question in each mode (1 point = 1 kcal): picked from four, a
+    /// word 1 and the rest 2; typed, a word 2, a compound 4, an idiom 5 and a sentence one a word;
+    /// heard or spoken, a word 1, a compound 2, an idiom 3 and a grammar, phrase or example
+    /// sentence 5. The level a question is marked with does not count.
+    #[test]
+    fn every_kind_pays_its_points_in_every_mode() {
+        let mut c = conn();
+        let compound = compound_id(&c);
+        let word = question_id(&c, "w010");
         let idiom = question_id(&c, "i002");
-        assert_eq!(answer(&mut c, idiom, "choice", true, None).kcal_earned, 4);
-        let idiom = question_id(&c, "i003");
-        assert_eq!(answer(&mut c, idiom, "typing", true, None).kcal_earned, 6);
-        let idiom = question_id(&c, "i004");
-        assert_eq!(answer(&mut c, idiom, "listening", true, None).kcal_earned, 10);
         let sentence = question_id(&c, "s031");
-        assert_eq!(answer(&mut c, sentence, "choice", true, None).kcal_earned, 4);
-        let sentence = question_id(&c, "s033");
-        let en: String = c.query_row("SELECT en FROM questions WHERE id = ?1", params![sentence], |r| r.get(0)).unwrap();
-        assert_eq!(answer(&mut c, sentence, "typing", true, None).kcal_earned, srs::answer_word_count(&en));
-        let expression = question_id(&c, "x001"); // Long time no see.
-        assert_eq!(answer(&mut c, expression, "choice", true, None).kcal_earned, 4);
         let expression = question_id(&c, "x020"); // Anything you say.
-        assert_eq!(answer(&mut c, expression, "typing", true, None).kcal_earned, 3);
-        let expression = question_id(&c, "x021");
-        assert_eq!(answer(&mut c, expression, "listening", true, None).kcal_earned, 4);
+        let grammar = question_id(&c, "g001");
+        let dialogue: i64 = c.query_row("SELECT id FROM questions WHERE kind = 'dialogue' LIMIT 1", [], |r| r.get(0)).unwrap();
+        for (id, mode, kcal) in [
+            (word, "choice", 1),
+            (compound, "choice", 2),
+            (idiom, "choice", 2),
+            (sentence, "choice", 2),
+            (grammar, "choice", 2),
+            (word, "typing", 2),
+            (compound, "typing", 4),
+            (idiom, "typing", 5),
+            (expression, "typing", 3),
+            (word, "listening", 1),
+            (compound, "listening", 2),
+            (idiom, "listening", 3),
+            (sentence, "listening", 5),
+            (dialogue, "listening", 5),
+            (word, "speaking", 1),
+            (compound, "speaking", 2),
+            (idiom, "speaking", 3),
+            (expression, "speaking", 5),
+        ] {
+            assert_eq!(answer(&mut c, id, mode, true, Some(100.0)).kcal_earned, kcal, "question {id} by {mode}");
+        }
+        let long = question_id(&c, "s033");
+        let en: String = c.query_row("SELECT en FROM questions WHERE id = ?1", params![long], |r| r.get(0)).unwrap();
+        assert_eq!(answer(&mut c, long, "typing", true, None).kcal_earned, srs::answer_word_count(&en));
     }
 
     #[test]
@@ -1645,9 +1672,9 @@ mod tests {
         let full = question_id(&c, "p001"); // "Nice to meet you." — four words
         assert_eq!(answer(&mut c, full, "typing", true, None).kcal_earned, 4);
 
-        // The same phrase in the choice mode keeps the flat mid rate.
+        // The same kind of phrase picked from four pays the flat choice rate.
         let other = question_id(&c, "p002");
-        assert_eq!(answer(&mut c, other, "choice", true, None).kcal_earned, srs::KCAL_MID);
+        assert_eq!(answer(&mut c, other, "choice", true, None).kcal_earned, srs::KCAL_CHOICE);
 
         // A slip in one word costs that word only, and the question still comes back tomorrow.
         let slip = question_id(&c, "p004");
@@ -1659,7 +1686,7 @@ mod tests {
         .unwrap();
         assert_eq!(r.kcal_earned, words - 1);
         assert!(r.needs_review);
-        // Partial credit is for mid typing only: a slip in a low-level word still earns nothing.
+        // Partial credit is for sentences only: a slip in a word still earns nothing.
         let word = question_id(&c, "w010");
         let r = record_answer(
             &mut c,
@@ -1807,7 +1834,7 @@ mod tests {
 
         let redeemed = redeem_ticket(&c).unwrap();
         assert_eq!(redeemed.kcal_added, srs::CHEAT_DAY_BONUS);
-        assert_eq!(redeemed.today_kcal, 4 + 4 + srs::CHEAT_DAY_BONUS);
+        assert_eq!(redeemed.today_kcal, 2 + 2 + srs::CHEAT_DAY_BONUS);
         assert_eq!(redeemed.tickets_left, 0);
         assert!(redeem_ticket(&c).is_err());
     }

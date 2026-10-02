@@ -12,6 +12,7 @@ import {
   maskWord,
   PASS_SCORE,
   scorePronunciation,
+  scoredKind,
   scoresPerWord,
   type PronunciationScore,
   type TipKey,
@@ -668,8 +669,10 @@ function TypingCard({
   useEffect(() => setShowHint(hintAlways), [hintAlways]);
 
   const hintWords = q.answer.split(" ");
-  // フレーズの記入問題は1語 1 kcal、開示した語1つにつき −1 kcal。ほかは開示1語ごとに半分。
+  // 文の記入問題は1語 1 kcal、開示した語1つにつき −1 kcal。英単語は1語でも開示すると 0 kcal、
+  // 複合語・慣用句は開示1語ごとに半分（srs::apply_hint_penalty）。
   const perWord = scoresPerWord(q.question.kind, q.mode);
+  const hintZeroes = scoredKind(q.question.kind, q.question.tier) === "word";
   const worth = answerWordCount(q.answer);
 
   return (
@@ -713,7 +716,13 @@ function TypingCard({
                   type="button"
                   className="hint-word"
                   disabled={disabled}
-                  title={perWord ? "タップでこの単語を表示（1 kcal 減点）" : "タップでこの単語を表示（獲得カロリーが半分になります）"}
+                  title={
+                    perWord
+                      ? "タップでこの単語を表示（1 kcal 減点）"
+                      : hintZeroes
+                        ? "タップでこの単語を表示（この問題のカロリーは 0 になります）"
+                        : "タップでこの単語を表示（獲得カロリーが半分になります）"
+                  }
                   onClick={() => setRevealed((r) => [...r, i])}
                 >
                   {masked}
@@ -727,7 +736,9 @@ function TypingCard({
             1語 1 kcal：{revealed.length > 0 ? `${worth} − ${revealed.length} = ${Math.max(0, worth - revealed.length)}` : worth} kcal
           </span>
         ) : (
-          revealed.length > 0 && <span className="muted small">獲得カロリー ×1/{2 ** revealed.length}</span>
+          revealed.length > 0 && (
+            <span className="muted small">{hintZeroes ? "獲得カロリー 0" : `獲得カロリー ×1/${2 ** revealed.length}`}</span>
+          )
         )}
       </div>
     </form>

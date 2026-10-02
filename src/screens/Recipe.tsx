@@ -30,8 +30,17 @@ type Target = "learning" | "mastered";
 
 const NO_MEANING = "（辞書に意味がありません）";
 
-/** What one correct word pays, as shown to the learner (srs::recipe_half_kcal). */
+/**
+ * What one correct word pays, as shown to the learner (srs::recipe_quarter_kcal): the first time
+ * it is right in a day, and every time after that day.
+ */
 const REVIEW_KCAL: Record<RecipeReviewMode, string> = { choice: "0.5", typing: "1" };
+const REPEAT_KCAL: Record<RecipeReviewMode, string> = { choice: "0.25", typing: "0.5" };
+
+/** 2 quarters → "0.5" */
+function quartersText(quarters: number): string {
+  return String(quarters / 4);
+}
 const REVIEW_TITLE: Record<RecipeReviewMode, string> = { choice: "選択式", typing: "記入式" };
 const REVIEW_ICON: Record<RecipeReviewMode, ReactNode> = { choice: "👆", typing: <PencilIcon /> };
 
@@ -119,9 +128,9 @@ function startingWith(words: RecipeWord[], query: string): RecipeWord[] {
 
 /**
  * The notes under a right answer that say the same thing every time: how 習得 / まだ work, and
- * that a word pays only once a day. Each is shown the first time it comes up in a day.
+ * that a word right again the same day pays half. Each is shown the first time it comes up in a day.
  */
-type Hint = "decide" | "paid";
+type Hint = "decide" | "repeat";
 const HINT_STORAGE = "cq-recipe-hints";
 
 function localDay(): string {
@@ -268,7 +277,8 @@ function withGap(word: RecipeWord): string | null {
 
 /**
  * お菓子作りレシピ: the words the learner right-clicked while studying. They are reviewed by
- * picking the meaning (0.5 kcal) or writing the English (1 kcal); a word answered right becomes
+ * picking the meaning (0.5 kcal) or writing the English (1 kcal), half that for a word right again
+ * the same day; a word answered right becomes
  * learned when the learner says so (習得), and learned words can be cleared out of the list. Learned
  * words can be gone over again too, and one got wrong goes back into review.
  *
@@ -451,7 +461,7 @@ export default function Recipe({ onProgress, toast }: Props) {
           </div>
         </div>
         <p className="muted">
-          問題や解説の英単語を<b>右クリック</b>すると、ここに材料として集まります。復習は英単語の意味を4択で選ぶ「選択式」（1語 0.5 kcal）と、日本語から英語を書く「記入式」（1語 1 kcal）の2通り。正解したら「習得」か「まだ」を選び、習得した単語はレシピから片付けられます。習得済みの単語も下の「習得済み」タブから復習でき、間違えるか「まだ」を選ぶと復習中に戻ります。獲得したカロリーは今日のおやつ予算に入ります（1語につき1日1回、小数点以下は切り捨て）。
+          問題や解説の英単語を<b>右クリック</b>すると、ここに材料として集まります。復習は英単語の意味を4択で選ぶ「選択式」（1語 0.5 kcal）と、日本語から英語を書く「記入式」（1語 1 kcal）の2通り（同じ日に同じ単語を2回目以降に正解すると半分）。正解したら「習得」か「まだ」を選び、習得した単語はレシピから片付けられます。習得済みの単語も下の「習得済み」タブから復習でき、間違えるか「まだ」を選ぶと復習中に戻ります。獲得したカロリーは今日のおやつ予算に入ります（小数点以下は切り捨て）。
         </p>
         <div className="row recipe-actions">
           <span className="recipe-target">
@@ -695,12 +705,12 @@ interface Answered {
   correct: boolean;
   /** the option picked, or what was typed */
   given: string;
-  /** right and paid; a word pays once a day */
-  counted: boolean;
+  /** what it paid, in quarter kcal: full the first time the word is right today, half after */
+  quarters: number;
   /** right, and the first right answer today: explain 習得 / まだ */
   decideHint: boolean;
-  /** right but already paid today, the first time today: say why it is +0 kcal */
-  paidNote: boolean;
+  /** right again the same day, the first time this happens today: say why it paid half */
+  repeatNote: boolean;
 }
 
 function RecipeReview({
@@ -734,7 +744,7 @@ function RecipeReview({
   const [remembered, setRemembered] = useState<RecipeWord[]>([]);
   const [left, setLeft] = useState<RecipeWord[]>([]);
   const [earned, setEarned] = useState(0);
-  const [halfPending, setHalfPending] = useState(false);
+  const [fractionPending, setFractionPending] = useState(false);
   const [saving, setSaving] = useState(false);
   const [cleared, setCleared] = useState(false);
   const input = useRef<HTMLInputElement>(null);
@@ -793,13 +803,13 @@ function RecipeReview({
           setLeft((w) => [...w, current]);
         }
         setEarned((k) => k + r.kcalEarned);
-        setHalfPending(r.halfPending);
+        setFractionPending(r.fractionPending);
         setAnswered({
           correct,
           given,
-          counted: r.counted,
+          quarters: r.earnedQuarters,
           decideHint: correct && firstToday("decide"),
-          paidNote: correct && !r.counted && firstToday("paid"),
+          repeatNote: correct && r.repeat && firstToday("repeat"),
         });
         if (r.kcalEarned > 0) onProgress();
         if (mode === "typing" && current.kind !== "usage") window.setTimeout(() => say(current.word), 380);
@@ -883,9 +893,9 @@ function RecipeReview({
             おやつ予算 <b>+{earned}</b> kcal
           </span>
         </div>
-        {halfPending && (
+        {fractionPending && (
           <p className="muted small">
-            端数の 0.5 kcal は、今日のうちに次の 0.5 kcal と合わせて 1 kcal になります（日付が変わると切り捨て）。
+            1 kcal に満たない端数は、今日のうちに次の正解と合わせて 1 kcal になります（日付が変わると切り捨て）。
           </p>
         )}
         {left.length > 0 && (
@@ -940,7 +950,9 @@ function RecipeReview({
       <div className="section-head">
         <h2>
           {REVIEW_ICON[mode]} {REVIEW_TITLE[mode]} {again && <span className="pill mastered">習得済み</span>}{" "}
-          <span className="pill">1語 {REVIEW_KCAL[mode]} kcal</span>
+          <span className="pill" title={`同じ日に同じ単語を2回目以降に正解すると ${REPEAT_KCAL[mode]} kcal`}>
+            1語 {REVIEW_KCAL[mode]} kcal
+          </span>
         </h2>
         <div className="study-progress">
           {idx + 1} / {queue.length}
@@ -1031,7 +1043,7 @@ function RecipeReview({
         <div className={"feedback " + (answered.correct ? "ok" : "ng")}>
           <div className="feedback-main">
             <div className="feedback-title">{answered.correct ? "正解！ サクサク🍪" : "ざんねん…"}</div>
-            <div className="feedback-kcal">{answered.counted ? `+${REVIEW_KCAL[mode]} kcal` : "+0 kcal"}</div>
+            <div className="feedback-kcal">+{quartersText(answered.quarters)} kcal</div>
           </div>
           <div className="feedback-detail">
             {mode === "typing" && !answered.correct && answered.given && (
@@ -1051,7 +1063,7 @@ function RecipeReview({
             {notes?.word === current.word && notes.notes && (
               <WordNotesPanel notes={notes.notes} word={current.word} meaning={current.meaning} dict={dict} gloss />
             )}
-            {(answered.correct ? answered.decideHint || answered.paidNote : true) && (
+            {(answered.correct ? answered.decideHint || answered.repeatNote : true) && (
               <div className="muted">
                 {answered.correct
                   ? [
@@ -1059,7 +1071,8 @@ function RecipeReview({
                         (again
                           ? "まだ覚えているなら「習得」、自信がなければ「まだ」で復習中に戻します。"
                           : "覚えたなら「習得」で習得済みに。なんとなく当たっただけなら「まだ」で復習中に残します。"),
-                      answered.paidNote && "この単語のカロリーは今日もう受け取っています（1語につき1日1回）。",
+                      answered.repeatNote &&
+                        `この単語は今日2回目以降の正解なので、カロリーは半分（${REPEAT_KCAL[mode]} kcal）です。`,
                     ]
                       .filter(Boolean)
                       .join(" ")
