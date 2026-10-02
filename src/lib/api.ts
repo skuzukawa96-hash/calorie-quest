@@ -15,6 +15,7 @@ import type {
   RecipeAddResult,
   RecipeReviewMode,
   RecipeReviewResult,
+  RecipeTab,
   RecipeWord,
   RecipeWordInput,
   RedeemResult,
@@ -81,9 +82,13 @@ export const api = {
   // お菓子作りレシピ (the learner's word list)
   listRecipeWords: () => call<RecipeWord[]>("list_recipe_words"),
   addRecipeWord: (entry: RecipeWordInput) => call<RecipeAddResult>("add_recipe_word", { entry }),
-  reviewRecipeWord: (id: number, remembered: boolean, mode: RecipeReviewMode) =>
-    call<RecipeReviewResult>("review_recipe_word", { id, remembered, mode }),
+  reviewRecipeWord: (id: number, remembered: boolean, mode: RecipeReviewMode, target: RecipeTab) =>
+    call<RecipeReviewResult>("review_recipe_word", { id, remembered, mode, target }),
+  /** ✓ 覚えた (true) or 復習に戻す (false); either way the word leaves 除外中 */
   setRecipeMastered: (id: number, mastered: boolean) => call<RecipeWord>("set_recipe_mastered", { id, mastered }),
+  /** × outside 除外中: the words wait in 除外中 */
+  excludeRecipeWords: (ids: number[]) => call<number>("exclude_recipe_words", { ids }),
+  /** × in 除外中: deleted for good */
   deleteRecipeWords: (ids: number[]) => call<number>("delete_recipe_words", { ids }),
   /** the meanings of every pattern of 用法: wrong options for a pattern saved to the recipe */
   getUsageMeanings: () => call<string[]>("get_usage_meanings"),

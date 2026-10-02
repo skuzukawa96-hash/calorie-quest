@@ -485,8 +485,13 @@ pub struct RecipeWord {
     pub added_at: String,
     pub reviews: i64,
     pub last_reviewed_at: Option<String>,
-    /// Set once the learner has marked the word as learned; such words may be cleared out.
+    /// Set once the word is learned: answered right in a review of すべて / 復習中, or marked so.
     pub mastered_at: Option<String>,
+    /// how many times it was answered wrong in a review
+    pub misses: i64,
+    /// Set when the word was taken off the list (×): it waits in 除外中, apart from すべて, until
+    /// it is put back or deleted for good.
+    pub excluded_at: Option<String>,
     /// noun / verb / adjective / adverb / idiom (`db::recipe_pos`), or usage for a pattern, for
     /// sorting and filtering
     pub pos: String,
@@ -521,6 +526,8 @@ pub enum RecipeAddStatus {
     Exists,
     /// Was marked learned, and the learner reached for it again, so it is back in review.
     Restored,
+    /// Was in 除外中, and the learner reached for it again, so it is back in review.
+    Unexcluded,
 }
 
 #[derive(Debug, Serialize)]

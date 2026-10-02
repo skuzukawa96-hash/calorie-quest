@@ -18,6 +18,7 @@ import {
   type RecipePos,
   type RecipeReviewMode,
   type RecipeReviewResult,
+  type RecipeTab,
   type RecipeWord,
   type WordNotes,
 } from "../types";
@@ -30,9 +31,9 @@ interface Props {
   toast: (msg: string) => void;
 }
 
-type Filter = "all" | "learning" | "mastered";
-/** which words a review goes over: those still being learned, or those already learned */
-type Target = "learning" | "mastered";
+/** すべて (every word not taken off), 復習中, 習得済み, 除外中 (taken off with ×) */
+const TAB_LABEL: Record<RecipeTab, string> = { all: "すべて", learning: "復習中", mastered: "習得済み", excluded: "除外中" };
+const TABS: RecipeTab[] = ["all", "learning", "mastered", "excluded"];
 
 const NO_MEANING = "（辞書に意味がありません）";
 
@@ -67,6 +68,35 @@ function stalestFirst(words: RecipeWord[]): RecipeWord[] {
   return shuffled(words).sort((a, b) => day(a).localeCompare(day(b)));
 }
 
+/**
+ * The order a review of `tab` asks its words in: learned ones longest unseen first, the rest
+ * shuffled. 間違いやすい語を優先 puts the words missed most often first, keeping that order among
+ * words missed as often.
+ */
+function reviewQueue(words: RecipeWord[], tab: RecipeTab, missedFirst: boolean): RecipeWord[] {
+  const base = tab === "mastered" ? stalestFirst(words) : shuffled(words);
+  return missedFirst ? base.sort((a, b) => b.misses - a.misses) : base;
+}
+
+/** 間違いやすい語を優先, as last left. */
+const PRIORITY_STORAGE = "cq-recipe-priority";
+
+function loadPriority(): boolean {
+  try {
+    return localStorage.getItem(PRIORITY_STORAGE) === "on";
+  } catch {
+    return false;
+  }
+}
+
+function savePriority(on: boolean) {
+  try {
+    localStorage.setItem(PRIORITY_STORAGE, on ? "on" : "off");
+  } catch {
+    /* ignore */
+  }
+}
+
 /** The form that was right-clicked, when it differs from the headword ("heard" for hear). */
 function shownForm(w: RecipeWord): string | null {
   return w.form && w.form.toLowerCase() !== w.word.toLowerCase() ? w.form : null;
@@ -74,9 +104,9 @@ function shownForm(w: RecipeWord): string | null {
 
 /* ---------- the list: search, order, parts of speech ---------- */
 
-/** abc順 or 追加日順, one at a time; clicking the one in use turns it around. */
+/** abc順, 追加日順 or 間違い順, one at a time; clicking the one in use turns it around. */
 interface Order {
-  key: "added" | "abc";
+  key: "added" | "abc" | "misses";
   reverse: boolean;
 }
 /** 品詞順: off, every part of speech in turn (名詞 → 動詞 → 形容詞 → 副詞 → 慣用句), or only one. */
@@ -85,6 +115,7 @@ type PosView = "off" | "grouped" | RecipePos;
 const ORDERS: Array<{ key: Order["key"]; label: string; dirs: [string, string] }> = [
   { key: "abc", label: "abc順", dirs: ["A→Z", "Z→A"] },
   { key: "added", label: "追加日順", dirs: ["新→古", "古→新"] },
+  { key: "misses", label: "間違い順", dirs: ["多→少", "少→多"] },
 ];
 const LIST_STORAGE = "cq-recipe-order";
 
@@ -92,7 +123,7 @@ const LIST_STORAGE = "cq-recipe-order";
 function loadListView(): { order: Order; grouped: boolean } {
   try {
     const v = JSON.parse(localStorage.getItem(LIST_STORAGE) ?? "null");
-    if (v && (v.key === "added" || v.key === "abc") && typeof v.reverse === "boolean") {
+    if (v && (v.key === "added" || v.key === "abc" || v.key === "misses") && typeof v.reverse === "boolean") {
       return { order: { key: v.key, reverse: v.reverse }, grouped: v.grouped === true };
     }
   } catch {
@@ -111,11 +142,15 @@ function saveListView(order: Order, grouped: boolean) {
 
 const abc = new Intl.Collator("en", { sensitivity: "base", numeric: true });
 
-/** Newest first or A→Z (turned around by `reverse`), within the parts of speech when `byPos`. */
+/**
+ * Newest first, A→Z or missed most first (turned around by `reverse`), within the parts of speech
+ * when `byPos`. Words missed as often go newest first.
+ */
 function ordered(words: RecipeWord[], { key, reverse }: Order, byPos: boolean): RecipeWord[] {
   const sign = reverse ? -1 : 1;
+  const newest = (a: RecipeWord, b: RecipeWord) => b.addedAt.localeCompare(a.addedAt) || b.id - a.id;
   const within = (a: RecipeWord, b: RecipeWord) =>
-    key === "abc" ? abc.compare(a.word, b.word) || a.id - b.id : b.addedAt.localeCompare(a.addedAt) || b.id - a.id;
+    key === "abc" ? abc.compare(a.word, b.word) || a.id - b.id : key === "misses" ? b.misses - a.misses || newest(a, b) : newest(a, b);
   return words
     .slice()
     .sort((a, b) => (byPos ? RECIPE_POS.indexOf(a.pos) - RECIPE_POS.indexOf(b.pos) : 0) || sign * within(a, b));
@@ -130,10 +165,10 @@ function startingWith(words: RecipeWord[], query: string): RecipeWord[] {
 /* ---------- hints shown once a day ---------- */
 
 /**
- * The notes under a right answer that say the same thing every time: how 習得 / まだ work, and
- * that a word right again the same day pays half. Each is shown the first time it comes up in a day.
+ * A note under a right answer that says the same thing every time: a word right again the same day
+ * pays half. It is shown the first time it comes up in a day.
  */
-type Hint = "decide" | "repeat";
+type Hint = "repeat";
 const HINT_STORAGE = "cq-recipe-hints";
 
 function localDay(): string {
@@ -279,11 +314,12 @@ function withGap(word: RecipeWord): string | null {
 }
 
 /**
- * お菓子作りレシピ: the words the learner right-clicked while studying. They are reviewed by
- * picking the meaning (0.5 kcal) or writing the English (1 kcal), half that for a word right again
- * the same day; a word answered right becomes
- * learned when the learner says so (習得), and learned words can be cleared out of the list. Learned
- * words can be gone over again too, and one got wrong goes back into review.
+ * お菓子作りレシピ: the words the learner right-clicked while studying, in four tabs: すべて (every
+ * word not taken off), 復習中, 習得済み and 除外中 (taken off with ×; × there deletes for good). They
+ * are reviewed by picking the meaning (0.5 kcal) or writing the English (1 kcal), half that for a
+ * word right again the same day, from the tab on show: right in すべて / 復習中 makes a word learned,
+ * wrong in 習得済み / 除外中 puts it back into review (recipe::review). Every miss is counted, for
+ * the 間違い順 order and for 間違いやすい語を優先.
  *
  * The list shows a word and its meaning on one line and opens to its example and dates on a
  * click; it can be narrowed by the start of the word and put in abc or added order, by part of
@@ -294,8 +330,9 @@ export default function Recipe({ playMode, onProgress, toast }: Props) {
   const [dict, setDict] = useState<Dictionary | null>(null);
   /** the meanings of every pattern of 用法, the wrong options for a pattern in review */
   const [usagePool, setUsagePool] = useState<string[]>([]);
-  const [filter, setFilter] = useState<Filter>("all");
-  const [reviewing, setReviewing] = useState<{ target: Target; mode: RecipeReviewMode; queue: RecipeWord[] } | null>(null);
+  const [filter, setFilter] = useState<RecipeTab>("all");
+  const [reviewing, setReviewing] = useState<{ target: RecipeTab; mode: RecipeReviewMode; queue: RecipeWord[] } | null>(null);
+  const [missedFirst, setMissedFirst] = useState(loadPriority);
   /** each round of review starts from a fresh component */
   const [round, setRound] = useState(0);
   const [confirmClear, setConfirmClear] = useState(false);
@@ -308,6 +345,7 @@ export default function Recipe({ playMode, onProgress, toast }: Props) {
   const [open, setOpen] = useState<ReadonlySet<number>>(() => new Set());
 
   useEffect(() => saveListView(order, posView !== "off"), [order, posView]);
+  useEffect(() => savePriority(missedFirst), [missedFirst]);
 
   // The part-of-speech menu closes on a click elsewhere or Escape.
   useEffect(() => {
@@ -363,13 +401,14 @@ export default function Recipe({ playMode, onProgress, toast }: Props) {
     );
   }
 
-  const learning = words.filter((w) => !w.masteredAt);
-  const mastered = words.filter((w) => w.masteredAt);
-  // Both kinds of review ask about the meaning, so a word without one cannot be quizzed.
-  const quizzable: Record<Target, RecipeWord[]> = {
-    learning: learning.filter((w) => w.meaning),
-    mastered: mastered.filter((w) => w.meaning),
+  const inTab: Record<RecipeTab, RecipeWord[]> = {
+    all: words.filter((w) => !w.excludedAt),
+    learning: words.filter((w) => !w.excludedAt && !w.masteredAt),
+    mastered: words.filter((w) => !w.excludedAt && w.masteredAt),
+    excluded: words.filter((w) => w.excludedAt),
   };
+  // Both kinds of review ask about the meaning, so a word without one cannot be quizzed.
+  const quizzable = (tab: RecipeTab) => inTab[tab].filter((w) => w.meaning);
 
   if (reviewing) {
     return (
@@ -385,8 +424,9 @@ export default function Recipe({ playMode, onProgress, toast }: Props) {
           playMode={playMode}
           onAgain={(left) => {
             setRound((r) => r + 1);
-            // Missed words are back in review now, even those that had been learned.
-            setReviewing({ target: "learning", mode: reviewing.mode, queue: shuffled(left) });
+            // Words missed in 習得済み / 除外中 are back in review now; the others are where they were.
+            const target = reviewing.target === "mastered" || reviewing.target === "excluded" ? "learning" : reviewing.target;
+            setReviewing({ target, mode: reviewing.mode, queue: reviewQueue(left, target, missedFirst) });
           }}
           onDone={() => {
             stopSpeaking();
@@ -400,7 +440,7 @@ export default function Recipe({ playMode, onProgress, toast }: Props) {
     );
   }
 
-  const shown = filter === "learning" ? learning : filter === "mastered" ? mastered : words;
+  const shown = inTab[filter];
   const found = startingWith(shown, query);
   const onlyPos = posView !== "off" && posView !== "grouped" ? posView : null;
   const listed = ordered(onlyPos ? found.filter((w) => w.pos === onlyPos) : found, order, posView === "grouped");
@@ -431,20 +471,19 @@ export default function Recipe({ playMode, onProgress, toast }: Props) {
       }
       return next;
     });
-  // The review buttons follow the list's tab: 習得済み goes over the learned words, the others
-  // over the words still in review.
-  const target: Target = filter === "mastered" ? "mastered" : "learning";
-  const start = (target: Target, mode: RecipeReviewMode) => {
-    const pool = quizzable[target];
+  // The review buttons go over the words of the tab on show.
+  const pool = quizzable(filter);
+  const start = (mode: RecipeReviewMode) => {
     setRound((r) => r + 1);
-    setReviewing({ target, mode, queue: target === "mastered" ? stalestFirst(pool) : shuffled(pool) });
+    setReviewing({ target: filter, mode, queue: reviewQueue(pool, filter, missedFirst) });
   };
 
+  const mastered = inTab.mastered;
   const clearMastered = () =>
     run(async () => {
-      const n = await api.deleteRecipeWords(mastered.map((w) => w.id));
+      const n = await api.excludeRecipeWords(mastered.map((w) => w.id));
       setConfirmClear(false);
-      toast(`🧁 習得済みの${n}語をレシピから片付けました`);
+      toast(`🧁 習得済みの${n}語を除外中に移しました`);
     });
 
   return (
@@ -454,40 +493,55 @@ export default function Recipe({ playMode, onProgress, toast }: Props) {
           <h2>🧁 お菓子作りレシピ</h2>
           <div className="recipe-counts">
             <span>
-              材料 <b>{words.length}</b>語
+              材料 <b>{inTab.all.length}</b>語
             </span>
             <span>
-              復習中 <b>{learning.length}</b>
+              復習中 <b>{inTab.learning.length}</b>
             </span>
             <span className="positive">
               習得済み <b>{mastered.length}</b>
             </span>
+            {inTab.excluded.length > 0 && (
+              <span className="negative">
+                除外中 <b>{inTab.excluded.length}</b>
+              </span>
+            )}
           </div>
         </div>
         <p className="muted">
-          問題や解説の英単語を<b>右クリック</b>すると、ここに材料として集まります。復習は英単語の意味を4択で選ぶ「選択式」（1語 0.5 kcal）と、日本語から英語を書く「記入式」（1語 1 kcal）の2通り（同じ日に同じ単語を2回目以降に正解すると半分）。正解したら「習得」か「まだ」を選び、習得した単語はレシピから片付けられます。習得済みの単語も下の「習得済み」タブから復習でき、間違えるか「まだ」を選ぶと復習中に戻ります。獲得したカロリーは今日のおやつ予算に入ります（小数点以下は切り捨て）。
+          問題や解説の英単語を<b>右クリック</b>すると、ここに材料として集まります。復習は英単語の意味を4択で選ぶ「選択式」（1語 0.5 kcal）と、日本語から英語を書く「記入式」（1語 1 kcal）の2通り（同じ日に同じ単語を2回目以降に正解すると半分）で、下で選んでいるタブの単語から出題されます。「すべて」「復習中」で正解した単語は習得済みに移り、「習得済み」「除外中」で間違えた単語は復習中に戻ります。× で外した単語は「除外中」に入り、そこで × を押すと完全に削除されます。獲得したカロリーは今日のおやつ予算に入ります（小数点以下は切り捨て）。
         </p>
         <div className="row recipe-actions">
           <span className="recipe-target">
-            {target === "learning" ? "復習中" : "習得済み"} <b>{quizzable[target].length}</b>語
+            {TAB_LABEL[filter]} <b>{pool.length}</b>語
           </span>
           {(["choice", "typing"] as const).map((mode) => (
             <button
               key={mode}
               className={"btn recipe-mode-btn " + mode}
-              disabled={busy || quizzable[target].length === 0}
-              onClick={() => start(target, mode)}
+              disabled={busy || pool.length === 0}
+              onClick={() => start(mode)}
             >
               {REVIEW_ICON[mode]} {REVIEW_TITLE[mode]}
             </button>
           ))}
-          {target === "mastered" &&
+          <button
+            type="button"
+            className={"recipe-priority" + (missedFirst ? " on" : "")}
+            aria-pressed={missedFirst}
+            title="オンにすると、復習で間違えた回数が多い単語から出題します"
+            onClick={() => setMissedFirst((on) => !on)}
+          >
+            <span className="recipe-priority-switch" aria-hidden="true" />
+            間違いやすい語を優先
+          </button>
+          {filter === "mastered" &&
             mastered.length > 0 &&
             (confirmClear ? (
               <>
-                <span>習得済みの{mastered.length}語をレシピから削除します。</span>
+                <span>習得済みの{mastered.length}語を除外中に移します。</span>
                 <button className="btn btn-danger" disabled={busy} onClick={() => void clearMastered()}>
-                  削除する
+                  移す
                 </button>
                 <button className="btn-link" onClick={() => setConfirmClear(false)}>
                   やめる
@@ -499,9 +553,10 @@ export default function Recipe({ playMode, onProgress, toast }: Props) {
               </button>
             ))}
         </div>
-        {target === "learning" && learning.length > quizzable.learning.length && (
+        {inTab[filter].length > pool.length && (
           <p className="muted small">
-            辞書に意味のない{learning.length - quizzable.learning.length}語は復習に出ません（一覧で単語を開き「✓ 覚えた」を押すと習得済みにできます）。
+            辞書に意味のない{inTab[filter].length - pool.length}語は復習に出ません
+            {filter === "learning" && "（一覧で単語を開き「✓ 覚えた」を押すと習得済みにできます）"}。
           </p>
         )}
       </section>
@@ -517,18 +572,20 @@ export default function Recipe({ playMode, onProgress, toast }: Props) {
           <>
             <div className="recipe-toolbar">
               <div className="segmented recipe-filter">
-                {(
-                  [
-                    ["all", `すべて ${words.length}`],
-                    ["learning", `復習中 ${learning.length}`],
-                    ["mastered", `習得済み ${mastered.length}`],
-                  ] as const
-                ).map(([id, label]) => (
-                  <button key={id} className={filter === id ? "active" : ""} onClick={() => setFilter(id)}>
-                    {label}
+                {TABS.filter((tab) => tab !== "excluded").map((tab) => (
+                  <button key={tab} className={filter === tab ? "active" : ""} onClick={() => setFilter(tab)}>
+                    {TAB_LABEL[tab]} {inTab[tab].length}
                   </button>
                 ))}
               </div>
+              {/* 除外中 stands apart from the three, in light red: words taken off the list. */}
+              <button
+                className={"recipe-excluded-tab" + (filter === "excluded" ? " active" : "")}
+                title="× で外した単語。ここで × を押すと完全に削除、「復習に戻す」で復習中に戻ります"
+                onClick={() => setFilter("excluded")}
+              >
+                除外中 {inTab.excluded.length}
+              </button>
               <button className="btn-small recipe-open-all" disabled={listed.length === 0} onClick={toggleAll}>
                 {allOpen ? "一括で詳細を閉じる" : "一括で詳細を開く"}
               </button>
@@ -595,7 +652,11 @@ export default function Recipe({ playMode, onProgress, toast }: Props) {
                 {shown.length === 0
                   ? filter === "mastered"
                     ? "習得済みの単語はまだありません。"
-                    : "復習中の単語はありません。"
+                    : filter === "excluded"
+                      ? "除外中の単語はありません。単語を開いて × を押すと、ここに入ります。"
+                      : filter === "learning"
+                        ? "復習中の単語はありません。"
+                        : "単語はありません。"
                   : found.length === 0
                     ? `「${query.trim()}」で始まる単語はありません。`
                     : `${RECIPE_POS_LABEL[onlyPos ?? "noun"]}の単語はありません。`}
@@ -611,7 +672,12 @@ export default function Recipe({ playMode, onProgress, toast }: Props) {
                         {RECIPE_POS_LABEL[w.pos]} <span>{posCount(w.pos)}</span>
                       </li>
                     ),
-                    <li key={w.id} className={"recipe-item" + (w.masteredAt ? " mastered" : "") + (isOpen ? " open" : "")}>
+                    <li
+                      key={w.id}
+                      className={
+                        "recipe-item" + (w.excludedAt ? " excluded" : w.masteredAt ? " mastered" : "") + (isOpen ? " open" : "")
+                      }
+                    >
                       <div
                         className="recipe-item-head"
                         role="button"
@@ -643,7 +709,13 @@ export default function Recipe({ playMode, onProgress, toast }: Props) {
                           </button>
                         )}
                         <span className={"recipe-meaning" + (w.meaning ? "" : " muted")}>{w.meaning || NO_MEANING}</span>
-                        {w.masteredAt && (
+                        {/* Sorted by 間違い順, the count the order goes by. */}
+                        {order.key === "misses" && w.misses > 0 && (
+                          <span className="recipe-misses" title="復習で間違えた回数">
+                            間違い {w.misses}回
+                          </span>
+                        )}
+                        {w.masteredAt && !w.excludedAt && (
                           <span className="recipe-check" title="習得済み" aria-label="習得済み">
                             ✓
                           </span>
@@ -665,29 +737,60 @@ export default function Recipe({ playMode, onProgress, toast }: Props) {
                               {RECIPE_POS_LABEL[w.pos]}
                               {shownForm(w) && `・「${shownForm(w)}」から登録`}・{stamp(w.addedAt)} に追加
                               {w.reviews > 0 && `・復習 ${w.reviews}回`}
-                              {w.masteredAt && `・${stamp(w.masteredAt)} に習得`}
+                              {w.misses > 0 && `・間違い ${w.misses}回`}
+                              {w.masteredAt && !w.excludedAt && `・${stamp(w.masteredAt)} に習得`}
+                              {w.excludedAt && `・${stamp(w.excludedAt)} に除外`}
                             </span>
-                            <button
-                              className={"btn-small " + (w.masteredAt ? "" : "eat")}
-                              disabled={busy}
-                              onClick={() =>
-                                run(async () => {
-                                  await api.setRecipeMastered(w.id, !w.masteredAt);
-                                })
-                              }
-                            >
-                              {w.masteredAt ? "復習に戻す" : "✓ 覚えた"}
-                            </button>
-                            <DeleteButton
-                              label="レシピから削除"
-                              disabled={busy}
-                              onClick={() =>
-                                run(async () => {
-                                  await api.deleteRecipeWords([w.id]);
-                                  toast(`「${w.word}」をレシピから削除しました`);
-                                })
-                              }
-                            />
+                            {w.excludedAt ? (
+                              <>
+                                <button
+                                  className="btn-small"
+                                  disabled={busy}
+                                  onClick={() =>
+                                    run(async () => {
+                                      await api.setRecipeMastered(w.id, false);
+                                      toast(`「${w.word}」を復習中に戻しました`);
+                                    })
+                                  }
+                                >
+                                  復習に戻す
+                                </button>
+                                <DeleteButton
+                                  label="レシピから完全に削除"
+                                  disabled={busy}
+                                  onClick={() =>
+                                    run(async () => {
+                                      await api.deleteRecipeWords([w.id]);
+                                      toast(`「${w.word}」をレシピから削除しました`);
+                                    })
+                                  }
+                                />
+                              </>
+                            ) : (
+                              <>
+                                <button
+                                  className={"btn-small " + (w.masteredAt ? "" : "eat")}
+                                  disabled={busy}
+                                  onClick={() =>
+                                    run(async () => {
+                                      await api.setRecipeMastered(w.id, !w.masteredAt);
+                                    })
+                                  }
+                                >
+                                  {w.masteredAt ? "復習に戻す" : "✓ 覚えた"}
+                                </button>
+                                <DeleteButton
+                                  label="レシピから除外"
+                                  disabled={busy}
+                                  onClick={() =>
+                                    run(async () => {
+                                      await api.excludeRecipeWords([w.id]);
+                                      toast(`「${w.word}」を除外中に移しました`);
+                                    })
+                                  }
+                                />
+                              </>
+                            )}
                           </div>
                         </div>
                       )}
@@ -711,10 +814,21 @@ interface Answered {
   given: string;
   /** what it paid after the play mode, in kcal: full the first time the word is right today, half after */
   points: number;
-  /** right, and the first right answer today: explain 習得 / まだ */
-  decideHint: boolean;
+  /** where the answer moved the word, or that it stayed */
+  moved: string;
   /** right again the same day, the first time this happens today: say why it paid half */
   repeatNote: boolean;
+}
+
+/** Where an answer left a word, from its state `before` and `after` (recipe::review). */
+function movedNote(correct: boolean, before: RecipeWord, after: RecipeWord): string {
+  if (correct) {
+    if (!before.masteredAt && after.masteredAt) return "習得済みに移しました。";
+    return after.excludedAt ? "除外中のままです。" : "習得済みのままです。";
+  }
+  const retry = "最後にもう一度挑戦できます。";
+  if ((before.masteredAt || before.excludedAt) && !after.masteredAt && !after.excludedAt) return `復習中に戻しました。${retry}`;
+  return after.masteredAt ? `習得済みのままです。${retry}` : `復習中のまま残ります。${retry}`;
 }
 
 function RecipeReview({
@@ -730,8 +844,9 @@ function RecipeReview({
   onProgress,
   toast,
 }: {
-  /** learned words: right keeps them learned, wrong puts them back into review */
-  target: Target;
+  /** the tab the words come from: すべて / 復習中 move right answers to 習得済み, 習得済み / 除外中
+   * move wrong ones back to 復習中 */
+  target: RecipeTab;
   mode: RecipeReviewMode;
   queue: RecipeWord[];
   /** the whole recipe, whose meanings serve as wrong options */
@@ -800,10 +915,10 @@ function RecipeReview({
       if (!current || saving || answered) return;
       setSaving(true);
       try {
-        const r: RecipeReviewResult = await api.reviewRecipeWord(current.id, correct, mode);
+        const r: RecipeReviewResult = await api.reviewRecipeWord(current.id, correct, mode, target);
         if (correct) {
-          // Right is not yet learned: the learner says so with 習得 / まだ (see `decide`).
           playCrunch();
+          setRemembered((w) => [...w, current]);
         } else {
           playWrong();
           setLeft((w) => [...w, current]);
@@ -814,7 +929,7 @@ function RecipeReview({
           correct,
           given,
           points: r.points,
-          decideHint: correct && firstToday("decide"),
+          moved: movedNote(correct, current, r.entry),
           repeatNote: correct && r.repeat && firstToday("repeat"),
         });
         if (r.kcalEarned > 0) onProgress();
@@ -825,7 +940,7 @@ function RecipeReview({
         setSaving(false);
       }
     },
-    [current, saving, answered, mode, onProgress, toast],
+    [current, saving, answered, mode, target, onProgress, toast],
   );
 
   const next = useCallback(() => {
@@ -835,31 +950,10 @@ function RecipeReview({
     setIdx((i) => i + 1);
   }, []);
 
-  // After a right answer: 習得 marks the word learned, まだ keeps it in review (or puts a learned
-  // word back), so a lucky guess does not make a word learned.
-  const decide = useCallback(
-    async (learned: boolean) => {
-      if (!current || !answered?.correct || saving) return;
-      setSaving(true);
-      try {
-        await api.setRecipeMastered(current.id, learned);
-        if (learned) setRemembered((w) => [...w, current]);
-        else setLeft((w) => [...w, current]);
-        next();
-      } catch (e) {
-        toast(String(e));
-      } finally {
-        setSaving(false);
-      }
-    },
-    [current, answered, saving, next, toast],
-  );
-
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (finished) return;
-      // A right answer waits for 習得 / まだ; only a wrong one moves on with Enter.
-      if (answered && !answered.correct && (e.key === "Enter" || e.key === " ")) {
+      if (answered && (e.key === "Enter" || e.key === " ")) {
         e.preventDefault();
         next();
       } else if (!answered && mode === "choice") {
@@ -871,29 +965,34 @@ function RecipeReview({
     return () => window.removeEventListener("keydown", handler);
   }, [finished, answered, mode, options, current, answer, next]);
 
-  const again = target === "mastered";
   if (finished) {
     const clearRemembered = async () => {
       setSaving(true);
       try {
-        const n = await api.deleteRecipeWords(remembered.map((w) => w.id));
+        const n = await api.excludeRecipeWords(remembered.map((w) => w.id));
         setCleared(true);
-        toast(`🧁 ${again ? "覚えていた" : "覚えた"}${n}語をレシピから片付けました`);
+        toast(`🧁 正解した${n}語を除外中に移しました`);
       } catch (e) {
         toast(String(e));
       } finally {
         setSaving(false);
       }
     };
+    const summary =
+      target === "mastered"
+        ? "正解した単語は習得済みのまま、間違えた単語は復習中に戻しました。"
+        : target === "excluded"
+          ? "正解した単語は除外中のまま、間違えた単語は復習中に戻しました。"
+          : "正解した単語は習得済みになりました。間違えた単語はそのままです。";
     return (
       <section className="card recipe-review done">
         <h2>🧁 復習おしまい！</h2>
         <div className="recipe-counts big">
           <span className="positive">
-            {again ? "覚えていた" : "覚えた"} <b>{remembered.length}</b>語
+            正解 <b>{remembered.length}</b>語
           </span>
           <span>
-            {again ? "忘れていた" : "まだ"} <b>{left.length}</b>語
+            間違い <b>{left.length}</b>語
           </span>
           <span className="recipe-kcal">
             おやつ予算 <b>+{earned}</b> kcal
@@ -904,26 +1003,16 @@ function RecipeReview({
             1 kcal に満たない端数は、今日のうちに次の正解と合わせて 1 kcal になります（日付が変わると切り捨て）。
           </p>
         )}
-        {left.length > 0 && (
-          <p className="muted">
-            {again ? "忘れていた単語と「まだ」にした単語は復習中に戻しました。" : "間違えた単語と「まだ」にした単語は復習中に残ります。"}
-          </p>
-        )}
-        {remembered.length > 0 && (
-          <p className="muted">
-            {again ? "「習得」にした単語は習得済みのままです。" : "「習得」にした単語は習得済みになりました。"}
-            レシピに残しておくことも、片付けることもできます。
-          </p>
-        )}
+        <p className="muted">{summary}</p>
         <div className="row recipe-actions">
-          {remembered.length > 0 && !cleared && (
+          {remembered.length > 0 && !cleared && target !== "excluded" && (
             <button className="btn btn-primary" disabled={saving} onClick={() => void clearRemembered()}>
-              {again ? "覚えていた" : "覚えた"}{remembered.length}語をレシピから片付ける
+              正解した{remembered.length}語を除外中に移す
             </button>
           )}
           {left.length > 0 && (
             <button className="btn" disabled={saving} onClick={() => onAgain(left)}>
-              {again ? "忘れていた" : "まだの"}{left.length}語をもう一度
+              間違えた{left.length}語をもう一度
             </button>
           )}
           <button className="btn" onClick={onDone}>
@@ -955,7 +1044,7 @@ function RecipeReview({
     <section className="card recipe-review">
       <div className="section-head">
         <h2>
-          {REVIEW_ICON[mode]} {REVIEW_TITLE[mode]} {again && <span className="pill mastered">習得済み</span>}{" "}
+          {REVIEW_ICON[mode]} {REVIEW_TITLE[mode]} <span className={"pill recipe-tab-pill " + target}>{TAB_LABEL[target]}</span>{" "}
           <span className="pill" title={`同じ日に同じ単語を2回目以降に正解すると ${REPEAT_KCAL[mode]} kcal`}>
             1語 {REVIEW_KCAL[mode]} kcal
           </span>
@@ -1072,39 +1161,19 @@ function RecipeReview({
             {notes?.word === current.word && notes.notes && (
               <WordNotesPanel notes={notes.notes} word={current.word} meaning={current.meaning} dict={dict} gloss />
             )}
-            {(answered.correct ? answered.decideHint || answered.repeatNote : true) && (
-              <div className="muted">
-                {answered.correct
-                  ? [
-                      answered.decideHint &&
-                        (again
-                          ? "まだ覚えているなら「習得」、自信がなければ「まだ」で復習中に戻します。"
-                          : "覚えたなら「習得」で習得済みに。なんとなく当たっただけなら「まだ」で復習中に残します。"),
-                      answered.repeatNote &&
-                        `この単語は今日2回目以降の正解なので、カロリーは半分（${REPEAT_KCAL[mode]} kcal${playMode === "normal" ? "" : `、${PLAY_MODE_INFO[playMode].label} ×${PLAY_MODE_INFO[playMode].multiplier} の前`}）です。`,
-                    ]
-                      .filter(Boolean)
-                      .join(" ")
-                  : again
-                    ? "復習中に戻しました。最後にもう一度挑戦できます。"
-                    : "復習中のまま残ります。最後にもう一度挑戦できます。"}
-              </div>
-            )}
-          </div>
-          {answered.correct ? (
-            <div className="row decide-buttons">
-              <button className="btn decide-learned" disabled={saving} onClick={() => void decide(true)} autoFocus>
-                習得
-              </button>
-              <button className="btn decide-not-yet" disabled={saving} onClick={() => void decide(false)}>
-                まだ
-              </button>
+            <div className="muted">
+              {[
+                answered.moved,
+                answered.repeatNote &&
+                  `この単語は今日2回目以降の正解なので、カロリーは半分（${REPEAT_KCAL[mode]} kcal${playMode === "normal" ? "" : `、${PLAY_MODE_INFO[playMode].label} ×${PLAY_MODE_INFO[playMode].multiplier} の前`}）です。`,
+              ]
+                .filter(Boolean)
+                .join(" ")}
             </div>
-          ) : (
-            <button className="btn btn-primary" onClick={next} autoFocus>
-              {idx + 1 >= queue.length ? "結果を見る" : "次へ（Enter）"}
-            </button>
-          )}
+          </div>
+          <button className="btn btn-primary" onClick={next} autoFocus>
+            {idx + 1 >= queue.length ? "結果を見る" : "次へ（Enter）"}
+          </button>
         </div>
       )}
     </section>

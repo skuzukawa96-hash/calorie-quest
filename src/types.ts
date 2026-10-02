@@ -488,8 +488,12 @@ export interface RecipeWord {
   addedAt: string;
   reviews: number;
   lastReviewedAt?: string | null;
-  /** set once the word is marked learned; learned words can be cleared out */
+  /** set once the word is learned: right in a review of すべて / 復習中, or marked so */
   masteredAt?: string | null;
+  /** how many times it was answered wrong in a review */
+  misses: number;
+  /** set when it was taken off the list (×): it waits in 除外中, apart from すべて */
+  excludedAt?: string | null;
   /** its part of speech, or idiom (db::recipe_pos), or usage for a pattern, for sorting and filtering the list */
   pos: RecipePos;
   /** word (a word, phrase or idiom) / usage (a pattern saved from 用法, never read aloud) */
@@ -512,7 +516,7 @@ export type RecipeWordInput = Pick<RecipeWord, "word" | "meaning" | "form" | "ex
 };
 
 /** added: new entry / exists: already listed / restored: was learned, now back in review */
-export type RecipeAddStatus = "added" | "exists" | "restored";
+export type RecipeAddStatus = "added" | "exists" | "restored" | "unexcluded";
 
 export interface RecipeAddResult {
   status: RecipeAddStatus;
@@ -521,6 +525,12 @@ export interface RecipeAddResult {
 
 /** choice: pick the meaning of the English (0.5 kcal) / typing: write the English for the meaning (1 kcal) */
 export type RecipeReviewMode = "choice" | "typing";
+
+/**
+ * The tab a recipe review goes over: すべて (every word not taken off), 復習中, 習得済み or 除外中.
+ * It decides where an answer moves the word (recipe::review).
+ */
+export type RecipeTab = "all" | "learning" | "mastered" | "excluded";
 
 export interface RecipeReviewResult {
   entry: RecipeWord;

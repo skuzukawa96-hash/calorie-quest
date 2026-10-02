@@ -52,7 +52,9 @@ export default function RecipeProvider({ children }: { children: ReactNode }) {
             ? `🧁 ${w}をレシピに追加しました`
             : r.status === "restored"
               ? `🧁 ${w}を習得済みから復習に戻しました`
-              : `${w}はもうレシピに入っています`;
+              : r.status === "unexcluded"
+                ? `🧁 ${w}を除外中から復習に戻しました`
+                : `${w}はもうレシピに入っています`;
         if (r.status !== "exists") playPop();
         // Even a word already listed may have just gained its example sentence.
         recipeChanged();

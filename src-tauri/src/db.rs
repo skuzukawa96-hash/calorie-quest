@@ -258,7 +258,9 @@ CREATE TABLE IF NOT EXISTS recipe_words (
   last_reviewed_at TEXT,
   mastered_at TEXT,
   paid_on TEXT,
-  kind TEXT NOT NULL DEFAULT 'word'
+  kind TEXT NOT NULL DEFAULT 'word',
+  misses INTEGER NOT NULL DEFAULT 0,
+  excluded_at TEXT
 );
 -- 試験: one row per exam handed in, and the exam questions missed and not yet put right in its review.
 CREATE TABLE IF NOT EXISTS exam_attempts (
@@ -402,6 +404,9 @@ fn setup(conn: Connection) -> rusqlite::Result<Connection> {
     // レシピの単語がその日はじめて正解した日（同じ日の2回目からは半分を払う）。
     ensure_column(&conn, "recipe_words", "paid_on", "TEXT")?;
     ensure_column(&conn, "recipe_words", "kind", "TEXT NOT NULL DEFAULT 'word'")?;
+    // 復習で間違えた回数と、除外中（×で外した）になった日時。
+    ensure_column(&conn, "recipe_words", "misses", "INTEGER NOT NULL DEFAULT 0")?;
+    ensure_column(&conn, "recipe_words", "excluded_at", "TEXT")?;
     // A missed question comes back for review in the mode it was missed in (a phrase got wrong by
     // typing is reviewed by typing, not picked from four). Questions already waiting take the mode
     // of their latest miss from the answer log.

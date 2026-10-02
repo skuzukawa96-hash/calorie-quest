@@ -1669,7 +1669,7 @@ function mockDictionary(): Dictionary {
 /* ---------- お菓子作りレシピ (mirrors recipe.rs) ---------- */
 
 /** A recipe word as the mock keeps it; its part of speech is worked out when it is handed out. */
-type StoredRecipeWord = Omit<RecipeWord, "pos" | "kind"> & { kind?: RecipeKind };
+type StoredRecipeWord = Omit<RecipeWord, "pos" | "kind" | "misses"> & { kind?: RecipeKind; misses?: number };
 
 /** Mirrors db::pos_from_gloss: 走る a verb, 美しい an adjective, ゆっくりと an adverb, else a noun. */
 function posFromGloss(ja: string): PartOfSpeech {
@@ -1704,6 +1704,9 @@ function recipePos(word: string, meaning: string): RecipePos {
 const withPos = (w: StoredRecipeWord): RecipeWord => ({
   ...w,
   kind: w.kind ?? "word",
+  // Words saved before misses and 除外中 existed have neither.
+  misses: w.misses ?? 0,
+  excludedAt: w.excludedAt ?? null,
   // Mirrors recipe::row_to_word: a pattern is sorted as a pattern.
   pos: w.kind === "usage" ? "usage" : recipePos(w.word, w.meaning),
 });
@@ -1721,8 +1724,10 @@ function addRecipeWord(input: RecipeWordInput): RecipeAddResult {
   const example = input.example.trim();
   const found = state.recipe.find((w) => w.word.toLowerCase() === word.toLowerCase());
   if (found) {
-    const status = found.masteredAt ? "restored" : "exists";
+    // Mirrors recipe::add: a learned or taken-off word goes back into review.
+    const status = found.excludedAt ? "unexcluded" : found.masteredAt ? "restored" : "exists";
     found.masteredAt = null;
+    found.excludedAt = null;
     if (!found.example && example) {
       found.example = example;
       found.exampleJa = input.exampleJa.trim();
@@ -1742,6 +1747,8 @@ function addRecipeWord(input: RecipeWordInput): RecipeAddResult {
     reviews: 0,
     lastReviewedAt: null,
     masteredAt: null,
+    misses: 0,
+    excludedAt: null,
     kind: input.kind === "usage" ? "usage" : "word",
   };
   state.recipe.push(entry);
@@ -1935,15 +1942,25 @@ export async function mockInvoke<T>(cmd: string, args: Record<string, unknown>):
       // whole calories reach the budget.
       const full = args.mode === "choice" ? 2 : args.mode === "typing" ? 4 : 0;
       if (!full) throw new Error(`unknown review mode ${String(args.mode)}`);
+      const target = String(args.target);
+      if (!["all", "learning", "mastered", "excluded"].includes(target)) throw new Error(`unknown review target ${target}`);
       const w = recipeWord(Number(args.id));
       const now = nowTs();
-      // Right leaves it where it is (the learner marks it learned with 習得 / まだ, which is
-      // set_recipe_mastered); wrong puts it back into review.
+      // Mirrors recipe::review: in すべて / 復習中 right makes the word learned, in 習得済み /
+      // 除外中 wrong puts it back into review; a wrong answer is a miss anywhere.
       const repeat = state.recipePaid[w.id] === t;
       w.reviews += 1;
       w.lastReviewedAt = now;
-      if (!args.remembered) w.masteredAt = null;
-      else state.recipePaid[w.id] = t;
+      if (args.remembered) {
+        state.recipePaid[w.id] = t;
+        if (target === "all" || target === "learning") w.masteredAt = w.masteredAt ?? now;
+      } else {
+        w.misses = (w.misses ?? 0) + 1;
+        if (target === "mastered" || target === "excluded") {
+          w.masteredAt = null;
+          w.excludedAt = null;
+        }
+      }
       const quarters = args.remembered ? (repeat ? full / 2 : full) : 0;
       const paid = credit(t, quarters * 2);
       save();
@@ -1959,8 +1976,22 @@ export async function mockInvoke<T>(cmd: string, args: Record<string, unknown>):
     case "set_recipe_mastered": {
       const w = recipeWord(Number(args.id));
       w.masteredAt = args.mastered ? (w.masteredAt ?? nowTs()) : null;
+      w.excludedAt = null;
       save();
       return withPos(w) as T;
+    }
+    case "exclude_recipe_words": {
+      // Mirrors recipe::exclude.
+      const ids = new Set((args.ids as number[]).map(Number));
+      const now = nowTs();
+      let moved = 0;
+      for (const w of state.recipe) {
+        if (!ids.has(w.id)) continue;
+        w.excludedAt = w.excludedAt ?? now;
+        moved += 1;
+      }
+      save();
+      return moved as T;
     }
     case "get_usage_meanings":
       // Mirrors recipe::usage_meanings.

@@ -1142,19 +1142,92 @@ main {
 .related-word .usage + .usage {
   padding-top: 6px;
 }
-/* After a right answer in a recipe review: 習得 (green) or まだ (red) */
-.decide-buttons {
-  gap: 10px;
+/* 除外中: a tab of its own beside すべて / 復習中 / 習得済み, in light red */
+.recipe-excluded-tab {
+  border: 1px solid #f2c4c2;
+  background: var(--berry-bg);
+  color: var(--berry);
+  padding: 6px 14px;
+  border-radius: 999px;
+  font-size: 13px;
+  cursor: pointer;
 }
-.btn.decide-learned {
-  color: var(--mint);
-  border-color: #c6e3cf;
+.recipe-excluded-tab:hover {
+  border-color: var(--berry);
+}
+.recipe-excluded-tab.active {
+  background: #f7d3d1;
+  border-color: var(--berry);
+  color: #b33a36;
   font-weight: 700;
 }
-.btn.decide-not-yet {
+.recipe-item.excluded {
+  background: #fdf3f2;
+  border-color: #f2c4c2;
+}
+.recipe-item.excluded .recipe-word {
+  color: var(--choco-light);
+}
+/* Sorted by 間違い順: how often the word was missed */
+.recipe-misses {
+  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--berry);
+}
+/* The tab a review goes over, beside its title */
+.pill.recipe-tab-pill.mastered {
+  background: #fff;
+  color: var(--mint);
+  border: 1px solid #c6e3cf;
+}
+.pill.recipe-tab-pill.excluded {
+  background: var(--berry-bg);
+  color: var(--berry);
+}
+/* 間違いやすい語を優先: an on/off switch beside 選択式 / 記入式 */
+.recipe-priority {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--muted);
+  border-radius: 999px;
+  padding: 5px 12px 5px 6px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.recipe-priority.on {
   color: var(--berry);
   border-color: #f2c4c2;
-  font-weight: 700;
+  background: var(--berry-bg);
+  font-weight: 600;
+}
+.recipe-priority-switch {
+  position: relative;
+  width: 30px;
+  height: 17px;
+  border-radius: 999px;
+  background: var(--line);
+  transition: background 0.15s;
+}
+.recipe-priority-switch::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+  transition: transform 0.15s;
+}
+.recipe-priority.on .recipe-priority-switch {
+  background: var(--berry);
+}
+.recipe-priority.on .recipe-priority-switch::after {
+  transform: translateX(13px);
 }
 
 /* 文中の用法: one block per word of the sentence */
