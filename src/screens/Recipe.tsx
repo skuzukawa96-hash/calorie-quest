@@ -165,7 +165,8 @@ function startingWith(words: RecipeWord[], query: string): RecipeWord[] {
 /* ---------- hints shown once a day ---------- */
 
 /**
- * The notes under a right answer that say the same thing every time: how 習得 / まだ work, and
+ * The notes under a right answer that say the same thing every time: how 習得 / まだ work (すべて /
+ * 復習中), and
  * that a word right again the same day pays half. Each is shown the first time it comes up in a day.
  */
 type Hint = "decide" | "repeat";
@@ -317,8 +318,9 @@ function withGap(word: RecipeWord): string | null {
  * お菓子作りレシピ: the words the learner right-clicked while studying, in four tabs: すべて (every
  * word not taken off), 復習中, 習得済み and 除外中 (taken off with ×; × there deletes for good). They
  * are reviewed by picking the meaning (0.5 kcal) or writing the English (1 kcal), half that for a
- * word right again the same day, from the tab on show: right in すべて / 復習中 makes a word learned,
- * wrong in 習得済み / 除外中 puts it back into review (recipe::review). Every miss is counted, for
+ * word right again the same day, from the tab on show: right in すべて / 復習中 makes a word learned
+ * (or not, if the learner says まだ), right in 習得済み / 除外中 leaves it there, and wrong anywhere puts
+ * it back into review (recipe::review). Every miss is counted, for
  * the 間違い順 order and for 間違いやすい語を優先.
  *
  * The list shows a word and its meaning on one line and opens to its example and dates on a
@@ -509,7 +511,7 @@ export default function Recipe({ playMode, onProgress, toast }: Props) {
           </div>
         </div>
         <p className="muted">
-          問題や解説の英単語を<b>右クリック</b>すると、ここに材料として集まります。復習は英単語の意味を4択で選ぶ「選択式」（1語 0.5 kcal）と、日本語から英語を書く「記入式」（1語 1 kcal）の2通り（同じ日に同じ単語を2回目以降に正解すると半分）で、下で選んでいるタブの単語から出題されます。正解したら「習得」か「まだ」を選びます。「すべて」「復習中」では「習得」で習得済みに、「習得済み」「除外中」では「習得」でそのまま、「まだ」を選ぶか間違えると復習中に戻ります。× で外した単語は「除外中」に入り、そこで × を押すと完全に削除されます。獲得したカロリーは今日のおやつ予算に入ります（小数点以下は切り捨て）。
+          問題や解説の英単語を<b>右クリック</b>すると、ここに材料として集まります。復習は英単語の意味を4択で選ぶ「選択式」（1語 0.5 kcal）と、日本語から英語を書く「記入式」（1語 1 kcal）の2通り（同じ日に同じ単語を2回目以降に正解すると半分）で、下で選んでいるタブの単語から出題されます。「すべて」「復習中」では、正解したら「習得」（習得済みに）か「まだ」（復習中のまま）を選びます。「習得済み」「除外中」では、正解ならそのまま、間違えると復習中に戻ります。× で外した単語は「除外中」に入り、そこで × を押すと完全に削除されます。獲得したカロリーは今日のおやつ予算に入ります（小数点以下は切り捨て）。
         </p>
         <div className="row recipe-actions">
           <span className="recipe-target">
@@ -816,19 +818,20 @@ interface Answered {
   points: number;
   /** wrong: whether the word went back into review from 習得済み / 除外中, or was there already */
   movedBack: boolean;
-  /** right, and the first right answer today: explain 習得 / まだ */
+  /** right in すべて / 復習中, and the first time today: explain 習得 / まだ */
   decideHint: boolean;
   /** right again the same day, the first time this happens today: say why it paid half */
   repeatNote: boolean;
 }
 
-/** How 習得 / まだ work after a right answer in each tab. */
-const DECIDE_HINT: Record<RecipeTab, string> = {
-  all: "覚えたなら「習得」で習得済みに。なんとなく当たっただけなら「まだ」で復習中に残します。",
-  learning: "覚えたなら「習得」で習得済みに。なんとなく当たっただけなら「まだ」で復習中に残します。",
-  mastered: "まだ覚えているなら「習得」で習得済みのまま、自信がなければ「まだ」で復習中に戻します。",
-  excluded: "覚えているなら「習得」で除外中のまま、自信がなければ「まだ」で復習中に戻します。",
-};
+/** How 習得 / まだ work after a right answer in すべて / 復習中. */
+const DECIDE_HINT = "覚えたなら「習得」で習得済みに。なんとなく当たっただけなら「まだ」で復習中に残します。";
+
+/**
+ * Whether a right answer in this tab asks 習得 / まだ: only where it would make the word learned
+ * (すべて / 復習中). In 習得済み / 除外中 a right answer leaves the word where it is.
+ */
+const asksDecision = (tab: RecipeTab) => tab === "all" || tab === "learning";
 
 function RecipeReview({
   target,
@@ -843,8 +846,8 @@ function RecipeReview({
   onProgress,
   toast,
 }: {
-  /** the tab the words come from: すべて / 復習中 move right answers to 習得済み, 習得済み / 除外中
-   * move wrong ones back to 復習中 */
+  /** the tab the words come from: すべて / 復習中 move right answers to 習得済み and ask 習得 / まだ,
+   * 習得済み / 除外中 leave right answers where they are; wrong ones go back to 復習中 from any */
   target: RecipeTab;
   mode: RecipeReviewMode;
   queue: RecipeWord[];
@@ -871,6 +874,7 @@ function RecipeReview({
 
   const current = queue[idx];
   const finished = idx >= queue.length;
+  const decides = asksDecision(target);
   // Drawn once per card: a word saved mid-review reloads the recipe, and that must not reshuffle
   // the options under the learner. Only the dictionary or the patterns' meanings arriving late
   // redraw (the first card).
@@ -917,8 +921,9 @@ function RecipeReview({
         const r: RecipeReviewResult = await api.reviewRecipeWord(current.id, correct, mode, target);
         if (correct) {
           // Right in すべて / 復習中 has made the word learned already; 習得 keeps that, まだ takes it
-          // back into review (see `decide`).
+          // back into review (see `decide`). In 習得済み / 除外中 it stays where it is.
           playCrunch();
+          if (!decides) setRemembered((w) => [...w, current]);
         } else {
           playWrong();
           setLeft((w) => [...w, current]);
@@ -930,7 +935,7 @@ function RecipeReview({
           given,
           points: r.points,
           movedBack: !correct && !!(current.masteredAt || current.excludedAt),
-          decideHint: correct && firstToday("decide"),
+          decideHint: correct && decides && firstToday("decide"),
           repeatNote: correct && r.repeat && firstToday("repeat"),
         });
         if (r.kcalEarned > 0) onProgress();
@@ -941,7 +946,7 @@ function RecipeReview({
         setSaving(false);
       }
     },
-    [current, saving, answered, mode, target, onProgress, toast],
+    [current, saving, answered, mode, target, decides, onProgress, toast],
   );
 
   const next = useCallback(() => {
@@ -951,8 +956,8 @@ function RecipeReview({
     setIdx((i) => i + 1);
   }, []);
 
-  // After a right answer: 習得 keeps the word where the answer put it (習得済み, or 除外中 when it came
-  // from there), まだ puts it back into review, so a lucky guess does not make a word learned.
+  // After a right answer in すべて / 復習中: 習得 keeps the word in 習得済み, where the answer put it,
+  // まだ puts it back into review, so a lucky guess does not make a word learned.
   const decide = useCallback(
     async (learned: boolean) => {
       if (!current || !answered?.correct || saving) return;
@@ -976,8 +981,8 @@ function RecipeReview({
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (finished) return;
-      // A right answer waits for 習得 / まだ; only a wrong one moves on with Enter.
-      if (answered && !answered.correct && (e.key === "Enter" || e.key === " ")) {
+      // A right answer in すべて / 復習中 waits for 習得 / まだ; any other answer moves on with Enter.
+      if (answered && (!answered.correct || !decides) && (e.key === "Enter" || e.key === " ")) {
         e.preventDefault();
         next();
       } else if (!answered && mode === "choice") {
@@ -987,7 +992,7 @@ function RecipeReview({
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [finished, answered, mode, options, current, answer, next]);
+  }, [finished, answered, decides, mode, options, current, answer, next]);
 
   if (finished) {
     const again = target === "mastered" || target === "excluded";
@@ -1005,9 +1010,9 @@ function RecipeReview({
     };
     const summary =
       target === "mastered"
-        ? "「習得」にした単語は習得済みのまま、間違えた単語と「まだ」にした単語は復習中に戻しました。"
+        ? "正解した単語は習得済みのまま、間違えた単語は復習中に戻しました。"
         : target === "excluded"
-          ? "「習得」にした単語は除外中のまま、間違えた単語と「まだ」にした単語は復習中に戻しました。"
+          ? "正解した単語は除外中のまま、間違えた単語は復習中に戻しました。"
           : "「習得」にした単語は習得済みになりました。間違えた単語と「まだ」にした単語は復習中です。";
     return (
       <section className="card recipe-review done">
@@ -1190,7 +1195,7 @@ function RecipeReview({
               <div className="muted">
                 {answered.correct
                   ? [
-                      answered.decideHint && DECIDE_HINT[target],
+                      answered.decideHint && DECIDE_HINT,
                       answered.repeatNote &&
                         `この単語は今日2回目以降の正解なので、カロリーは半分（${REPEAT_KCAL[mode]} kcal${playMode === "normal" ? "" : `、${PLAY_MODE_INFO[playMode].label} ×${PLAY_MODE_INFO[playMode].multiplier} の前`}）です。`,
                     ]
@@ -1202,7 +1207,7 @@ function RecipeReview({
               </div>
             )}
           </div>
-          {answered.correct ? (
+          {answered.correct && decides ? (
             <div className="row decide-buttons">
               <button className="btn decide-learned" disabled={saving} onClick={() => void decide(true)} autoFocus>
                 習得

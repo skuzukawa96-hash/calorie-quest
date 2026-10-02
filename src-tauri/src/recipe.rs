@@ -132,10 +132,10 @@ pub fn usage_meanings() -> Vec<String> {
 
 /// One word reviewed in `mode` ("choice": its meaning picked from four, "typing": the English
 /// written from the meaning) from the tab `target`. A right answer in すべて / 復習中 makes the
-/// word learned, and in 習得済み / 除外中 leaves it where it is; the learner can still say まだ, which
-/// puts it back into review (`set_mastered`). A wrong answer puts it back into review (復習中, and
-/// so すべて) from any tab, learned or taken off, and counts as a miss. Pay is counted in quarters per day, so two
-/// meanings picked make a whole calorie; whatever fraction is left when the day ends is dropped. A
+/// word learned, though the learner can still say まだ, which puts it back into review
+/// (`set_mastered`); in 習得済み / 除外中 it leaves the word where it is. A wrong answer puts it
+/// back into review (復習中, and so すべて) from any tab, learned or taken off, and counts as a
+/// miss. Pay is counted in quarters per day, so two meanings picked make a whole calorie; whatever fraction is left when the day ends is dropped. A
 /// word pays in full the first time it is right in a day and half after that.
 pub fn review(conn: &mut Connection, id: i64, remembered: bool, mode: &str, target: &str) -> CmdResult<RecipeReviewResult> {
     srs::recipe_quarter_kcal(mode, true).ok_or_else(|| format!("unknown review mode {mode}"))?;
