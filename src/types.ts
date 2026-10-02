@@ -38,6 +38,32 @@ export interface WordPart {
   kind: "prefix" | "root" | "suffix";
   text: string;
   ja: string;
+  /** other words with this piece in the same sense, shown when the piece is clicked */
+  family?: PartFamily | null;
+}
+
+/**
+ * Words sharing a piece in one sense (fid「信じる」: confidence, confidential). A piece spelt alike
+ * in another sense (the con- of confident, すっかり) has none.
+ */
+export interface PartFamily {
+  /** what the piece means in all of them */
+  ja: string;
+  /** where it comes from, as a fact: ラテン語 fidere「信じる」 */
+  origin?: string | null;
+  /** its spellings (spect / pect), to mark it in each word's parts */
+  forms: string[];
+  /** the others: three at most, five where the family allows */
+  members: FamilyMember[];
+}
+
+export interface FamilyMember {
+  word: string;
+  ja: string;
+  /** what it has in common with the rest: how the piece gives its meaning */
+  note: string;
+  /** how it is built, when the data has it */
+  parts: WordPart[];
 }
 
 /** A sentence using a word, with its Japanese. */

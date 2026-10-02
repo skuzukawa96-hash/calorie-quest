@@ -41,6 +41,10 @@ const PRONUNCIATIONS_JSON: &str = include_str!("../data/pronunciations.json");
 /// hand for the words where the pieces help remember the whole (a guesser would split "mother"
 /// into moth + -er), so it covers some words, not all.
 const WORD_PARTS_JSON: &str = include_str!("../data/word-parts.json");
+/// Words that share a piece in the same sense (fid「信じる」: confident, confidence, confidential),
+/// picked by hand for how well they help remember each other, a few to a piece. Shown when the
+/// piece is clicked in 成り立ち.
+const WORD_FAMILIES_JSON: &str = include_str!("../data/word-families.json");
 /// A sentence for every word of the bank, shown under its answer: a sentence of the bank that uses
 /// the word in the question's sense where there is one, a sentence written for it otherwise.
 const WORD_EXAMPLES_JSON: &str = include_str!("../data/word-examples.json");
@@ -619,6 +623,89 @@ pub fn word_parts() -> &'static HashMap<String, Vec<crate::models::WordPart>> {
 }
 
 #[derive(serde::Deserialize)]
+pub(crate) struct WordFamilySeed {
+    #[allow(dead_code)] // names the family in test failures
+    pub id: String,
+    /// the piece's spellings, lowercase (spect, pect)
+    pub forms: Vec<String>,
+    pub ja: String,
+    pub origin: Option<String>,
+    /// how many of the others to show: 3 unless set, 5 at most
+    pub limit: Option<usize>,
+    /// in the order they are worth showing
+    pub members: Vec<FamilyMemberSeed>,
+}
+
+#[derive(serde::Deserialize)]
+pub(crate) struct FamilyMemberSeed {
+    pub word: String,
+    pub ja: String,
+    pub note: String,
+}
+
+pub(crate) const FAMILY_LIMIT: usize = 3;
+
+pub(crate) fn word_families() -> &'static [WordFamilySeed] {
+    static LIST: std::sync::OnceLock<Vec<WordFamilySeed>> = std::sync::OnceLock::new();
+    LIST.get_or_init(|| {
+        serde_json::from_str(WORD_FAMILIES_JSON).expect("data/word-families.json must be a valid JSON array")
+    })
+}
+
+/// (word, spelling of a piece) → its family. A word belongs to a family only as a listed member,
+/// so a piece spelt alike in another sense (the con- of confident) finds none.
+fn family_index() -> &'static HashMap<(String, String), usize> {
+    static INDEX: std::sync::OnceLock<HashMap<(String, String), usize>> = std::sync::OnceLock::new();
+    INDEX.get_or_init(|| {
+        let mut index = HashMap::new();
+        for (i, f) in word_families().iter().enumerate() {
+            for m in &f.members {
+                for form in &f.forms {
+                    index.insert((m.word.to_lowercase(), form.clone()), i);
+                }
+            }
+        }
+        index
+    })
+}
+
+/// The other words sharing `part` of `word` in its sense, or None.
+fn part_family(word: &str, part: &crate::models::WordPart) -> Option<crate::models::PartFamily> {
+    let f = &word_families()[*family_index().get(&(word.to_string(), part.text.to_lowercase()))?];
+    let members: Vec<crate::models::FamilyMember> = f
+        .members
+        .iter()
+        .filter(|m| !m.word.eq_ignore_ascii_case(word))
+        .take(f.limit.unwrap_or(FAMILY_LIMIT))
+        .map(|m| crate::models::FamilyMember {
+            word: m.word.clone(),
+            ja: m.ja.clone(),
+            note: m.note.clone(),
+            parts: word_parts().get(&m.word.to_lowercase()).cloned().unwrap_or_default(),
+        })
+        .collect();
+    (!members.is_empty()).then(|| crate::models::PartFamily {
+        ja: f.ja.clone(),
+        origin: f.origin.clone(),
+        forms: f.forms.clone(),
+        members,
+    })
+}
+
+/// A word's parts, each with the words that share it where there are some.
+fn parts_with_families(key: &str) -> Vec<crate::models::WordPart> {
+    word_parts()
+        .get(key)
+        .map(|parts| {
+            parts
+                .iter()
+                .map(|p| crate::models::WordPart { family: part_family(key, p), ..p.clone() })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+#[derive(serde::Deserialize)]
 struct WordExampleSeed {
     word: String,
     en: String,
@@ -853,7 +940,7 @@ fn usages_of(key: &str) -> Vec<crate::models::WordUsage> {
 pub fn word_notes(word: &str) -> Option<crate::models::WordNotes> {
     let key = word.trim().to_lowercase();
     let notes = crate::models::WordNotes {
-        parts: word_parts().get(&key).cloned().unwrap_or_default(),
+        parts: parts_with_families(&key),
         examples: word_examples().get(&key).cloned().unwrap_or_default(),
         usages: usages_of(&key),
         origin: idiom_origins().get(&key).cloned(),
@@ -1490,6 +1577,7 @@ mod tests {
                     && n != "word-related.json"
                     && n != "word-pos.json"
                     && n != "word-confusables.json"
+                    && n != "word-families.json"
                     && !n.starts_with("exam-")
             })
             .count();
@@ -1685,9 +1773,10 @@ mod tests {
         }
     }
 
-    /// Each word split into parts is a word question of the bank, is split into at least two
-    /// meaningful pieces, and its pieces spell the word give or take a letter or two ("beauty" +
-    /// "ful" for beautiful, "write" + "er" for writer): so no entry drifts from its word.
+    /// Each word split into parts is a word of the dictionary (a word question, or a glossary word
+    /// a related word list or the recipe can show), is split into at least two meaningful pieces,
+    /// and its pieces spell the word give or take a letter or two ("beauty" + "ful" for beautiful,
+    /// "write" + "er" for writer): so no entry drifts from its word.
     #[test]
     fn word_parts_split_real_words_into_their_pieces() {
         fn distance(a: &str, b: &str) -> usize {
@@ -1702,15 +1791,13 @@ mod tests {
             }
             prev[b.len()]
         }
-        let words: HashSet<String> =
-            load_seed().questions.iter().filter(|q| q.kind == "word").map(|q| q.en.to_lowercase()).collect();
         let list: Vec<WordPartsSeed> = serde_json::from_str(WORD_PARTS_JSON).unwrap();
         assert!(list.len() >= 300, "only {} words have parts", list.len());
         let mut seen = HashSet::new();
         for w in &list {
             let en = w.en.to_lowercase();
             assert!(seen.insert(en.clone()), "{} is split twice", w.en);
-            assert!(words.contains(&en), "{} is not a word question", w.en);
+            assert!(is_known_word(&en), "{} is not in the dictionary", w.en);
             assert!(w.parts.len() >= 2, "{} is split into fewer than two parts", w.en);
             for p in &w.parts {
                 assert!(["prefix", "root", "suffix"].contains(&p.kind.as_str()), "{}: kind {:?}", w.en, p.kind);
@@ -1720,6 +1807,70 @@ mod tests {
             assert!(distance(&joined, &en) <= 2, "{}: the parts spell {joined:?}", w.en);
         }
         assert_eq!(word_parts().len(), list.len());
+    }
+
+    /// Related words are a side note to a word's answer, so they stay few and short: each family a
+    /// handful of dictionary words, three shown (five at most where the family sets it), every
+    /// note one short phrase. A family is reached from at least one member whose parts spell its
+    /// piece, and no piece of a word leads to two families.
+    #[test]
+    fn word_families_are_small_short_and_reachable() {
+        let mut ids = HashSet::new();
+        let mut leads: HashMap<(String, String), &str> = HashMap::new();
+        for f in word_families() {
+            assert!(ids.insert(f.id.as_str()), "family {} is listed twice", f.id);
+            assert!(!f.forms.is_empty() && !f.ja.trim().is_empty(), "{}: no forms or meaning", f.id);
+            assert!(f.forms.iter().all(|s| *s == s.to_lowercase()), "{}: forms are matched in lowercase", f.id);
+            assert!(f.origin.as_ref().is_none_or(|o| !o.trim().is_empty() && o.chars().count() <= 30), "{}: origin", f.id);
+            assert!(f.limit.is_none_or(|l| (1..=5).contains(&l)), "{}: limit must be 1 to 5", f.id);
+            assert!((2..=6).contains(&f.members.len()), "{}: {} members", f.id, f.members.len());
+            let mut words = HashSet::new();
+            let mut reached = false;
+            for m in &f.members {
+                let w = m.word.to_lowercase();
+                assert!(words.insert(w.clone()), "{}: {} is listed twice", f.id, m.word);
+                assert!(is_known_word(&w), "{}: {} is not in the dictionary", f.id, m.word);
+                assert!(!m.ja.trim().is_empty(), "{}: {} has no meaning", f.id, m.word);
+                let note = m.note.trim();
+                assert!(!note.is_empty() && note.chars().count() <= 22, "{}: {}'s note {note:?}", f.id, m.word);
+                for p in word_parts().get(&w).into_iter().flatten() {
+                    let text = p.text.to_lowercase();
+                    if f.forms.contains(&text) {
+                        reached = true;
+                        if let Some(other) = leads.insert((w.clone(), text.clone()), f.id.as_str()) {
+                            panic!("{}'s {text} leads to both {other} and {}", m.word, f.id);
+                        }
+                    }
+                }
+            }
+            assert!(reached, "{}: no member's parts spell {:?}", f.id, f.forms);
+        }
+    }
+
+    /// The pieces of confident, equivalent, equilibrium and communicate: a piece in a family shows
+    /// the others (never the word itself), up to the limit; a piece outside every family (the
+    /// con- of confident, which means すっかり there) shows nothing; a small family shows what it
+    /// has (libr: deliberate alone).
+    #[test]
+    fn a_piece_shows_a_few_words_that_share_it() {
+        let family = |word: &str, text: &str| -> Option<Vec<String>> {
+            let notes = word_notes(word).unwrap_or_else(|| panic!("{word} has no notes"));
+            let part = notes.parts.iter().find(|p| p.text == text).unwrap_or_else(|| panic!("{word} has no {text}"));
+            part.family.as_ref().map(|f| f.members.iter().map(|m| m.word.clone()).collect())
+        };
+        assert_eq!(family("confident", "fid").unwrap(), ["confidence", "confidential"]);
+        assert_eq!(family("confident", "con"), None);
+        assert_eq!(family("confident", "ent"), None);
+        assert_eq!(family("equivalent", "equi").unwrap(), ["equal", "equation", "equator"]);
+        assert_eq!(family("equivalent", "val").unwrap(), ["value", "valuable", "evaluation"]);
+        assert_eq!(family("equilibrium", "libr").unwrap(), ["deliberate"]);
+        assert_eq!(family("communicate", "commun").unwrap(), ["communication", "community", "common"]);
+        assert_eq!(family("inspect", "spect").unwrap().len(), 4, "spect allows four");
+        // A member's parts come along, with the shared piece among them.
+        let notes = word_notes("equilibrium").unwrap();
+        let libr = notes.parts.iter().find(|p| p.text == "libr").unwrap().family.as_ref().unwrap();
+        assert!(libr.members[0].parts.iter().any(|p| libr.forms.contains(&p.text)));
+        assert!(libr.origin.is_some());
     }
 
     /// An explanation's example is a second sentence to learn from. Most of them had been lifted

@@ -3,7 +3,7 @@ import GlossedText from "./GlossedText";
 import type { Dictionary } from "../lib/dictionary";
 import { useAddToRecipe } from "../lib/recipe";
 import { isTtsSupported, speak } from "../lib/speech";
-import type { RelatedGroup, UsedWord, WordNotes, WordPart, WordUsage } from "../types";
+import type { PartFamily, RelatedGroup, UsedWord, WordNotes, WordPart, WordUsage } from "../types";
 
 const PART_LABEL: Record<WordPart["kind"], string> = { prefix: "接頭辞", root: "語根", suffix: "接尾辞" };
 
@@ -102,27 +102,104 @@ function RelatedWords({ groups, dict, gloss }: { groups: RelatedGroup[]; dict: D
   );
 }
 
-/** How a word is built: pre-「前もって」＋ paid「支払った」→ prepaid「前払いの」. */
-function WordParts({ parts, word, meaning }: { parts: WordPart[]; word: string; meaning: string }) {
+/** pre- / paid / -ness: a piece as it is written in 成り立ち. */
+function pieceText(p: WordPart): string {
+  return p.kind === "prefix" ? `${p.text}-` : p.kind === "suffix" ? `-${p.text}` : p.text;
+}
+
+/**
+ * How a word is built: pre-「前もって」＋ paid「支払った」→ prepaid「前払いの」. A piece that other
+ * words share in the same sense is a button: clicking it lists a few of them underneath. The list
+ * starts closed, so the explanation itself stays as short as before.
+ */
+function WordParts({ parts, word, meaning, dict }: { parts: WordPart[]; word: string; meaning: string; dict: Dictionary | null }) {
+  // Keyed by the word, so the next question starts closed without remounting the panel.
+  const [open, setOpen] = useState<{ word: string; index: number } | null>(null);
+  const openIndex = open?.word === word ? open.index : null;
+  const shown = openIndex !== null ? parts[openIndex] : undefined;
   return (
-    <div className="word-parts">
-      <span className="label">成り立ち</span>
-      <span className="word-parts-row">
-        {parts.map((p, i) => (
-          <Fragment key={i}>
-            {i > 0 && <span className="wp-sign">＋</span>}
-            <span className={"wp wp-" + p.kind}>
-              <span className="wp-kind">{PART_LABEL[p.kind]}</span>
-              <b>{p.kind === "prefix" ? `${p.text}-` : p.kind === "suffix" ? `-${p.text}` : p.text}</b>
-              <span>「{p.ja}」</span>
-            </span>
-          </Fragment>
-        ))}
-        <span className="wp-sign">→</span>
-        <span className="wp-result">
-          <b>{word}</b>「{meaning}」
+    <>
+      <div className="word-parts">
+        <span className="label">成り立ち</span>
+        <span className="word-parts-row">
+          {parts.map((p, i) => {
+            const body = (
+              <>
+                <span className="wp-kind">{PART_LABEL[p.kind]}</span>
+                <b>{pieceText(p)}</b>
+                <span>「{p.ja}」</span>
+              </>
+            );
+            return (
+              <Fragment key={i}>
+                {i > 0 && <span className="wp-sign">＋</span>}
+                {p.family ? (
+                  <button
+                    type="button"
+                    className={"wp wp-" + p.kind + " wp-link" + (openIndex === i ? " open" : "")}
+                    aria-expanded={openIndex === i}
+                    title={`クリックで ${pieceText(p)} をもつ語を表示`}
+                    onClick={() => setOpen(openIndex === i ? null : { word, index: i })}
+                  >
+                    {body}
+                    <span className="wp-caret">{openIndex === i ? "▾" : "▸"}</span>
+                  </button>
+                ) : (
+                  <span className={"wp wp-" + p.kind}>{body}</span>
+                )}
+              </Fragment>
+            );
+          })}
+          <span className="wp-sign">→</span>
+          <span className="wp-result">
+            <b>{word}</b>「{meaning}」
+          </span>
         </span>
-      </span>
+      </div>
+      {shown?.family && <PartFamilyList piece={shown} family={shown.family} dict={dict} />}
+    </>
+  );
+}
+
+/**
+ * 関連語: the words sharing the clicked piece in the same sense, each with how it is built (the
+ * shared piece marked), what it means and how the piece gives that meaning. Where the piece comes
+ * from is shown as 語源, a fact; the notes say how the meaning follows from it.
+ */
+function PartFamilyList({ piece, family, dict }: { piece: WordPart; family: PartFamily; dict: Dictionary | null }) {
+  return (
+    <div className="part-family">
+      <div className="part-family-head">
+        <span className="part-family-title">
+          関連語：<b>{pieceText(piece)}</b>「{family.ja}」をもつ語
+        </span>
+        {family.origin && <span className="part-family-origin">語源 {family.origin}</span>}
+      </div>
+      {family.members.map((m) => (
+        <div key={m.word} className="part-family-word">
+          <span className="pf-head">
+            <b className="pf-word">
+              <GlossedText text={m.word} dict={dict} enabled={false} context="" />
+            </b>
+            <span className="pf-ja">{m.ja}</span>
+          </span>
+          <span className="pf-how">
+            {m.parts.length > 0 && (
+              <span className="pf-parts">
+                {m.parts.map((q, k) => (
+                  <Fragment key={k}>
+                    {k > 0 && " ＋ "}
+                    <span className={family.forms.includes(q.text.toLowerCase()) ? "pf-shared" : undefined}>
+                      {pieceText(q)}
+                    </span>
+                  </Fragment>
+                ))}
+              </span>
+            )}
+            <span className="pf-note">{m.note}</span>
+          </span>
+        </div>
+      ))}
     </div>
   );
 }
@@ -154,7 +231,7 @@ export default function WordNotesPanel({
   const relatedOpen = openFor === word;
   return (
     <>
-      {parts.length > 0 && <WordParts parts={parts} word={word} meaning={meaning} />}
+      {parts.length > 0 && <WordParts parts={parts} word={word} meaning={meaning} dict={dict} />}
       {examples.length > 0 && (
         <div className="example-line">
           <span className="label">例文</span>

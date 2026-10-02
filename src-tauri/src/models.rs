@@ -152,6 +152,34 @@ pub struct WordPart {
     pub kind: String,
     pub text: String,
     pub ja: String,
+    /// Other words with this piece in the same sense (fid「信じる」: confidence, confidential),
+    /// opened by clicking the piece. Only where data/word-families.json lists the word.
+    #[serde(default, skip_deserializing, skip_serializing_if = "Option::is_none")]
+    pub family: Option<PartFamily>,
+}
+
+/// Words sharing a piece in one sense. A piece that means different things in different words
+/// (con- 共に in connect, すっかり in confident) belongs to a family only where it has that sense.
+#[derive(Debug, Clone, Serialize)]
+pub struct PartFamily {
+    /// what the piece means in all of them
+    pub ja: String,
+    /// where the piece comes from, as a fact (ラテン語 fidere「信じる」)
+    pub origin: Option<String>,
+    /// its spellings (spect / pect), to mark it in each word's parts
+    pub forms: Vec<String>,
+    /// the others, three at most unless the family allows up to five
+    pub members: Vec<FamilyMember>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct FamilyMember {
+    pub word: String,
+    pub ja: String,
+    /// what it has in common with the rest: how the piece gives its meaning (信頼した人にだけ明かす)
+    pub note: String,
+    /// how it is built, when data/word-parts.json has it
+    pub parts: Vec<WordPart>,
 }
 
 #[derive(Debug, Clone, Serialize)]

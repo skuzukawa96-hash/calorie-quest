@@ -1922,6 +1922,9 @@ main {
   align-items: baseline;
   gap: 8px;
 }
+.word-parts > .label {
+  flex-shrink: 0;
+}
 .word-parts-row {
   display: inline-flex;
   flex-wrap: wrap;
@@ -1954,6 +1957,77 @@ main {
 }
 .wp-sign {
   color: var(--muted);
+}
+/* A piece other words share: a quiet button that opens 関連語 under the row. */
+button.wp-link {
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  border-style: dashed;
+}
+button.wp-link:hover,
+button.wp-link.open {
+  border-style: solid;
+  border-color: var(--caramel);
+}
+.wp-caret {
+  font-size: 10px;
+  color: var(--muted);
+}
+/* 関連語: a side note, smaller and lighter than 成り立ち itself */
+.part-family {
+  margin: 6px 0 4px;
+  padding: 6px 12px 8px;
+  background: #fff;
+  border: 1px dashed var(--line);
+  border-radius: 10px;
+  font-size: 13.5px;
+}
+.part-family-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 12px;
+  margin-bottom: 2px;
+  color: var(--choco-light);
+}
+.part-family-title b {
+  color: var(--choco);
+}
+.part-family-origin {
+  font-size: 12px;
+  color: var(--muted);
+}
+.part-family-word {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 12px;
+  padding: 3px 0;
+}
+.part-family-word + .part-family-word {
+  border-top: 1px dotted var(--line);
+}
+.pf-head {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 13em;
+}
+.pf-word {
+  color: var(--choco);
+  font-size: 14.5px;
+}
+.pf-how {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 10px;
+  color: var(--muted);
+}
+.pf-shared {
+  color: var(--caramel-dark);
+  font-weight: 700;
 }
 .wp-result b {
   color: var(--caramel-dark);

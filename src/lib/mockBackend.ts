@@ -5,6 +5,7 @@ import glossary from "../../src-tauri/data/glossary.json";
 import grammarNotes from "../../src-tauri/data/grammar-notes.json";
 import pronunciations from "../../src-tauri/data/pronunciations.json";
 import wordPartsList from "../../src-tauri/data/word-parts.json";
+import wordFamilies from "../../src-tauri/data/word-families.json";
 import tierOverrides from "../../src-tauri/data/tiers.json";
 import wordExamples from "../../src-tauri/data/word-examples.json";
 import wordUsages from "../../src-tauri/data/word-usage.json";
@@ -197,7 +198,7 @@ const seedQuestions: SeedQuestion[] = [
   ...Object.entries(packModules)
     .filter(
       ([path]) =>
-        !/\/(questions|glossary|grammar-notes|pronunciations|word-parts|tiers|word-examples|word-usage|idiom-origins|word-related|word-pos|word-confusables|exam-[^/]*)\.json$/.test(
+        !/\/(questions|glossary|grammar-notes|pronunciations|word-parts|tiers|word-examples|word-usage|idiom-origins|word-related|word-pos|word-confusables|word-families|exam-[^/]*)\.json$/.test(
           path,
         ),
     )
@@ -753,6 +754,33 @@ const wordPartsByWord = new Map(
   (wordPartsList as { en: string; parts: WordPart[] }[]).map((w) => [w.en.toLowerCase(), w.parts]),
 );
 
+interface FamilySeed {
+  id: string;
+  forms: string[];
+  ja: string;
+  origin?: string | null;
+  limit?: number;
+  members: { word: string; ja: string; note: string }[];
+}
+
+/** Mirrors db::family_index: "word|spelling of a piece" → its family, for listed members only. */
+const familyIndex = new Map<string, FamilySeed>();
+for (const f of wordFamilies as FamilySeed[]) {
+  for (const m of f.members) for (const form of f.forms) familyIndex.set(`${m.word.toLowerCase()}|${form}`, f);
+}
+
+/** Mirrors db::parts_with_families: a word's parts, each with the words sharing it, if any. */
+function partsWithFamilies(key: string): WordPart[] {
+  return (wordPartsByWord.get(key) ?? []).map((p) => {
+    const f = familyIndex.get(`${key}|${p.text.toLowerCase()}`);
+    const members = (f?.members ?? [])
+      .filter((m) => m.word.toLowerCase() !== key)
+      .slice(0, f?.limit ?? 3)
+      .map((m) => ({ ...m, parts: wordPartsByWord.get(m.word.toLowerCase()) ?? [] }));
+    return f && members.length ? { ...p, family: { ja: f.ja, origin: f.origin ?? null, forms: f.forms, members } } : p;
+  });
+}
+
 function groupByWord<T extends { word: string }>(list: T[]): Map<string, Omit<T, "word">[]> {
   const map = new Map<string, Omit<T, "word">[]>();
   for (const { word, ...rest } of list) {
@@ -823,7 +851,7 @@ function usagesOf(key: string): WordUsage[] {
 function wordNotes(word: string): WordNotes | null {
   const key = word.trim().toLowerCase();
   const notes: WordNotes = {
-    parts: wordPartsByWord.get(key) ?? [],
+    parts: partsWithFamilies(key),
     examples: (examplesByWord.get(key) ?? []) as ExampleSentence[],
     usages: usagesOf(key),
     origin: originByIdiom.get(key) ?? null,

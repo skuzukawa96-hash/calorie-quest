@@ -74,5 +74,7 @@
   {"key":"w5787","kind":"word","difficulty":"mid","category":"副詞","group":"判断の副詞","en":"personally","ja":"個人的には","modes":["choice","typing","speaking"]},
   {"key":"w5788","kind":"word","difficulty":"mid","category":"副詞","group":"判断の副詞","en":"basically","ja":"基本的に","modes":["choice","typing","speaking"]},
   {"key":"w5789","kind":"word","difficulty":"mid","category":"副詞","group":"判断の副詞","en":"surprisingly","ja":"驚いたことに、意外にも","modes":["choice","typing","speaking"]},
-  {"key":"w5790","kind":"word","difficulty":"mid","category":"副詞","group":"判断の副詞","en":"somehow","ja":"どういうわけか、なんとかして","modes":["choice","typing","speaking"]}
+  {"key":"w5790","kind":"word","difficulty":"mid","category":"副詞","group":"判断の副詞","en":"somehow","ja":"どういうわけか、なんとかして","modes":["choice","typing","speaking"]},
+  {"key":"w5791","kind":"word","difficulty":"mid","category":"時間・数","group":"数学","en":"equivalent","ja":"同等の、相当する","modes":["choice","typing","speaking"]},
+  {"key":"w5792","kind":"word","difficulty":"high","category":"科学","group":"物理追加","en":"equilibrium","ja":"均衡、平衡","modes":["choice","typing","speaking"]}
 ]
