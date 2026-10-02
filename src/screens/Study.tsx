@@ -566,6 +566,10 @@ function ChoiceCard({
   // smaller line, so the four options stay alike.
   const wrongEn = (i: number) => (chosen && q.options[i] !== q.answer ? q.optionEn[i] : undefined);
   const enBelow = q.optionEn.some((en, i) => q.options[i] !== q.answer && (en.split(" ").length > 3 || en.length > 22));
+  // A word, a compound or an idiom can be right-clicked into the recipe like any English on screen
+  // (a compound or an idiom is offered whole first, then the word clicked). Phrases and sentences
+  // are left as text. The meaning sits beside it already, so no hover meanings.
+  const canSave = q.question.kind === "word" || q.question.kind === "idiom";
   return (
     <>
       <div className="prompt-label">{isGrammar ? "空欄に入る語を選ぼう" : "この英語の意味は？"}</div>
@@ -594,7 +598,7 @@ function ChoiceCard({
                 <span>{opt}</span>
                 {en && (
                   <span className={"option-en" + (enBelow ? " below" : "")} lang="en">
-                    {en}
+                    {canSave ? <GlossedText text={en} dict={dict} enabled={false} context="" /> : en}
                   </span>
                 )}
               </span>
