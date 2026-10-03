@@ -347,51 +347,8 @@ const SERIES: Series[] = [
 const f1 = (n: number) => n.toFixed(1);
 
 /**
- * A smooth line through the points that never overshoots them (a monotone cubic, Fritsch–Carlson):
- * a day of 0 kcal stays on 0 and a peak stays the peak.
- */
-function smoothPath(points: [number, number][]): string {
-  const n = points.length;
-  if (n === 0) return "";
-  const start = `M${f1(points[0][0])},${f1(points[0][1])}`;
-  if (n === 1) return start;
-  const dx: number[] = [];
-  const slope: number[] = [];
-  for (let i = 0; i < n - 1; i++) {
-    dx.push(points[i + 1][0] - points[i][0]);
-    slope.push((points[i + 1][1] - points[i][1]) / dx[i]);
-  }
-  const m = [slope[0]];
-  for (let i = 1; i < n - 1; i++) m.push(slope[i - 1] * slope[i] <= 0 ? 0 : (slope[i - 1] + slope[i]) / 2);
-  m.push(slope[n - 2]);
-  for (let i = 0; i < n - 1; i++) {
-    if (slope[i] === 0) {
-      m[i] = 0;
-      m[i + 1] = 0;
-      continue;
-    }
-    const a = m[i] / slope[i];
-    const b = m[i + 1] / slope[i];
-    const h = a * a + b * b;
-    if (h > 9) {
-      const t = 3 / Math.sqrt(h);
-      m[i] = t * a * slope[i];
-      m[i + 1] = t * b * slope[i];
-    }
-  }
-  let d = start;
-  for (let i = 0; i < n - 1; i++) {
-    const [x0, y0] = points[i];
-    const [x1, y1] = points[i + 1];
-    const h = dx[i] / 3;
-    d += ` C${f1(x0 + h)},${f1(y0 + m[i] * h)} ${f1(x1 - h)},${f1(y1 - m[i + 1] * h)} ${f1(x1)},${f1(y1)}`;
-  }
-  return d;
-}
-
-/**
  * The fortnight's kcal earned (after the play mode, as each day had it, in green) and eaten (in
- * red), as two smooth lines on one axis of round numbers from the lowest day to the highest of
+ * red), as two lines on one axis of round numbers from the lowest day to the highest of
  * either (not always from 0), each line's highest and lowest days named in the legend. Clicking a
  * 消費 dot opens, from the dot, what was eaten that day.
  */
@@ -432,7 +389,7 @@ function KcalLineChart({ days }: { days: DayPoint[] }) {
     const values = days.map(s.value);
     const max = Math.max(...values);
     const min = Math.min(...values);
-    const path = smoothPath(values.map((v, i) => [x(i), y(v)]));
+    const path = values.map((v, i) => `${i ? "L" : "M"}${f1(x(i))},${f1(y(v))}`).join(" ");
     return {
       ...s,
       values,
