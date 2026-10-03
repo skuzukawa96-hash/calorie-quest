@@ -299,6 +299,8 @@ pub struct ExamLevelInfo {
     pub best_correct: Option<i64>,
     pub best_total: Option<i64>,
     pub passed_ever: bool,
+    /// passed today: the 合格 mark on the level, gone the next day
+    pub passed_today: bool,
     /// today's pass or try at this level has been paid already
     /// questions of this level waiting in the exam review
     pub review_count: i64,

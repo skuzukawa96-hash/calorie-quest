@@ -353,7 +353,8 @@ export default function Home({
               <button key={l.level} className="mode-card exam-level" onClick={() => onExam(l.level)}>
                 <div className="mode-head">
                   <span className="mode-title">{l.label}</span>
-                  {l.passedEver && <span className="pill mastered">✓ 合格</span>}
+                  {/* Today's pass only: the mark is gone the next day. */}
+                  {l.passedToday && <span className="pill mastered">✓ 合格</span>}
                 </div>
                 <div className="mode-desc">
                   <span>{EXAM_DESC[l.level][0]}</span>

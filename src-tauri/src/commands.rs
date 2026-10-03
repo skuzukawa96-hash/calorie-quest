@@ -1218,12 +1218,45 @@ pub fn add_snack(state: State<'_, AppState>, name: String, calories: i64, icon: 
         .ok_or_else(|| "failed to load snack".to_string())
 }
 
-#[tauri::command]
-pub fn delete_snack(state: State<'_, AppState>, id: i64) -> CmdResult<()> {
-    let conn = state.db.lock().map_err(err)?;
+/// Corrects a snack of the book, one of the first ones as well as one the learner added: what they
+/// eat is not always what the book first said. Goals follow it; what was eaten keeps the name and
+/// kcal it had then.
+pub fn update_snack_in(conn: &Connection, id: i64, name: &str, calories: i64, icon: &str) -> CmdResult<Snack> {
+    let name = name.trim();
+    if name.is_empty() {
+        return Err("お菓子の名前を入力してください".into());
+    }
+    if !(1..=5000).contains(&calories) {
+        return Err("カロリーは1〜5000の範囲で入力してください".into());
+    }
+    let icon = if icon.trim().is_empty() { "🍬" } else { icon };
+    let changed = conn
+        .execute("UPDATE snacks SET name = ?2, calories = ?3, icon = ?4 WHERE id = ?1", params![id, name, calories, icon])
+        .map_err(err)?;
+    if changed == 0 {
+        return Err("snack not found".into());
+    }
+    load_snack(conn, id).map_err(err)?.ok_or_else(|| "snack not found".to_string())
+}
+
+/// Takes a snack out of the book, one of the first ones too (they are put in once, on the first
+/// start, and do not come back). It leaves the goals; what was eaten stays in the log.
+pub fn delete_snack_in(conn: &Connection, id: i64) -> CmdResult<()> {
     conn.execute("DELETE FROM goal_snacks WHERE snack_id = ?1", params![id]).map_err(err)?;
     conn.execute("DELETE FROM snacks WHERE id = ?1", params![id]).map_err(err)?;
     Ok(())
+}
+
+#[tauri::command]
+pub fn update_snack(state: State<'_, AppState>, id: i64, name: String, calories: i64, icon: String) -> CmdResult<Snack> {
+    let conn = state.db.lock().map_err(err)?;
+    update_snack_in(&conn, id, &name, calories, &icon)
+}
+
+#[tauri::command]
+pub fn delete_snack(state: State<'_, AppState>, id: i64) -> CmdResult<()> {
+    let conn = state.db.lock().map_err(err)?;
+    delete_snack_in(&conn, id)
 }
 
 /// Adds a snack to the goals (`goal: true`) or takes it off; the snack stays in the book.
@@ -2517,5 +2550,21 @@ mod tests {
         let used = notes.used.iter().find(|w| w.word == "lend").expect("lend is easily confused with borrow");
         assert!(!used.related.is_empty());
         assert!(used.usages.iter().any(|u| u.pattern.starts_with("lend 人")), "{:?}", used.usages);
+    }
+
+    #[test]
+    fn a_first_snack_can_be_corrected_or_taken_out() {
+        let c = conn();
+        let pudding = snack_id(&c, "プリン");
+        set_goal(&c, pudding, true).unwrap();
+        let s = update_snack_in(&c, pudding, " コンビニのプリン ", 230, "🍮").unwrap();
+        assert_eq!((s.name.as_str(), s.calories), ("コンビニのプリン", 230));
+        assert!(s.is_builtin, "still one of the first snacks");
+        assert_eq!(load_dashboard(&c).unwrap().goal_snacks[0].calories, 230, "the goal follows it");
+        assert!(update_snack_in(&c, pudding, "", 230, "🍮").is_err());
+        assert!(update_snack_in(&c, pudding, "プリン", 0, "🍮").is_err());
+        delete_snack_in(&c, pudding).unwrap();
+        assert!(load_snack(&c, pudding).unwrap().is_none());
+        assert!(load_dashboard(&c).unwrap().goal_snacks.is_empty(), "and leaves the goals");
     }
 }

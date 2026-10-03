@@ -30,6 +30,7 @@ pub fn run() {
             commands::submit_answer,
             commands::list_snacks,
             commands::add_snack,
+            commands::update_snack,
             commands::delete_snack,
             commands::set_goal_snack,
             commands::log_snack_eaten,

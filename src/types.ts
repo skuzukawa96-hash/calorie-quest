@@ -327,6 +327,8 @@ export interface ExamLevelInfo {
   bestCorrect: number | null;
   bestTotal: number | null;
   passedEver: boolean;
+  /** passed today: the 合格 mark on the level, gone the next day */
+  passedToday: boolean;
   reviewCount: number;
 }
 

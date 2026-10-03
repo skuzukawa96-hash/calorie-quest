@@ -413,6 +413,11 @@ pub fn overview(conn: &Connection) -> rusqlite::Result<ExamOverview> {
                 |r| Ok((r.get(0)?, r.get(1)?)),
             )
             .optional()?;
+        let passed_today: bool = conn.query_row(
+            "SELECT EXISTS (SELECT 1 FROM exam_attempts WHERE user_id = ?1 AND level = ?2 AND date = ?3 AND passed = 1)",
+            params![USER_ID, level, today()],
+            |r| r.get(0),
+        )?;
         levels.push(ExamLevelInfo {
             level: level.to_string(),
             label: label(level).to_string(),
@@ -421,6 +426,7 @@ pub fn overview(conn: &Connection) -> rusqlite::Result<ExamOverview> {
             best_correct: best.map(|b| b.0),
             best_total: best.map(|b| b.1),
             passed_ever,
+            passed_today,
             review_count: review_count(conn, Some(level))?,
         });
     }
@@ -584,6 +590,12 @@ mod tests {
         assert_eq!(t600.attempts, 4);
         assert_eq!((t600.best_correct, t600.best_total), (Some(30), Some(30)));
         assert!(t600.passed_ever);
+        assert!(t600.passed_today, "the 合格 mark shows today");
+        // The next day the mark is gone; the best score stays.
+        c.execute("UPDATE exam_attempts SET date = ?1", params![crate::util::date_plus(-1)]).unwrap();
+        let t600 = overview(&c).unwrap().levels.into_iter().find(|l| l.level == "toeic600").unwrap();
+        assert!(t600.passed_ever && !t600.passed_today);
+        assert_eq!(t600.best_correct, Some(30));
     }
 
     /// Questions missed go into the exam review, apart from the study review; put right there

@@ -57,6 +57,9 @@ export const api = {
   listSnacks: () => call<Snack[]>("list_snacks"),
   addSnack: (name: string, calories: number, icon: string) =>
     call<Snack>("add_snack", { name, calories, icon }),
+  /** any snack of the book, the first ones too */
+  updateSnack: (id: number, name: string, calories: number, icon: string) =>
+    call<Snack>("update_snack", { id, name, calories, icon }),
   deleteSnack: (id: number) => call<void>("delete_snack", { id }),
   /** 目標に加える（goal: true）/ 目標から外す。お菓子自体は図鑑に残る */
   setGoalSnack: (id: number, goal: boolean) => call<Snack[]>("set_goal_snack", { id, goal }),

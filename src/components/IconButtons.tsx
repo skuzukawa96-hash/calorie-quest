@@ -38,6 +38,24 @@ export function DeleteButton({ label, disabled, onClick }: Common & { label: str
   );
 }
 
+/** A brown pencil: correct what the row says. */
+export function EditButton({ label = "修正する", disabled, onClick }: Common & { label?: string }) {
+  return (
+    <button type="button" className="icon-btn edit" disabled={disabled} title={label} aria-label={label} onClick={onClick}>
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path
+          d="M4 20l1-4.2L15.6 5.2a2 2 0 0 1 2.8 0l.4.4a2 2 0 0 1 0 2.8L8.2 19 4 20zM13.8 7l3.2 3.2"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </svg>
+    </button>
+  );
+}
+
 /** A brown arrow curling back, the usual sign for undo. */
 export function UndoButton({ label = "取り消す", disabled, onClick }: Common & { label?: string }) {
   return (

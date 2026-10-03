@@ -417,6 +417,13 @@ main {
 .icon-btn.delete {
   color: var(--berry);
 }
+.icon-btn.edit {
+  color: var(--choco-light);
+}
+.icon-btn.edit:hover:not(:disabled) {
+  color: var(--choco);
+  background: var(--cream-2);
+}
 .icon-btn.delete:hover:not(:disabled) {
   background: var(--berry-bg);
 }
@@ -2511,7 +2518,7 @@ button.wp-link.open {
 }
 .snack-row {
   display: grid;
-  grid-template-columns: 26px 30px minmax(0, 1fr) 44px 76px 76px;
+  grid-template-columns: 26px 30px minmax(0, 1fr) 44px 76px 112px;
   align-items: center;
   gap: 8px;
   background: #fff;
@@ -2520,7 +2527,60 @@ button.wp-link.open {
   padding: 5px 12px 5px 8px;
 }
 .snack-list.with-tickets .snack-row {
-  grid-template-columns: 26px 30px minmax(0, 1fr) 44px 76px 160px;
+  grid-template-columns: 26px 30px minmax(0, 1fr) 44px 76px 196px;
+}
+.snack-row.editing {
+  border-color: var(--caramel);
+}
+/* 修正: the icon, name and kcal of a snack, right under its row */
+.snack-edit,
+.snack-confirm {
+  margin: -2px 0 4px 34px;
+  padding: 10px 12px;
+  border: 1px dashed var(--caramel-light);
+  border-radius: 12px;
+  background: #fffaf3;
+}
+.snack-edit .row {
+  margin-top: 8px;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.snack-edit input {
+  flex: 1;
+  min-width: 160px;
+  border: 2px solid var(--line);
+  border-radius: 10px;
+  padding: 7px 10px;
+  font: inherit;
+  background: #fff;
+  outline: none;
+}
+.snack-edit input:focus {
+  border-color: var(--caramel);
+}
+.snack-edit input.snack-edit-kcal {
+  flex: 0 0 96px;
+  min-width: 0;
+}
+.icon-picker.small button {
+  font-size: 18px;
+  padding: 2px 5px;
+}
+.snack-confirm {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.snack-confirm > span:first-child {
+  margin-right: auto;
+}
+.btn-small.danger {
+  color: #fff;
+  background: var(--berry);
+  border-color: var(--berry);
 }
 .snack-row:hover {
   border-color: var(--caramel-light);

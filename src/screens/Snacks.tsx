@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { DeleteButton, EatButton, UndoButton } from "../components/IconButtons";
+import { DeleteButton, EatButton, EditButton, UndoButton } from "../components/IconButtons";
 import { api } from "../lib/api";
 import { SNACK_ICONS } from "../lib/snackIcons";
 import { playCrunch } from "../lib/sfx";
@@ -89,6 +89,10 @@ export default function Snacks({ dash, onChanged, ticketMode, onTicketMode, toas
   const [icon, setIcon] = useState("🍰");
   const [busy, setBusy] = useState(false);
   const [sort, setSort] = useState<SortState>(loadSort);
+  /** the snack being corrected, with what the form says so far */
+  const [editing, setEditing] = useState<{ id: number; name: string; calories: string; icon: string } | null>(null);
+  /** the snack whose × asks "削除する / やめる" */
+  const [deleting, setDeleting] = useState<number | null>(null);
 
   const reload = useCallback(async () => {
     const [s, l] = await Promise.all([api.listSnacks(), api.getTodayConsumption()]);
@@ -129,6 +133,17 @@ export default function Snacks({ dash, onChanged, ticketMode, onTicketMode, toas
   };
   const sortInfo = SORTS.find((s) => s.key === sort.key)!;
   const shown = sortSnacks(snacks, sort);
+
+  const saveEdit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editing) return;
+    const { id, name: newName, calories: kcal, icon: newIcon } = editing;
+    void run(async () => {
+      const s = await api.updateSnack(id, newName, Number(kcal), newIcon);
+      toast(`${s.icon} ${s.name}（${s.calories} kcal）に修正しました`);
+      setEditing(null);
+    });
+  };
 
   const add = (e: React.FormEvent) => {
     e.preventDefault();
@@ -224,7 +239,9 @@ export default function Snacks({ dash, onChanged, ticketMode, onTicketMode, toas
             </button>
           </div>
         </div>
-        <p className="muted small">☆ を押すと目標になり、ホームに「あと何問で食べられるか」が表示されます（いくつでも登録できます）。</p>
+        <p className="muted small">
+          ☆ を押すと目標になり、ホームに「あと何問で食べられるか」が表示されます（いくつでも登録できます）。初めから入っているお菓子も、鉛筆で名前・カロリー・アイコンを修正したり、× で削除したりできます。
+        </p>
         {showTickets && (
           <p className="ticket-note">🎟 引換券を使うお菓子の「引換券」を押してください。カロリーを使わずに食べられます。</p>
         )}
@@ -232,8 +249,9 @@ export default function Snacks({ dash, onChanged, ticketMode, onTicketMode, toas
           {shown.map((s) => {
             const isGoal = goalIds.has(s.id);
             const affordable = budget >= s.calories;
-            return (
-              <li key={s.id} className={"snack-row" + (isGoal ? " goal" : "")}>
+            const edit = editing?.id === s.id ? editing : null;
+            return [
+              <li key={s.id} className={"snack-row" + (isGoal ? " goal" : "") + (edit ? " editing" : "")}>
                 <button
                   className={"snack-star" + (isGoal ? " on" : "")}
                   disabled={busy}
@@ -281,12 +299,92 @@ export default function Snacks({ dash, onChanged, ticketMode, onTicketMode, toas
                       🎟 引換券
                     </button>
                   )}
-                  {!s.isBuiltin && (
-                    <DeleteButton label="図鑑から削除" disabled={busy} onClick={() => run(async () => { await api.deleteSnack(s.id); })} />
-                  )}
+                  <EditButton
+                    label="名前・カロリー・アイコンを修正"
+                    disabled={busy}
+                    onClick={() => {
+                      setDeleting(null);
+                      setEditing(edit ? null : { id: s.id, name: s.name, calories: String(s.calories), icon: s.icon });
+                    }}
+                  />
+                  <DeleteButton
+                    label="図鑑から削除"
+                    disabled={busy}
+                    onClick={() => {
+                      setEditing(null);
+                      setDeleting(deleting === s.id ? null : s.id);
+                    }}
+                  />
                 </span>
-              </li>
-            );
+              </li>,
+              deleting === s.id && (
+                <li key={`${s.id}-delete`} className="snack-confirm">
+                  <span>
+                    {s.icon} {s.name} を図鑑から削除しますか？
+                    {s.isBuiltin && <span className="muted small">（初めから入っているお菓子は元に戻せません）</span>}
+                  </span>
+                  <button
+                    className="btn-small danger"
+                    disabled={busy}
+                    onClick={() =>
+                      run(async () => {
+                        await api.deleteSnack(s.id);
+                        setDeleting(null);
+                        toast(`${s.icon} ${s.name} を図鑑から削除しました`);
+                      })
+                    }
+                  >
+                    削除する
+                  </button>
+                  <button className="btn-small" disabled={busy} onClick={() => setDeleting(null)}>
+                    やめる
+                  </button>
+                </li>
+              ),
+              edit && (
+                <li key={`${s.id}-edit`} className="snack-edit">
+                  <form onSubmit={saveEdit}>
+                    <div className="icon-picker small">
+                      {SNACK_ICONS.includes(edit.icon) ? null : (
+                        <button type="button" className="active" title="今のアイコン">
+                          {edit.icon}
+                        </button>
+                      )}
+                      {SNACK_ICONS.map((i) => (
+                        <button type="button" key={i} className={edit.icon === i ? "active" : ""} onClick={() => setEditing({ ...edit, icon: i })}>
+                          {i}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="row">
+                      <input
+                        value={edit.name}
+                        onChange={(e) => setEditing({ ...edit, name: e.target.value })}
+                        maxLength={40}
+                        aria-label="お菓子の名前"
+                        autoFocus
+                      />
+                      <input
+                        value={edit.calories}
+                        onChange={(e) => setEditing({ ...edit, calories: e.target.value })}
+                        type="number"
+                        min={1}
+                        max={5000}
+                        aria-label="カロリー"
+                        className="snack-edit-kcal"
+                      />
+                      <span className="muted small">kcal</span>
+                      <button className="btn btn-primary" type="submit" disabled={busy || !edit.name.trim() || !edit.calories}>
+                        保存
+                      </button>
+                      <button className="btn" type="button" disabled={busy} onClick={() => setEditing(null)}>
+                        やめる
+                      </button>
+                    </div>
+                  </form>
+                </li>
+              ),
+            ];
           })}
         </ul>
       </section>

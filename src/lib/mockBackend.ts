@@ -1749,6 +1749,7 @@ function examOverview(): ExamOverview {
       bestCorrect: best ? best.correct : null,
       bestTotal: best ? best.total : null,
       passedEver: mine.some((a) => a.passed),
+      passedToday: mine.some((a) => a.passed && a.date === today()),
       reviewCount: mistakes.filter((m) => m.level === level).length,
     };
   });
@@ -2091,6 +2092,18 @@ export async function mockInvoke<T>(cmd: string, args: Record<string, unknown>):
       state.snacks.push(snack);
       save();
       return snack as T;
+    }
+    case "update_snack": {
+      // Mirrors commands::update_snack_in: any snack, the first ones too.
+      const snack = state.snacks.find((s) => s.id === Number(args.id));
+      if (!snack) throw new Error("snack not found");
+      const name = String(args.name ?? "").trim();
+      const calories = Number(args.calories);
+      if (!name) throw new Error("お菓子の名前を入力してください");
+      if (!(calories >= 1 && calories <= 5000)) throw new Error("カロリーは1〜5000の範囲で入力してください");
+      Object.assign(snack, { name, calories, icon: String(args.icon || "🍬") });
+      save();
+      return { ...snack } as T;
     }
     case "delete_snack": {
       const id = Number(args.id);
