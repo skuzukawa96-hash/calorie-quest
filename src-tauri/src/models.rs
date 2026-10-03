@@ -593,6 +593,8 @@ pub struct Stats {
     pub current_streak: i64,
     pub longest_streak: i64,
     pub total_kcal: i64,
+    /// every snack eaten, in kcal (with `total_kcal`, over `total_study_days` for the averages)
+    pub total_consumed: i64,
     pub total_answered: i64,
     pub total_correct: i64,
     pub accuracy: f64,

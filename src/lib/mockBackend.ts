@@ -1691,6 +1691,7 @@ function submitAnswer(p: AnswerPayload): AnswerResult {
 function getStats(): Stats {
   const days = Object.values(state.daily);
   const totalKcal = days.reduce((s, d) => s + d.kcalEarned, 0);
+  const totalConsumed = days.reduce((s, d) => s + d.kcalConsumed, 0);
   const totalAnswered = days.reduce((s, d) => s + d.answered, 0);
   const totalCorrect = days.reduce((s, d) => s + d.correct, 0);
   const last14Days: DayPoint[] = [];
@@ -1720,6 +1721,7 @@ function getStats(): Stats {
     currentStreak: state.user.currentStreak,
     longestStreak: state.user.longestStreak,
     totalKcal,
+    totalConsumed,
     totalAnswered,
     totalCorrect,
     accuracy: totalAnswered ? totalCorrect / totalAnswered : 0,

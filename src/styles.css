@@ -2610,6 +2610,19 @@ button.wp-link.open {
   grid-template-columns: repeat(3, 1fr);
   gap: 12px;
 }
+/* 累計学習日数 / 連続学習（最長） / 平均獲得 / 平均消費 on one line, the totals under them */
+.stat-grid.stat-grid-4 {
+  grid-template-columns: repeat(4, 1fr);
+}
+.stat-grid + .stat-grid {
+  margin-top: 12px;
+}
+.stat-sub {
+  margin-left: 2px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--muted);
+}
 .stat {
   background: var(--cream);
   border-radius: 14px;
@@ -2810,7 +2823,8 @@ button.wp-link.open {
   .mode-grid,
   .need-grid,
   .summary-grid,
-  .stat-grid {
+  .stat-grid,
+  .stat-grid.stat-grid-4 {
     grid-template-columns: 1fr;
   }
   .options {

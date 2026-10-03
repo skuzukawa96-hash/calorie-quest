@@ -485,6 +485,8 @@ export interface Stats {
   currentStreak: number;
   longestStreak: number;
   totalKcal: number;
+  /** every snack eaten, in kcal (with `totalKcal`, over `totalStudyDays` for the averages) */
+  totalConsumed: number;
   totalAnswered: number;
   totalCorrect: number;
   accuracy: number;

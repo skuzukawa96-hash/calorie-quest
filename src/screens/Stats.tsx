@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { api } from "../lib/api";
 import {
   TIER_LABEL,
@@ -64,15 +64,36 @@ export default function Stats({ onChanged, toast }: Props) {
   }
 
   const toggle = (m: Metric) => setMetric((cur) => (cur === m ? null : m));
+  // Per day studied: the days without study are left out of what the totals are divided by.
+  const perStudyDay = (total: number) =>
+    stats.totalStudyDays > 0 ? `${Math.round(total / stats.totalStudyDays)} kcal` : "—";
 
   return (
     <div className="screen stats">
       <section className="card">
         <h2>学習記録</h2>
-        <div className="stat-grid">
+        <div className="stat-grid stat-grid-4">
           <Stat label="累計学習日数" value={`${stats.totalStudyDays} 日`} />
-          <Stat label="連続学習" value={`🔥 ${stats.currentStreak} 日`} />
-          <Stat label="最長ストリーク" value={`${stats.longestStreak} 日`} />
+          <Stat
+            label="連続学習（最長）"
+            value={
+              <>
+                🔥 {stats.currentStreak} 日<span className="stat-sub">（最長 {stats.longestStreak} 日）</span>
+              </>
+            }
+          />
+          <Stat
+            label="平均獲得カロリー"
+            value={perStudyDay(stats.totalKcal)}
+            title="累計獲得カロリー ÷ 学習した日数（学習していない日は数えません）"
+          />
+          <Stat
+            label="平均消費カロリー"
+            value={perStudyDay(stats.totalConsumed)}
+            title="食べたお菓子の累計カロリー ÷ 学習した日数（学習していない日は数えません）"
+          />
+        </div>
+        <div className="stat-grid">
           <Stat label="累計獲得カロリー" value={`${stats.totalKcal} kcal`} open={metric === "kcal"} onClick={() => toggle("kcal")} />
           <Stat label="累計回答数" value={`${stats.totalAnswered} 問`} open={metric === "answered"} onClick={() => toggle("answered")} />
           <Stat
@@ -196,10 +217,23 @@ export default function Stats({ onChanged, toast }: Props) {
 }
 
 /** A total; with `onClick` it is a button that opens and closes its breakdown. */
-function Stat({ label, value, open, onClick }: { label: string; value: string; open?: boolean; onClick?: () => void }) {
+function Stat({
+  label,
+  value,
+  title,
+  open,
+  onClick,
+}: {
+  label: string;
+  value: ReactNode;
+  /** how it is counted, on hover */
+  title?: string;
+  open?: boolean;
+  onClick?: () => void;
+}) {
   if (!onClick) {
     return (
-      <div className="stat">
+      <div className="stat" title={title}>
         <div className="stat-value">{value}</div>
         <div className="muted">{label}</div>
       </div>

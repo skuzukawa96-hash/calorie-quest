@@ -1298,11 +1298,12 @@ pub fn get_stats(state: State<'_, AppState>) -> CmdResult<Stats> {
 /// Everything on the 記録 screen: totals, the last two weeks, the weakest questions and tickets.
 pub fn load_stats(conn: &Connection) -> CmdResult<Stats> {
     let user = load_user(conn).map_err(err)?;
-    let (total_kcal, total_answered, total_correct): (i64, i64, i64) = conn
+    let (total_kcal, total_consumed, total_answered, total_correct): (i64, i64, i64, i64) = conn
         .query_row(
-            "SELECT COALESCE(SUM(kcal_earned), 0), COALESCE(SUM(answered), 0), COALESCE(SUM(correct), 0) FROM daily_stats WHERE user_id = ?1",
+            "SELECT COALESCE(SUM(kcal_earned), 0), COALESCE(SUM(kcal_consumed), 0), COALESCE(SUM(answered), 0), COALESCE(SUM(correct), 0)
+             FROM daily_stats WHERE user_id = ?1",
             params![USER_ID],
-            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
         )
         .map_err(err)?;
     let accuracy = if total_answered > 0 {
@@ -1419,6 +1420,7 @@ pub fn load_stats(conn: &Connection) -> CmdResult<Stats> {
         current_streak: user.current_streak,
         longest_streak: user.longest_streak,
         total_kcal,
+        total_consumed,
         total_answered,
         total_correct,
         accuracy,
@@ -1573,6 +1575,7 @@ mod tests {
         let day = s.last_14_days.last().unwrap();
         assert_eq!(day.date, today());
         assert_eq!((day.kcal_earned, day.kcal_consumed), (3, 150), "1 + 2.5 under がんばり, the half kept for later");
+        assert_eq!((s.total_kcal, s.total_consumed, s.total_study_days), (3, 150, 1), "what the averages divide");
     }
 
     #[test]
