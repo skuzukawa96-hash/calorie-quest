@@ -72,16 +72,10 @@ export default function Stats({ onChanged, toast }: Props) {
     <div className="screen stats">
       <section className="card">
         <h2>学習記録</h2>
-        <div className="stat-grid stat-grid-4">
+        <div className="stat-grid stat-grid-5">
           <Stat label="累計学習日数" value={`${stats.totalStudyDays} 日`} />
-          <Stat
-            label="連続学習（最長）"
-            value={
-              <>
-                🔥 {stats.currentStreak} 日<span className="stat-sub">（最長 {stats.longestStreak} 日）</span>
-              </>
-            }
-          />
+          <Stat label="連続学習" value={`🔥 ${stats.currentStreak} 日`} />
+          <Stat label="最長ストリーク" value={`${stats.longestStreak} 日`} />
           <Stat
             label="平均獲得カロリー"
             value={perStudyDay(stats.totalKcal)}
