@@ -1226,6 +1226,11 @@ const TOO_COMMON_FOR_RELATED: &[&str] =
 /// Verbs of so many senses that their 類似表現 (make / let / have, bring / take) is about one of
 /// them only: shown in a sentence when a pattern of theirs is found, not just for being there.
 const TOO_MANY_SENSES_FOR_RELATED: &[&str] = &["have", "get", "take", "make", "put", "go", "come", "keep", "find", "give", "let", "do"];
+/// Prepositions and quantifiers in nearly every sentence (for, from, by, every, many…): their
+/// 類似表現 shows in a sentence when a pattern of theirs is found, not just for being there. A word
+/// question and the 類似表現 of other words still show them.
+const IN_MOST_SENTENCES: &[&str] =
+    &["for", "from", "by", "every", "each", "many", "much", "few", "fewer", "less", "other", "another", "too", "also", "either", "else"];
 /// How many words may fill a slot between two words of a pattern ("compared [the new model] with").
 const MAX_SLOT_WORDS: usize = 6;
 /// Words ending in -ing that are no verb's -ing (the "-thing" words are left out as well).
@@ -1534,6 +1539,8 @@ fn pieces_found(pieces: &[PatternPiece], headword: &str, tokens: &[String], lemm
 /// (that) ～") is not what the sentence says. In the order they appear, at most MAX_USED_WORDS.
 pub fn used_words(texts: &[String]) -> Vec<crate::models::UsedWord> {
     let mut out: Vec<crate::models::UsedWord> = Vec::new();
+    // Whether a pattern of each was found in the sentence (else it is there for being confusable).
+    let mut found_pattern: Vec<bool> = Vec::new();
     for text in texts {
         let tokens = crate::util::tokens(text);
         let lemmas: Vec<Vec<String>> = tokens.iter().map(|t| crate::util::lemmas(t)).collect();
@@ -1571,10 +1578,12 @@ pub fn used_words(texts: &[String]) -> Vec<crate::models::UsedWord> {
                     && as_word
                     && !related.is_empty()
                     && !TOO_COMMON_FOR_RELATED.contains(&word.as_str())
-                    && !TOO_MANY_SENSES_FOR_RELATED.contains(&word.as_str());
+                    && !TOO_MANY_SENSES_FOR_RELATED.contains(&word.as_str())
+                    && !IN_MOST_SENTENCES.contains(&word.as_str());
                 if usages.is_empty() && !confusable {
                     continue;
                 }
+                found_pattern.push(!usages.is_empty());
                 if usages.is_empty() {
                     usages = untold_usages(word);
                 }
@@ -1584,8 +1593,12 @@ pub fn used_words(texts: &[String]) -> Vec<crate::models::UsedWord> {
             }
         }
     }
-    out.truncate(MAX_USED_WORDS);
-    out
+    // The words whose patterns the sentence uses come first, so the limit leaves them in; then
+    // those shown for being easily confused, each in the order they come.
+    let mut order: Vec<usize> = (0..out.len()).collect();
+    order.sort_by_key(|&i| !found_pattern[i]);
+    let mut slots: Vec<Option<crate::models::UsedWord>> = out.into_iter().map(Some).collect();
+    order.into_iter().take(MAX_USED_WORDS).filter_map(|i| slots[i].take()).collect()
 }
 
 /// The patterns of `word` that are the word and what fills it ("lend 人 ～"): found wherever the
@@ -2759,5 +2772,16 @@ mod tests {
         assert_eq!(bases("Can you lend me your pen?"), vec!["lend"]);
         assert!(bases("She's worried about scope creep.").is_empty());
         assert!(bases("run of the mill").is_empty(), "a run");
+    }
+
+    #[test]
+    fn words_alike_in_meaning_but_not_in_use_are_grouped() {
+        let titles = |w: &str| related_groups(w).into_iter().map(|g| g.title).collect::<Vec<_>>();
+        assert!(titles("predict").contains(&"予想する・予測する".to_string()));
+        assert!(titles("expect").contains(&"予想する・予測する".to_string()), "expect is in two groups");
+        let words = |s: &str| used_words(&[s.to_string()]).into_iter().map(|u| u.word).collect::<Vec<_>>();
+        assert!(words("They predict heavy rain tomorrow.").contains(&"predict".to_string()));
+        assert!(words("She called while I was cooking.").contains(&"while".to_string()));
+        assert!(!words("I stayed there for three days.").contains(&"for".to_string()), "for is in most sentences");
     }
 }

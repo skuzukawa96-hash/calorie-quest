@@ -1067,6 +1067,8 @@ const TOO_COMMON_FOR_RELATED = [
 ];
 /** Mirrors TOO_MANY_SENSES_FOR_RELATED: their 類似表現 is about one sense only. */
 const TOO_MANY_SENSES_FOR_RELATED = ["have", "get", "take", "make", "put", "go", "come", "keep", "find", "give", "let", "do"];
+/** Mirrors IN_MOST_SENTENCES: prepositions and quantifiers in nearly every sentence. */
+const IN_MOST_SENTENCES = ["for", "from", "by", "every", "each", "many", "much", "few", "fewer", "less", "other", "another", "too", "also", "either", "else"];
 const NOT_ING = ["morning", "evening", "ceiling", "during", "string", "spring", "sibling", "pudding", "awning", "darling"];
 const NOUNS_AFTER_TO = ["work", "school", "bed", "class", "church", "court", "rain", "store", "water"];
 const DETERMINERS = ["the", "a", "an", "my", "your", "his", "its", "our", "their", "every", "each"];
@@ -1249,6 +1251,7 @@ function piecesFound(pieces: Piece[], headword: string, tokens: string[], lemmaL
 /** Mirrors db::used_words: the words of a sentence whose patterns it uses, or that are easily confused. */
 function usedWords(texts: string[]): UsedWord[] {
   const out: UsedWord[] = [];
+  const foundPattern: boolean[] = [];
   for (const text of texts) {
     const tokens = tokenize(text);
     const lemmaList = tokens.map(lemmas);
@@ -1274,8 +1277,10 @@ function usedWords(texts: string[]): UsedWord[] {
           asWord &&
           related.length > 0 &&
           !TOO_COMMON_FOR_RELATED.includes(word) &&
-          !TOO_MANY_SENSES_FOR_RELATED.includes(word);
+          !TOO_MANY_SENSES_FOR_RELATED.includes(word) &&
+          !IN_MOST_SENTENCES.includes(word);
         if (!usages.length && !confusable) continue;
+        foundPattern.push(usages.length > 0);
         if (!usages.length) {
           usages = ((usagesByWord.get(word) ?? []) as WordUsage[]).filter((u) =>
             patternWays(u.pattern, word).some((p) => !patternIsTelling(p, word, u.ja)),
@@ -1287,7 +1292,12 @@ function usedWords(texts: string[]): UsedWord[] {
       }
     });
   }
-  return out.slice(0, MAX_USED_WORDS);
+  // Mirrors used_words: the words whose patterns the sentence uses first, then the confusable ones.
+  return out
+    .map((u, i) => [u, i] as const)
+    .sort((a, b) => Number(!foundPattern[a[1]]) - Number(!foundPattern[b[1]]) || a[1] - b[1])
+    .slice(0, MAX_USED_WORDS)
+    .map(([u]) => u);
 }
 
 /** Mirrors notes_for in commands.rs. */
