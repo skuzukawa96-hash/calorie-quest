@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import FavoriteStar, { useFavorites } from "../components/FavoriteStar";
 import GlossedText from "../components/GlossedText";
 import { PlayModeTag } from "../components/PlayModeSwitch";
 import WordNotesPanel from "../components/WordNotes";
@@ -22,10 +23,22 @@ const GLOSS_KEY = "cq-show-gloss";
 const LETTERS = ["A", "B", "C", "D"];
 const PART_ORDER: ExamPart[] = ["listening", "short", "text", "reading"];
 
+/**
+ * One round of お気に入りの復習 of exam questions, graded here. It pays nothing and leaves the exam
+ * review alone; only the time each was gone over is kept.
+ */
+export interface ExamFavoriteRound {
+  items: { favoriteId: number; question: ExamQuestion }[];
+  /** the next round, when there are favorites this one did not take */
+  onAgain: (() => void) | null;
+}
+
 interface Props {
-  /** an exam of a level, or the review of exam questions missed */
-  kind: "exam" | "review";
+  /** an exam of a level, the review of exam questions missed, or exam questions starred */
+  kind: "exam" | "review" | "favorites";
   level?: ExamLevel;
+  /** kind "favorites": the round to go through */
+  favorites?: ExamFavoriteRound;
   overview: ExamOverview;
   /** がんばり / 通常 / お気軽, shown beside what was earned */
   playMode: PlayMode;
@@ -66,7 +79,7 @@ function say(text: string) {
  * as soon as it is answered, with its explanation; the score is handed in at the end. The review
  * goes over the exam questions missed, one at a time, paying for each put right.
  */
-export default function Exam({ kind, level, overview, playMode, onExit, onProgress, toast }: Props) {
+export default function Exam({ kind, level, favorites, overview, playMode, onExit, onProgress, toast }: Props) {
   const [questions, setQuestions] = useState<ExamQuestion[] | null>(null);
   const [round, setRound] = useState(0);
   const [idx, setIdx] = useState(0);
@@ -79,6 +92,7 @@ export default function Exam({ kind, level, overview, playMode, onExit, onProgre
   const [gloss, setGloss] = useState(loadGloss);
   const [busy, setBusy] = useState(false);
   const [quitting, setQuitting] = useState(false);
+  const fav = useFavorites(toast);
   const levelInfo = overview.levels.find((l) => l.level === level);
 
   useEffect(() => {
@@ -89,15 +103,17 @@ export default function Exam({ kind, level, overview, playMode, onExit, onProgre
     setResult(null);
     setReviewDone(null);
     setRemaining(null);
-    (kind === "exam" && level ? api.startExam(level) : api.getExamReview())
-      .then((qs) => alive && setQuestions(qs))
-      .catch((e) => toast(String(e)));
+    if (kind === "favorites") setQuestions(favorites?.items.map((i) => i.question) ?? []);
+    else
+      (kind === "exam" && level ? api.startExam(level) : api.getExamReview())
+        .then((qs) => alive && setQuestions(qs))
+        .catch((e) => toast(String(e)));
     loadDictionary().then((d) => alive && setDict(d));
     return () => {
       alive = false;
       stopSpeaking();
     };
-  }, [kind, level, round, toast]);
+  }, [kind, level, favorites, round, toast]);
 
   const current = questions?.[idx];
   const mine = current ? answered[current.id] : undefined;
@@ -122,13 +138,16 @@ export default function Exam({ kind, level, overview, playMode, onExit, onProgre
         }
       } else {
         setAnswered((a) => ({ ...a, [current.id]: { chosen: choice, correct } }));
+        // お気に入りの復習 keeps only when the favorite was gone over.
+        const item = favorites?.items.find((i) => i.question.id === current.id);
+        if (kind === "favorites" && item) api.markFavoriteReviewed(item.favoriteId).catch((e) => toast(String(e)));
       }
       if (correct) playCrunch();
       else playWrong();
       // The line heard, or the sentence completed, is read once the answer is in.
       if (current.part === "short" || current.part === "listening") window.setTimeout(() => say(current.sentence), 350);
     },
-    [current, answered, busy, kind, onProgress, toast],
+    [current, answered, busy, kind, favorites, onProgress, toast],
   );
 
   const finish = useCallback(async () => {
@@ -187,7 +206,7 @@ export default function Exam({ kind, level, overview, playMode, onExit, onProgre
       return !g;
     });
 
-  const title = kind === "exam" ? `📝 試験：${levelInfo?.label ?? ""}` : "🔁 試験の復習";
+  const title = kind === "exam" ? `📝 試験：${levelInfo?.label ?? ""}` : kind === "favorites" ? "★ お気に入りの復習" : "🔁 試験の復習";
 
   if (result && questions) {
     return (
@@ -201,6 +220,29 @@ export default function Exam({ kind, level, overview, playMode, onExit, onProgre
         onAgain={() => setRound((r) => r + 1)}
         onExit={onExit}
       />
+    );
+  }
+  if (reviewDone && questions && kind === "favorites") {
+    return (
+      <div className="screen exam">
+        <section className="card exam-result">
+          <h2>★ お気に入りの復習おしまい！</h2>
+          <div className="exam-score">
+            <b>{correctCount}</b> / {questions.length} 問正解
+          </div>
+          <p className="muted">お気に入りの問題は何度でも見返せます。カロリーと試験の復習は変わりません。</p>
+          <div className="row">
+            {favorites?.onAgain && (
+              <button className="btn btn-primary" onClick={favorites.onAgain}>
+                続けて復習する
+              </button>
+            )}
+            <button className="btn" onClick={onExit}>
+              お気に入りに戻る
+            </button>
+          </div>
+        </section>
+      </div>
     );
   }
   if (reviewDone && questions) {
@@ -306,6 +348,7 @@ export default function Exam({ kind, level, overview, playMode, onExit, onProgre
       </div>
 
       <div className="card question-card" key={current.id}>
+        <FavoriteStar on={fav.isExam(current.id)} onToggle={() => void fav.toggleExam(current.id)} />
         {(current.part === "text" || current.part === "reading") && current.passage && (
           <ExamPassage
             q={current}
@@ -338,10 +381,12 @@ export default function Exam({ kind, level, overview, playMode, onExit, onProgre
           <div className={"feedback " + (mine.correct ? "ok" : "ng")}>
             <div className="feedback-main">
               <div className="feedback-title">{mine.correct ? "正解！" : "不正解…"}</div>
-              <div className="feedback-kcal">
+              <div className={"feedback-kcal" + (kind === "favorites" ? " fav-review-note" : "")}>
                 {kind === "review"
                   ? `+${formatKcal(mine.kcal ?? 0)} kcal`
-                  : `${correctCount} / ${Object.keys(answered).length} 問正解`}
+                  : kind === "favorites"
+                    ? "★ お気に入りの復習"
+                    : `${correctCount} / ${Object.keys(answered).length} 問正解`}
               </div>
             </div>
             <div className="feedback-detail">
@@ -366,9 +411,9 @@ export default function Exam({ kind, level, overview, playMode, onExit, onProgre
               {!mine.correct &&
                 (kind === "exam" ? (
                   <div className="muted">この問題は、試験を終えると「試験の復習」に入ります（正解で +{overview.reviewKcal} kcal）。</div>
-                ) : (
+                ) : kind === "review" ? (
                   <div className="muted">この問題は試験の復習に残ります。</div>
-                ))}
+                ) : null)}
             </div>
             <button className="btn btn-primary" onClick={next} disabled={busy} autoFocus>
               {idx + 1 >= questions.length ? (kind === "exam" ? "採点する" : "結果を見る") : "次へ（Enter）"}

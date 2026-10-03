@@ -282,6 +282,18 @@ CREATE TABLE IF NOT EXISTS exam_mistakes (
   misses INTEGER NOT NULL DEFAULT 1,
   PRIMARY KEY (user_id, question_id)
 );
+-- お気に入り: a study question starred in the mode it was asked in, or an exam question (`exam_id`).
+CREATE TABLE IF NOT EXISTS favorites (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL,
+  question_id INTEGER,
+  mode TEXT,
+  exam_id TEXT,
+  added_at TEXT NOT NULL,
+  last_reviewed_at TEXT,
+  UNIQUE (user_id, question_id, mode),
+  UNIQUE (user_id, exam_id)
+);
 CREATE INDEX IF NOT EXISTS idx_history_due ON learning_history (user_id, needs_review, next_due_at);
 CREATE INDEX IF NOT EXISTS idx_log_date ON answer_log (user_id, answered_at);
 ";

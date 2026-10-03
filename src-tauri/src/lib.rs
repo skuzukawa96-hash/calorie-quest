@@ -1,6 +1,7 @@
 mod commands;
 mod db;
 mod exam;
+mod favorite;
 mod models;
 mod recipe;
 mod speech;
@@ -48,6 +49,11 @@ pub fn run() {
             exam::finish_exam,
             exam::get_exam_review,
             exam::answer_exam_review,
+            favorite::get_favorite_keys,
+            favorite::set_question_favorite,
+            favorite::set_exam_favorite,
+            favorite::list_favorites,
+            favorite::mark_favorite_reviewed,
             recipe::list_recipe_words,
             recipe::add_recipe_word,
             recipe::review_recipe_word,

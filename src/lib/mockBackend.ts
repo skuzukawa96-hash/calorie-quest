@@ -35,6 +35,8 @@ import type {
   ExamQuestion,
   ExamResult,
   ExamReviewResult,
+  Favorite,
+  FavoriteKeys,
   GrammarNote,
   Level,
   RelatedGroup,
@@ -129,7 +131,18 @@ interface MockState {
   examAttempts: ExamAttempt[];
   /** exam question id → missed and not yet put right in the exam review (mirrors exam_mistakes) */
   examMistakes: Record<string, { level: ExamLevel; addedAt: string; misses: number }>;
+  /** お気に入り (mirrors favorites); a study question by its `key`, as `history` is */
+  favorites: StoredFavorite[];
   nextId: number;
+}
+
+interface StoredFavorite {
+  id: number;
+  questionKey?: string;
+  mode?: Mode;
+  examId?: string;
+  addedAt: string;
+  lastReviewedAt?: string | null;
 }
 
 interface ExamAttempt {
@@ -302,6 +315,7 @@ function freshState(): MockState {
     recipePaid: {},
     examAttempts: [],
     examMistakes: {},
+    favorites: [],
     nextId: 100,
   };
 }
@@ -323,7 +337,7 @@ function load(): MockState {
       const stored = JSON.parse(raw) as Partial<MockState> &
         Omit<
           MockState,
-          "recipe" | "savings" | "saved" | "snackTickets" | "goals" | "kcalEighths" | "answerTotals" | "recipePaid" | "examAttempts" | "examMistakes"
+          "recipe" | "savings" | "saved" | "snackTickets" | "goals" | "kcalEighths" | "answerTotals" | "recipePaid" | "examAttempts" | "examMistakes" | "favorites"
         > & {
           /** the day's recipe pay in halves, then in quarters, before eighths of any reward */
           recipeHalves?: Record<string, number>;
@@ -350,6 +364,7 @@ function load(): MockState {
         recipePaid: stored.recipePaid ?? {},
         examAttempts: stored.examAttempts ?? [],
         examMistakes: stored.examMistakes ?? {},
+        favorites: stored.favorites ?? [],
       };
     }
   } catch {
@@ -1483,6 +1498,59 @@ function finishExam(level: ExamLevel, answers: ExamAnswer[]): ExamResult {
   };
 }
 
+/* ---------- お気に入り (mirrors favorite.rs) ---------- */
+
+function setQuestionFavorite(questionId: number, mode: Mode, on: boolean) {
+  if (!(["choice", "typing", "speaking", "listening"] as Mode[]).includes(mode)) throw new Error(`unknown mode ${mode}`);
+  const q = questions.find((x) => x.id === questionId);
+  if (!q) throw new Error(`question ${questionId} not found`);
+  const at = state.favorites.findIndex((f) => f.questionKey === q.key && f.mode === mode);
+  if (on && at < 0) state.favorites.push({ id: state.nextId++, questionKey: q.key, mode, addedAt: nowTs() });
+  if (!on && at >= 0) state.favorites.splice(at, 1);
+  save();
+}
+
+function setExamFavorite(examId: string, on: boolean) {
+  const at = state.favorites.findIndex((f) => f.examId === examId);
+  if (on && at < 0) {
+    if (!examQuestion(examId)) throw new Error(`unknown exam question ${examId}`);
+    state.favorites.push({ id: state.nextId++, examId, addedAt: nowTs() });
+  }
+  if (!on && at >= 0) state.favorites.splice(at, 1);
+  save();
+}
+
+function favoriteKeys(): FavoriteKeys {
+  const out: FavoriteKeys = { questions: [], exams: [] };
+  for (const f of state.favorites) {
+    if (f.examId) out.exams.push(f.examId);
+    const q = f.questionKey ? questions.find((x) => x.key === f.questionKey) : undefined;
+    if (q && f.mode) out.questions.push({ questionId: q.id, mode: f.mode });
+  }
+  return out;
+}
+
+function listFavorites(): Favorite[] {
+  const out: Favorite[] = [];
+  for (const f of [...state.favorites].reverse()) {
+    const base = { id: f.id, addedAt: f.addedAt, lastReviewedAt: f.lastReviewedAt ?? null };
+    if (f.examId) {
+      const exam = examQuestion(f.examId);
+      if (exam) out.push({ ...base, question: null, exam });
+      continue;
+    }
+    const q = questions.find((x) => x.key === f.questionKey);
+    if (q && f.mode) out.push({ ...base, question: buildSessionQuestion(q, f.mode, false), exam: null });
+  }
+  return out;
+}
+
+function markFavoriteReviewed(id: number) {
+  const f = state.favorites.find((x) => x.id === id);
+  if (f) f.lastReviewedAt = nowTs();
+  save();
+}
+
 function examReview(): ExamQuestion[] {
   return Object.entries(state.examMistakes)
     .sort(([a, x], [b, y]) => x.addedAt.localeCompare(y.addedAt) || a.localeCompare(b))
@@ -1834,6 +1902,16 @@ export async function mockInvoke<T>(cmd: string, args: Record<string, unknown>):
       return examReview() as T;
     case "answer_exam_review":
       return answerExamReview(String(args.id), String(args.chosen)) as T;
+    case "get_favorite_keys":
+      return favoriteKeys() as T;
+    case "set_question_favorite":
+      return setQuestionFavorite(Number(args.questionId), args.mode as Mode, Boolean(args.on)) as T;
+    case "set_exam_favorite":
+      return setExamFavorite(String(args.examId), Boolean(args.on)) as T;
+    case "list_favorites":
+      return listFavorites() as T;
+    case "mark_favorite_reviewed":
+      return markFavoriteReviewed(Number(args.id)) as T;
     case "get_session_questions":
       return getSessionQuestions(args.mode as SessionMode, String(args.tier), String(args.category || "all"), Number(args.count)) as T;
     case "submit_answer":
@@ -1932,12 +2010,14 @@ export async function mockInvoke<T>(cmd: string, args: Record<string, unknown>):
       // Like the snacks, the word list and the goals are the learner's own, not learning history
       // (reset_progress in Rust leaves recipe_words and goal_snacks alone too, forgetting only the
       // day each word last paid, which went with the day's kcal).
-      const { snacks, recipe, goals } = state;
+      const { snacks, recipe, goals, favorites } = state;
       const playMode = state.user.playMode;
       state = freshState();
       state.snacks = snacks;
       state.recipe = recipe;
       state.goals = goals;
+      // お気に入り are the learner's own too (reset_progress leaves favorites alone).
+      state.favorites = favorites;
       // The play mode is a setting, as users.play_mode is left alone in Rust.
       state.user.playMode = playMode;
       save();

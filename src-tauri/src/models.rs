@@ -302,6 +302,35 @@ pub struct ExamOverview {
     pub review_kcal: i64,
 }
 
+/// What is starred, for the ☆ / ★ on the questions of a session or an exam.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FavoriteKeys {
+    pub questions: Vec<FavoriteQuestionKey>,
+    /// exam question ids
+    pub exams: Vec<String>,
+}
+
+/// A study question starred in a mode.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FavoriteQuestionKey {
+    pub question_id: i64,
+    pub mode: String,
+}
+
+/// One お気に入り: a study question built for the mode it was starred in, or an exam question.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Favorite {
+    pub id: i64,
+    pub added_at: String,
+    /// when it was last gone over in the favorites' review
+    pub last_reviewed_at: Option<String>,
+    pub question: Option<SessionQuestion>,
+    pub exam: Option<ExamQuestion>,
+}
+
 /// One question of an exam, with its passage when it is part of one (長文穴埋め / 読解).
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]

@@ -10,6 +10,9 @@ import type {
   ExamQuestion,
   ExamResult,
   ExamReviewResult,
+  Favorite,
+  FavoriteKeys,
+  Mode,
   NativeRecognition,
   PlayMode,
   RecipeAddResult,
@@ -78,6 +81,14 @@ export const api = {
   finishExam: (level: ExamLevel, answers: ExamAnswer[]) => call<ExamResult>("finish_exam", { level, answers }),
   getExamReview: () => call<ExamQuestion[]>("get_exam_review"),
   answerExamReview: (id: string, chosen: string) => call<ExamReviewResult>("answer_exam_review", { id, chosen }),
+
+  // お気に入り: questions starred (☆ → ★); going over them again pays nothing and records nothing
+  getFavoriteKeys: () => call<FavoriteKeys>("get_favorite_keys"),
+  setQuestionFavorite: (questionId: number, mode: Mode, on: boolean) =>
+    call<void>("set_question_favorite", { questionId, mode, on }),
+  setExamFavorite: (examId: string, on: boolean) => call<void>("set_exam_favorite", { examId, on }),
+  listFavorites: () => call<Favorite[]>("list_favorites"),
+  markFavoriteReviewed: (id: number) => call<void>("mark_favorite_reviewed", { id }),
 
   // お菓子作りレシピ (the learner's word list)
   listRecipeWords: () => call<RecipeWord[]>("list_recipe_words"),

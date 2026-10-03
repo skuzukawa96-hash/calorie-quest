@@ -372,6 +372,24 @@ export interface ExamResult {
   reviewAdded: number;
 }
 
+/** What is starred, for the ☆ / ★ on the questions of a session or an exam. */
+export interface FavoriteKeys {
+  /** study questions, each starred in a mode */
+  questions: { questionId: number; mode: Mode }[];
+  /** exam question ids */
+  exams: string[];
+}
+
+/** One お気に入り: a study question built for the mode it was starred in, or an exam question. */
+export interface Favorite {
+  id: number;
+  addedAt: string;
+  /** when it was last gone over in the favorites' review */
+  lastReviewedAt?: string | null;
+  question?: SessionQuestion | null;
+  exam?: ExamQuestion | null;
+}
+
 export interface ExamReviewResult {
   correct: boolean;
   /** whole kcal added to today now */

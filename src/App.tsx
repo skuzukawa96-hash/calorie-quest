@@ -5,6 +5,7 @@ import RecipeProvider from "./components/RecipeProvider";
 import { playFanfare } from "./lib/sfx";
 import { loadSpeechCapabilities } from "./lib/speech";
 import Exam from "./screens/Exam";
+import Favorites from "./screens/Favorites";
 import Home from "./screens/Home";
 import Recipe from "./screens/Recipe";
 import Snacks from "./screens/Snacks";
@@ -12,12 +13,13 @@ import Stats from "./screens/Stats";
 import Study from "./screens/Study";
 import type { Dashboard, ExamLevel, PlayMode, SessionMode, TierChoice } from "./types";
 
-type Tab = "home" | "snacks" | "recipe" | "stats";
+type Tab = "home" | "snacks" | "recipe" | "favorites" | "stats";
 
 const TABS: Array<{ id: Tab; label: string }> = [
   { id: "home", label: "🏠 ホーム" },
   { id: "snacks", label: "🍰 お菓子図鑑" },
   { id: "recipe", label: "🧁 お菓子作りレシピ" },
+  { id: "favorites", label: "⭐ お気に入り" },
   { id: "stats", label: "📈 記録" },
 ];
 
@@ -195,6 +197,10 @@ export default function App() {
             ) : null
           ) : tab === "recipe" ? (
             <Recipe playMode={dash?.user.playMode ?? "normal"} onProgress={() => void refresh()} toast={showToast} />
+          ) : tab === "favorites" ? (
+            dash ? (
+              <Favorites rates={dash.kcalRates} overview={dash.exam} playMode={dash.user.playMode} toast={showToast} />
+            ) : null
           ) : (
             <Stats onChanged={() => void refresh()} toast={showToast} />
           )}

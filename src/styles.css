@@ -140,6 +140,30 @@ p {
     display: none;
   }
 }
+.brand,
+.tabs button {
+  white-space: nowrap;
+}
+/* Five tabs with お気に入り: a little tighter so they stay on one line at the default width. */
+@media (max-width: 1240px) {
+  .topbar {
+    gap: 10px;
+  }
+  .brand-name {
+    font-size: 18px;
+  }
+  .tabs {
+    gap: 2px;
+    margin-left: 0;
+  }
+  .tabs button {
+    padding: 8px 8px;
+    font-size: 13.5px;
+  }
+  .topbar-stats {
+    gap: 8px;
+  }
+}
 .tabs {
   display: flex;
   gap: 4px;
@@ -1882,7 +1906,41 @@ main {
   transition: width 0.3s ease;
 }
 .question-card {
+  position: relative;
   padding: 26px 28px;
+}
+/* お気に入り: ☆ in the question's top right corner, ★ once starred */
+/* in the card's padding, clear of an exam passage that starts right under it */
+.fav-star {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  z-index: 2;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--muted);
+  font-size: 20px;
+  line-height: 28px;
+  padding: 0;
+  cursor: pointer;
+}
+.fav-star:hover {
+  background: var(--cream-2);
+  color: #e0a100;
+}
+.fav-star.on {
+  color: #f0b400;
+}
+.pill.fav-pill {
+  background: #fff6d6;
+  color: #9a6b00;
+}
+.feedback-kcal.fav-review-note {
+  font-size: 13px;
+  color: #9a6b00;
 }
 .prompt-label {
   color: var(--muted);
@@ -2764,6 +2822,182 @@ button.wp-link.open {
   .topbar {
     flex-wrap: wrap;
   }
+}
+
+/* ---------- お気に入り ---------- */
+.section-head .fav-total {
+  margin-left: 6px;
+  font-size: 14px;
+  font-weight: 400;
+}
+.fav-review-buttons {
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.fav-intro {
+  margin: 4px 0 0;
+}
+.fav-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.segmented.fav-tabs {
+  flex-wrap: wrap;
+}
+.segmented.fav-tabs button {
+  padding: 6px 11px;
+}
+.fav-forms {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 12px;
+}
+.fav-forms .chip {
+  padding: 3px 10px;
+  font-size: 12.5px;
+}
+.fav-forms .chip .count {
+  opacity: 0.75;
+  font-size: 11.5px;
+}
+.fav-item-head {
+  align-items: center;
+}
+.fav-tags {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  flex-shrink: 0;
+  width: 64px;
+}
+.fav-class,
+.fav-form {
+  border-radius: 6px;
+  padding: 1px 7px;
+  font-size: 11.5px;
+  font-weight: 700;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+.fav-class {
+  background: var(--cream-2);
+  color: var(--choco);
+}
+.fav-class.grammar {
+  background: #e6effb;
+  color: #2f5f9e;
+}
+.fav-class.idiom {
+  background: #f6e8f7;
+  color: #8a3f8f;
+}
+.fav-class.phrase,
+.fav-class.example {
+  background: var(--mint-bg);
+  color: #2f7a4a;
+}
+.fav-class.exam {
+  background: #fdecd9;
+  color: #a2561a;
+}
+.fav-form {
+  background: #fff;
+  border: 1px solid var(--line);
+  color: var(--choco-light);
+  font-weight: 600;
+}
+.fav-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.fav-sub {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* a long sentence takes two lines, so the answer in bold near its end still shows */
+.fav-title {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  font-family: var(--font-display);
+  font-size: 16px;
+  color: var(--choco);
+}
+.fav-point {
+  display: inline-block;
+  margin-right: 6px;
+  padding: 0 6px;
+  border-radius: 5px;
+  background: #e6effb;
+  color: #2f5f9e;
+  font-size: 11.5px;
+  font-weight: 700;
+}
+.fav-title b {
+  color: var(--caramel-dark);
+}
+.fav-sub {
+  font-size: 13px;
+  color: var(--muted);
+}
+.btn-link.fav-speak {
+  flex-shrink: 0;
+  text-decoration: none;
+  font-size: 14px;
+}
+.fav-star-small {
+  flex-shrink: 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 19px;
+  line-height: 1;
+  padding: 2px 4px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.fav-star-small.on {
+  color: #f0b400;
+}
+.fav-star-small:hover {
+  background: var(--cream-2);
+}
+/* unstarred on this visit: still there to be starred again */
+.fav-item.off {
+  opacity: 0.55;
+}
+.fav-detail {
+  display: grid;
+  gap: 8px;
+  padding-top: 10px;
+}
+.fav-line .label {
+  margin-right: 4px;
+}
+.fav-ja {
+  margin-top: -4px;
+}
+.fav-detail .grammar-note,
+.fav-detail .exam-explanation {
+  margin: 2px 0 0;
+}
+.fav-passage {
+  margin: 0;
+}
+.fav-foot {
+  margin-top: 2px;
 }
 
 /* ---------- 試験 ---------- */

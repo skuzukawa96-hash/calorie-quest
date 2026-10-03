@@ -678,7 +678,7 @@ fn audio_text_for(q: &Question) -> String {
     }
 }
 
-fn build_session_question(
+pub(crate) fn build_session_question(
     conn: &Connection,
     q: Question,
     mode: &str,

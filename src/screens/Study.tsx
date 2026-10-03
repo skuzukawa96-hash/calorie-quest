@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import FavoriteStar, { useFavorites } from "../components/FavoriteStar";
 import GlossedText from "../components/GlossedText";
 import PronunciationTips, { HighlightedText } from "../components/PronunciationTips";
 import { PlayModeTag } from "../components/PlayModeSwitch";
@@ -51,6 +52,16 @@ const AUTO_SPEAK_KEY = "cq-auto-speak";
 const GLOSS_KEY = "cq-show-gloss";
 const TYPING_HINT_KEY = "cq-typing-hint";
 
+/**
+ * One round of お気に入りの復習: these questions instead of a session's, graded here. It pays
+ * nothing and leaves the review and the 記録 alone; only the time each was gone over is kept.
+ */
+export interface FavoriteRound {
+  items: { favoriteId: number; question: SessionQuestion }[];
+  /** the next round, when there are favorites this one did not take */
+  onAgain: (() => void) | null;
+}
+
 interface Props {
   /** one mode for every question, or "review": each due review in the mode it was missed in */
   mode: SessionMode;
@@ -61,6 +72,8 @@ interface Props {
   rates: KcalRates;
   /** がんばり / 通常 / お気軽, shown beside what an answer earned */
   playMode: PlayMode;
+  /** お気に入りの復習, in place of a session of `mode` / `tier` / `category` */
+  favorites?: FavoriteRound;
   onExit: () => void;
   onProgress: () => void;
   toast: (msg: string) => void;
@@ -68,7 +81,8 @@ interface Props {
 
 interface Feedback {
   correct: boolean;
-  result: AnswerResult;
+  /** what the answer earned and scheduled; none in お気に入りの復習, which records nothing */
+  result: AnswerResult | null;
   given?: string;
   score?: PronunciationScore | null;
   /** typing: which words of the answer were off */
@@ -119,7 +133,7 @@ function isMultiWord(q: SessionQuestion): boolean {
   return q.audioText.trim().includes(" ");
 }
 
-export default function Study({ mode, tier, category, rates, playMode, onExit, onProgress, toast }: Props) {
+export default function Study({ mode, tier, category, rates, playMode, favorites, onExit, onProgress, toast }: Props) {
   const [questions, setQuestions] = useState<SessionQuestion[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [idx, setIdx] = useState(0);
@@ -131,6 +145,7 @@ export default function Study({ mode, tier, category, rates, playMode, onExit, o
   const [showGloss, setShowGloss] = useState<boolean>(() => loadFlag(GLOSS_KEY, true));
   const [typingHint, setTypingHint] = useState<boolean>(() => loadFlag(TYPING_HINT_KEY, false));
   const [dict, setDict] = useState<Dictionary | null>(null);
+  const fav = useFavorites(toast);
 
   useEffect(() => {
     let alive = true;
@@ -164,15 +179,17 @@ export default function Study({ mode, tier, category, rates, playMode, onExit, o
     setIdx(0);
     setFeedback(null);
     setTally({ correct: 0, kcal: 0, reviews: 0 });
-    api
-      .getSessionQuestions(mode, tier, category, SESSION_SIZE)
-      .then((qs) => alive && setQuestions(qs))
-      .catch((e) => alive && setLoadError(String(e)));
+    if (favorites) setQuestions(favorites.items.map((i) => i.question));
+    else
+      api
+        .getSessionQuestions(mode, tier, category, SESSION_SIZE)
+        .then((qs) => alive && setQuestions(qs))
+        .catch((e) => alive && setLoadError(String(e)));
     return () => {
       alive = false;
       stopSpeaking();
     };
-  }, [mode, tier, category, runId]);
+  }, [mode, tier, category, runId, favorites]);
 
   const current = questions?.[idx];
   const finished = questions !== null && idx >= questions.length;
@@ -191,27 +208,32 @@ export default function Study({ mode, tier, category, rates, playMode, onExit, o
       const qMode = current.mode;
       setSubmitting(true);
       try {
-        const result = await api.submitAnswer({
-          questionId: current.question.id,
-          mode: qMode,
-          correct,
-          score,
-          hintsUsed,
-          mistakes: typing?.mistakes,
-        });
+        // お気に入りの復習 records nothing but when the favorite was gone over.
+        const item = favorites?.items[idx];
+        let result: AnswerResult | null = null;
+        if (item) await api.markFavoriteReviewed(item.favoriteId);
+        else
+          result = await api.submitAnswer({
+            questionId: current.question.id,
+            mode: qMode,
+            correct,
+            score,
+            hintsUsed,
+            mistakes: typing?.mistakes,
+          });
         setTally((t) => ({
           correct: t.correct + (correct ? 1 : 0),
-          kcal: t.kcal + result.points,
-          reviews: t.reviews + (result.isReview && correct ? 1 : 0),
+          kcal: t.kcal + (result?.points ?? 0),
+          reviews: t.reviews + (result?.isReview && correct ? 1 : 0),
         }));
         if (correct) playCrunch();
         else playWrong();
-        if (result.newTicket) {
+        if (result?.newTicket) {
           window.setTimeout(playFanfare, 350);
           toast("🎫 7日連続達成！チートデイチケット（+300 kcal）を獲得しました");
         }
         setFeedback({ correct, result, given, score: ps, typing });
-        onProgress();
+        if (result) onProgress();
         // Read the English aloud after the answer sound so the learner hears the pronunciation.
         // Listening mode has just played it, so it only repeats when the answer was wrong.
         const repeat = qMode !== "speaking" && autoSpeak && isTtsSupported() && (qMode !== "listening" || !correct);
@@ -227,7 +249,7 @@ export default function Study({ mode, tier, category, rates, playMode, onExit, o
         setSubmitting(false);
       }
     },
-    [current, submitting, feedback, autoSpeak, onProgress, toast],
+    [current, submitting, feedback, autoSpeak, favorites, idx, onProgress, toast],
   );
 
   const next = useCallback(() => {
@@ -291,9 +313,10 @@ export default function Study({ mode, tier, category, rates, playMode, onExit, o
       <Summary
         total={questions.length}
         tally={tally}
-        againLabel={mode === "review" ? "続けて復習する" : "もう10問"}
+        againLabel={favorites || mode === "review" ? "続けて復習する" : "もう10問"}
         onExit={onExit}
-        onAgain={() => setRunId((r) => r + 1)}
+        onAgain={favorites ? favorites.onAgain : () => setRunId((r) => r + 1)}
+        favorites={!!favorites}
       />
     );
   }
@@ -310,7 +333,7 @@ export default function Study({ mode, tier, category, rates, playMode, onExit, o
         </button>
         <div className="study-meta">
           <span className="pill">{MODE_LABEL[qMode]}</span>
-          <span className="pill">{TIER_LABEL[tier]}</span>
+          {favorites ? <span className="pill fav-pill">★ お気に入りの復習</span> : <span className="pill">{TIER_LABEL[tier]}</span>}
           {category !== ALL_CATEGORIES && (
             <span className="pill">
               {categoryLabel(category)}
@@ -356,6 +379,10 @@ export default function Study({ mode, tier, category, rates, playMode, onExit, o
       </div>
 
       <div className="card question-card" key={current.question.id}>
+        <FavoriteStar
+          on={fav.isQuestion(current.question.id, qMode)}
+          onToggle={() => void fav.toggleQuestion(current.question.id, qMode)}
+        />
         {current.question.category && (
           <div className="q-category">
             {categoryIcon(current.question.category)} {current.question.category}
@@ -411,15 +438,21 @@ export default function Study({ mode, tier, category, rates, playMode, onExit, o
               <div className="feedback-title">
                 {feedback.correct
                   ? "正解！ サクサク🍪"
-                  : feedback.typing && feedback.result.points > 0
+                  : feedback.typing && (feedback.result ? feedback.result.points > 0 : feedback.typing.mistakes > 0)
                     ? `惜しい！ ${feedback.typing.mistakes}語ちがい🍪`
                     : "ざんねん…"}
               </div>
-              <div className="feedback-kcal">
-                +{formatKcal(feedback.result.points)} kcal
-                {feedback.result.points > 0 && <PlayModeTag mode={playMode} />}
-                {feedback.result.isReview && feedback.correct && <span className="bonus"> 復習ボーナス ×{rates.reviewMultiplier}</span>}
-              </div>
+              {feedback.result ? (
+                <div className="feedback-kcal">
+                  +{formatKcal(feedback.result.points)} kcal
+                  {feedback.result.points > 0 && <PlayModeTag mode={playMode} />}
+                  {feedback.result.isReview && feedback.correct && <span className="bonus"> 復習ボーナス ×{rates.reviewMultiplier}</span>}
+                </div>
+              ) : (
+                <div className="feedback-kcal fav-review-note" title="お気に入りの復習はカロリーがつかず、学習の復習や記録も変わりません">
+                  ★ お気に入りの復習
+                </div>
+              )}
             </div>
             <div className="feedback-detail">
               {qMode === "listening" && (
@@ -523,10 +556,10 @@ export default function Study({ mode, tier, category, rates, playMode, onExit, o
                   {feedback.score.best && <span className="muted">認識: “{feedback.score.best}”</span>}
                 </div>
               )}
-              {!feedback.correct && (
+              {!feedback.correct && feedback.result && (
                 <div className="muted">この問題は明日、復習として再出題されます（正解すればカロリー ×{rates.reviewMultiplier}）。</div>
               )}
-              {feedback.correct && feedback.result.needsReview && feedback.result.nextDue && (
+              {feedback.correct && feedback.result?.needsReview && feedback.result.nextDue && (
                 <div className="muted">次の復習: {feedback.result.nextDue}</div>
               )}
             </div>
@@ -1094,19 +1127,31 @@ function Summary({
   againLabel,
   onExit,
   onAgain,
+  favorites,
 }: {
   total: number;
   tally: Tally;
   againLabel: string;
   onExit: () => void;
-  onAgain: () => void;
+  /** none when there is nothing left to go on with (お気に入り: every favorite gone over) */
+  onAgain: (() => void) | null;
+  /** お気に入りの復習: no kcal, no review bonus, and back to the favorites */
+  favorites: boolean;
 }) {
   const rate = total ? Math.round((tally.correct / total) * 100) : 0;
-  const cheer = rate === 100 ? "パーフェクト！ご褒美タイムです🍰" : rate >= 70 ? "いい調子！サクサク進んでます🍪" : "復習で取り返そう。明日また出題されます🍫";
+  const cheer = favorites
+    ? rate === 100
+      ? "パーフェクト！しっかり身についています⭐"
+      : "お気に入りの問題は何度でも見返せます⭐"
+    : rate === 100
+      ? "パーフェクト！ご褒美タイムです🍰"
+      : rate >= 70
+        ? "いい調子！サクサク進んでます🍪"
+        : "復習で取り返そう。明日また出題されます🍫";
   return (
     <div className="screen">
       <div className="card summary">
-        <h2>セッション終了</h2>
+        <h2>{favorites ? "★ お気に入りの復習おしまい" : "セッション終了"}</h2>
         <div className="summary-grid">
           <div>
             <div className="summary-num">
@@ -1114,22 +1159,28 @@ function Summary({
             </div>
             <div className="muted">正解数（{rate}%）</div>
           </div>
-          <div>
-            <div className="summary-num accent">+{formatKcal(tally.kcal)} kcal</div>
-            <div className="muted">獲得カロリー</div>
-          </div>
-          <div>
-            <div className="summary-num">{tally.reviews}</div>
-            <div className="muted">復習ボーナス回数</div>
-          </div>
+          {!favorites && (
+            <>
+              <div>
+                <div className="summary-num accent">+{formatKcal(tally.kcal)} kcal</div>
+                <div className="muted">獲得カロリー</div>
+              </div>
+              <div>
+                <div className="summary-num">{tally.reviews}</div>
+                <div className="muted">復習ボーナス回数</div>
+              </div>
+            </>
+          )}
         </div>
         <p className="cheer">{cheer}</p>
         <div className="row">
-          <button className="btn btn-primary" onClick={onAgain}>
-            {againLabel}
-          </button>
+          {onAgain && (
+            <button className="btn btn-primary" onClick={onAgain}>
+              {againLabel}
+            </button>
+          )}
           <button className="btn" onClick={onExit}>
-            ホームへ戻る
+            {favorites ? "お気に入りに戻る" : "ホームへ戻る"}
           </button>
         </div>
       </div>
