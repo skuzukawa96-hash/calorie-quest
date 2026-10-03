@@ -483,6 +483,17 @@ export interface DayPoint {
   kcalConsumed: number;
   answered: number;
   correct: number;
+  /** what was eaten that day, one snack a line, the most kcal first (those eaten with a ticket last) */
+  eaten: EatenSnack[];
+}
+
+/** A snack eaten on a day: how many times and how many kcal in all (a ticket's cost no kcal of the day). */
+export interface EatenSnack {
+  icon: string;
+  name: string;
+  count: number;
+  kcal: number;
+  withTicket: boolean;
 }
 
 export interface WeakQuestion {

@@ -2696,6 +2696,10 @@ button.wp-link.open {
   display: block;
   width: 100%;
   height: auto;
+  overflow: visible;
+}
+.lc-plot {
+  position: relative;
 }
 .line-chart-legend {
   display: flex;
@@ -2713,7 +2717,7 @@ button.wp-link.open {
   width: 16px;
   height: 3px;
   border-radius: 2px;
-  background: var(--caramel);
+  background: #369d4e;
 }
 .lc-key.consumed .lc-swatch {
   background: var(--berry);
@@ -2721,29 +2725,39 @@ button.wp-link.open {
 .lc-grid {
   stroke: var(--line);
   stroke-width: 1;
+  stroke-dasharray: 3 5;
 }
 .lc-axis,
 .lc-unit {
   fill: var(--muted);
   font-size: 11px;
 }
+/* 獲得 in a green as deep and as muted as 消費's red (the same OKLCH lightness) */
 .lc-area {
-  fill: rgba(201, 138, 62, 0.12);
+  fill: url(#lc-earned-fill);
+}
+.lc-fill-top {
+  stop-color: #369d4e;
+  stop-opacity: 0.16;
+}
+.lc-fill-bottom {
+  stop-color: #369d4e;
+  stop-opacity: 0;
 }
 .lc-line {
   fill: none;
-  stroke: var(--caramel);
-  stroke-width: 2.5;
+  stroke: #369d4e;
+  stroke-width: 2;
   stroke-linejoin: round;
   stroke-linecap: round;
 }
 .lc-dot {
   fill: #fff;
-  stroke: var(--caramel);
-  stroke-width: 2;
+  stroke: #369d4e;
+  stroke-width: 1.8;
 }
 .lc-dot.max {
-  fill: var(--caramel);
+  fill: #369d4e;
 }
 .lc-line.consumed {
   stroke: var(--berry);
@@ -2751,8 +2765,150 @@ button.wp-link.open {
 .lc-dot.consumed {
   stroke: var(--berry);
 }
-.lc-dot.consumed.max {
+.lc-dot.consumed.max,
+.lc-dot.consumed.open {
   fill: var(--berry);
+}
+.lc-point {
+  cursor: pointer;
+  outline: none;
+}
+.lc-hit {
+  fill: transparent;
+}
+.lc-point:hover .lc-dot,
+.lc-point:focus-visible .lc-dot {
+  stroke-width: 3;
+}
+/* 消費 dot clicked: what was eaten that day, opening from the dot */
+.lc-pop-anchor {
+  position: absolute;
+  width: 0;
+  height: 0;
+  z-index: 6;
+}
+.lc-pop {
+  --tip: 130px;
+  position: absolute;
+  left: calc(-1 * var(--tip));
+  width: 260px;
+  padding: 10px 12px 8px;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: 0 10px 28px rgba(91, 58, 33, 0.18);
+  font-size: 13px;
+  animation: lc-pop-in 0.16s ease-out;
+}
+.lc-pop.above {
+  bottom: 12px;
+  transform-origin: var(--tip) calc(100% + 12px);
+}
+.lc-pop.below {
+  top: 12px;
+  transform-origin: var(--tip) -12px;
+}
+.lc-pop.lean-right {
+  --tip: 22px;
+}
+.lc-pop.lean-left {
+  --tip: 238px;
+}
+.lc-pop::after {
+  content: "";
+  position: absolute;
+  left: calc(var(--tip) - 6px);
+  width: 10px;
+  height: 10px;
+  background: #fff;
+  border: 1px solid var(--line);
+  transform: rotate(45deg);
+}
+.lc-pop.above::after {
+  bottom: -6px;
+  border-top: 0;
+  border-left: 0;
+}
+.lc-pop.below::after {
+  top: -6px;
+  border-bottom: 0;
+  border-right: 0;
+}
+@keyframes lc-pop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+.lc-pop-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding-bottom: 6px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--line);
+  color: var(--choco);
+}
+.lc-pop-total {
+  margin-left: auto;
+  color: var(--berry);
+  font-weight: 700;
+}
+.lc-pop-close {
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font-size: 16px;
+  line-height: 1;
+  padding: 0 2px;
+  cursor: pointer;
+}
+.lc-pop-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 220px;
+  overflow-y: auto;
+}
+.lc-pop-list li {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+}
+.lc-pop-list li + li {
+  border-top: 1px dashed var(--line);
+}
+.lc-pop-icon {
+  font-size: 16px;
+  text-align: center;
+}
+.lc-pop-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+}
+.lc-pop-count {
+  color: var(--muted);
+}
+.lc-pop-kcal {
+  min-width: 64px;
+  text-align: right;
+  font-weight: 700;
+  color: var(--choco);
+}
+.lc-pop-list li.ticket .lc-pop-kcal {
+  color: var(--caramel-dark);
+  font-weight: 600;
+}
+.lc-pop-empty {
+  padding: 4px 0 2px;
 }
 .weak-table {
   width: 100%;

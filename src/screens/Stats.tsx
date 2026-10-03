@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { api } from "../lib/api";
 import {
   TIER_LABEL,
@@ -344,12 +344,77 @@ const SERIES: Series[] = [
   { key: "consumed", label: "消費", value: (d) => d.kcalConsumed },
 ];
 
+const f1 = (n: number) => n.toFixed(1);
+
 /**
- * The fortnight's kcal earned (after the play mode, as each day had it) and eaten, as two lines on
- * one axis of round numbers from the lowest day to the highest of either (not always from 0), each
- * line's highest and lowest days named in the legend.
+ * A smooth line through the points that never overshoots them (a monotone cubic, Fritsch–Carlson):
+ * a day of 0 kcal stays on 0 and a peak stays the peak.
+ */
+function smoothPath(points: [number, number][]): string {
+  const n = points.length;
+  if (n === 0) return "";
+  const start = `M${f1(points[0][0])},${f1(points[0][1])}`;
+  if (n === 1) return start;
+  const dx: number[] = [];
+  const slope: number[] = [];
+  for (let i = 0; i < n - 1; i++) {
+    dx.push(points[i + 1][0] - points[i][0]);
+    slope.push((points[i + 1][1] - points[i][1]) / dx[i]);
+  }
+  const m = [slope[0]];
+  for (let i = 1; i < n - 1; i++) m.push(slope[i - 1] * slope[i] <= 0 ? 0 : (slope[i - 1] + slope[i]) / 2);
+  m.push(slope[n - 2]);
+  for (let i = 0; i < n - 1; i++) {
+    if (slope[i] === 0) {
+      m[i] = 0;
+      m[i + 1] = 0;
+      continue;
+    }
+    const a = m[i] / slope[i];
+    const b = m[i + 1] / slope[i];
+    const h = a * a + b * b;
+    if (h > 9) {
+      const t = 3 / Math.sqrt(h);
+      m[i] = t * a * slope[i];
+      m[i + 1] = t * b * slope[i];
+    }
+  }
+  let d = start;
+  for (let i = 0; i < n - 1; i++) {
+    const [x0, y0] = points[i];
+    const [x1, y1] = points[i + 1];
+    const h = dx[i] / 3;
+    d += ` C${f1(x0 + h)},${f1(y0 + m[i] * h)} ${f1(x1 - h)},${f1(y1 - m[i + 1] * h)} ${f1(x1)},${f1(y1)}`;
+  }
+  return d;
+}
+
+/**
+ * The fortnight's kcal earned (after the play mode, as each day had it, in green) and eaten (in
+ * red), as two smooth lines on one axis of round numbers from the lowest day to the highest of
+ * either (not always from 0), each line's highest and lowest days named in the legend. Clicking a
+ * 消費 dot opens, from the dot, what was eaten that day.
  */
 function KcalLineChart({ days }: { days: DayPoint[] }) {
+  /** the day whose snacks are open, from its 消費 dot */
+  const [open, setOpen] = useState<number | null>(null);
+  const pop = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (open === null) return;
+    // Anywhere but the window or another 消費 dot closes it; so does Escape.
+    const away = (e: MouseEvent) => {
+      const t = e.target as Element;
+      if (!pop.current?.contains(t) && !t.closest?.(".lc-hit")) setOpen(null);
+    };
+    const esc = (e: KeyboardEvent) => e.key === "Escape" && setOpen(null);
+    document.addEventListener("mousedown", away);
+    document.addEventListener("keydown", esc);
+    return () => {
+      document.removeEventListener("mousedown", away);
+      document.removeEventListener("keydown", esc);
+    };
+  }, [open]);
+
   const all = days.flatMap((d) => SERIES.map((s) => s.value(d)));
   const { lo, hi, step } = axis(Math.min(...all), Math.max(...all));
   const W = 700;
@@ -367,7 +432,7 @@ function KcalLineChart({ days }: { days: DayPoint[] }) {
     const values = days.map(s.value);
     const max = Math.max(...values);
     const min = Math.min(...values);
-    const path = values.map((v, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
+    const path = smoothPath(values.map((v, i) => [x(i), y(v)]));
     return {
       ...s,
       values,
@@ -379,7 +444,9 @@ function KcalLineChart({ days }: { days: DayPoint[] }) {
     };
   });
   const earned = lines[0];
-  const area = `${earned.path} L${x(days.length - 1).toFixed(1)},${y(lo).toFixed(1)} L${x(0).toFixed(1)},${y(lo).toFixed(1)} Z`;
+  const area = `${earned.path} L${f1(x(days.length - 1))},${f1(y(lo))} L${f1(x(0))},${f1(y(lo))} Z`;
+  const toggle = (i: number) => setOpen((cur) => (cur === i ? null : i));
+  const shown = open === null ? null : days[open];
   return (
     <div className="line-chart">
       <div className="muted small line-chart-legend">
@@ -390,7 +457,14 @@ function KcalLineChart({ days }: { days: DayPoint[] }) {
           </span>
         ))}
       </div>
+      <div className="lc-plot">
       <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label="この2週間の獲得カロリーと消費カロリーの折れ線グラフ">
+        <defs>
+          <linearGradient id="lc-earned-fill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" className="lc-fill-top" />
+            <stop offset="100%" className="lc-fill-bottom" />
+          </linearGradient>
+        </defs>
         {ticks.map((t) => (
           <g key={t}>
             <line className="lc-grid" x1={left} x2={W - right} y1={y(t)} y2={y(t)} />
@@ -408,11 +482,38 @@ function KcalLineChart({ days }: { days: DayPoint[] }) {
         ))}
         {lines.map((l) =>
           days.map((d, i) => {
+            // The highest day is filled in, at the same size as the others.
             const top = l.values[i] === l.max && l.max > l.min;
+            const cls = `lc-dot ${l.key}` + (top ? " max" : "") + (l.key === "consumed" && open === i ? " open" : "");
+            if (l.key === "earned") {
+              return (
+                <circle key={`${l.key}-${d.date}`} className={cls} cx={x(i)} cy={y(l.values[i])} r={3.5}>
+                  <title>{`${day(d.date)} 獲得 ${d.kcalEarned} kcal（${d.answered} 問）`}</title>
+                </circle>
+              );
+            }
             return (
-              <circle key={`${l.key}-${d.date}`} className={`lc-dot ${l.key}` + (top ? " max" : "")} cx={x(i)} cy={y(l.values[i])} r={top ? 5 : 4}>
-                <title>{`${d.date}: 獲得 ${d.kcalEarned} kcal / 消費 ${d.kcalConsumed} kcal / ${d.answered} 問`}</title>
-              </circle>
+              <g
+                key={`${l.key}-${d.date}`}
+                className="lc-point"
+                role="button"
+                tabIndex={0}
+                aria-label={`${day(d.date)} に食べたお菓子`}
+                aria-expanded={open === i}
+                onClick={() => toggle(i)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    toggle(i);
+                  }
+                }}
+              >
+                <circle className={cls} cx={x(i)} cy={y(l.values[i])} r={3.5} />
+                {/* a larger, invisible target, so a small dot is easy to click */}
+                <circle className="lc-hit" cx={x(i)} cy={y(l.values[i])} r={11}>
+                  <title>{`${day(d.date)} 消費 ${d.kcalConsumed} kcal（クリックで食べたお菓子）`}</title>
+                </circle>
+              </g>
             );
           }),
         )}
@@ -422,6 +523,72 @@ function KcalLineChart({ days }: { days: DayPoint[] }) {
           </text>
         ))}
       </svg>
+      {shown && open !== null && (
+        <EatenPopover
+          refEl={pop}
+          day={shown}
+          label={day(shown.date)}
+          left={x(open) / W}
+          top={y(shown.kcalConsumed) / H}
+          onClose={() => setOpen(null)}
+        />
+      )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * What was eaten on a day, opening from its 消費 dot: a snack a line (icon, name, how many, the
+ * kcal in all), the most kcal first. A snack eaten with a お菓子引換券 cost no kcal of the day, and
+ * says so. Opens above the dot, or below it when the dot is high; at either end of the chart it
+ * leans inwards.
+ */
+function EatenPopover({
+  refEl,
+  day,
+  label,
+  left,
+  top,
+  onClose,
+}: {
+  refEl: React.RefObject<HTMLDivElement | null>;
+  day: DayPoint;
+  label: string;
+  /** where the dot is, as a share of the chart's width and height */
+  left: number;
+  top: number;
+  onClose: () => void;
+}) {
+  const side = top < 0.45 ? "below" : "above";
+  const lean = left < 0.2 ? "lean-right" : left > 0.8 ? "lean-left" : "";
+  return (
+    <div className="lc-pop-anchor" style={{ left: `${left * 100}%`, top: `${top * 100}%` }}>
+      <div ref={refEl} className={`lc-pop ${side} ${lean}`} role="dialog" aria-label={`${label} に食べたお菓子`}>
+        <div className="lc-pop-head">
+          <span>
+            <b>{label}</b> に食べたお菓子
+          </span>
+          <span className="lc-pop-total">{day.kcalConsumed} kcal</span>
+          <button type="button" className="lc-pop-close" onClick={onClose} aria-label="閉じる" title="閉じる">
+            ×
+          </button>
+        </div>
+        {day.eaten.length === 0 ? (
+          <div className="muted small lc-pop-empty">食べたお菓子はありません</div>
+        ) : (
+          <ul className="lc-pop-list">
+            {day.eaten.map((e) => (
+              <li key={`${e.icon}|${e.name}|${e.withTicket}`} className={e.withTicket ? "ticket" : ""}>
+                <span className="lc-pop-icon">{e.icon}</span>
+                <span className="lc-pop-name">{e.name}</span>
+                <span className="lc-pop-count">×{e.count}</span>
+                <span className="lc-pop-kcal">{e.withTicket ? "🎟 引換券" : `${e.kcal} kcal`}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
     </div>
   );
 }

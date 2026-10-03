@@ -27,6 +27,7 @@ import type {
   DailyStats,
   Dashboard,
   DayPoint,
+  EatenSnack,
   ExamAnswer,
   ExampleSentence,
   ExamLevel,
@@ -1846,12 +1847,25 @@ function getStats(): Stats {
   for (let i = -13; i <= 0; i++) {
     const date = datePlus(i);
     const d = state.daily[date];
+    // Mirrors the eaten of load_stats: a snack a line, the most kcal first, a ticket's last.
+    const eaten = new Map<string, EatenSnack>();
+    for (const c of state.consumption.filter((x) => x.date === date)) {
+      const withTicket = !!(c.withTicket || c.ticketId);
+      const key = `${c.snackIcon}|${c.snackName}|${withTicket}`;
+      const e = eaten.get(key) ?? { icon: c.snackIcon, name: c.snackName, count: 0, kcal: 0, withTicket };
+      e.count += 1;
+      e.kcal += c.calories;
+      eaten.set(key, e);
+    }
     last14Days.push({
       date,
       kcalEarned: d?.kcalEarned ?? 0,
       kcalConsumed: d?.kcalConsumed ?? 0,
       answered: d?.answered ?? 0,
       correct: d?.correct ?? 0,
+      eaten: [...eaten.values()].sort(
+        (a, b) => Number(a.withTicket) - Number(b.withTicket) || b.kcal - a.kcal || a.name.localeCompare(b.name),
+      ),
     });
   }
   const weakQuestions: WeakQuestion[] = Object.entries(state.history)

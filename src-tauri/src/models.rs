@@ -334,6 +334,18 @@ pub struct FavoriteQuestionKey {
     pub mode: String,
 }
 
+/// A snack eaten on a day: how many times and how many kcal in all. Eaten with a お菓子引換券 it
+/// cost no kcal of the day (kcal is what the snacks are, all the same).
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EatenSnack {
+    pub icon: String,
+    pub name: String,
+    pub count: i64,
+    pub kcal: i64,
+    pub with_ticket: bool,
+}
+
 /// One お気に入り: a study question built for the mode it was starred in, or an exam question.
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -503,6 +515,8 @@ pub struct DayPoint {
     /// the snacks eaten that day
     pub kcal_consumed: i64,
     pub answered: i64,
+    /// what was eaten that day, one snack a line, the most kcal first (those eaten with a ticket last)
+    pub eaten: Vec<EatenSnack>,
     pub correct: i64,
 }
 

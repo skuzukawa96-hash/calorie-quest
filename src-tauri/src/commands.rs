@@ -1342,11 +1342,35 @@ pub fn load_stats(conn: &Connection) -> CmdResult<Stats> {
             by_date.insert(d, v);
         }
     }
+    // What was eaten each day, for the chart's 消費 dots: a snack a line, the most kcal first.
+    let mut eaten_by_date: HashMap<String, Vec<EatenSnack>> = HashMap::new();
+    {
+        let mut stmt = conn
+            .prepare(
+                "SELECT date, snack_icon, snack_name, ticket_id IS NOT NULL, COUNT(*), SUM(calories) FROM consumption_log
+                 WHERE user_id = ?1 AND date >= ?2 GROUP BY date, snack_icon, snack_name, ticket_id IS NOT NULL",
+            )
+            .map_err(err)?;
+        let rows = stmt
+            .query_map(params![USER_ID, start], |r| {
+                Ok((
+                    r.get::<_, String>(0)?,
+                    EatenSnack { icon: r.get(1)?, name: r.get(2)?, with_ticket: r.get(3)?, count: r.get(4)?, kcal: r.get(5)? },
+                ))
+            })
+            .map_err(err)?;
+        for row in rows {
+            let (d, snack) = row.map_err(err)?;
+            eaten_by_date.entry(d).or_default().push(snack);
+        }
+    }
     let last_14_days = (0..14)
         .map(|i| {
             let date = date_plus(i - 13);
             let (k, e, a, c) = by_date.get(&date).copied().unwrap_or((0, 0, 0, 0));
-            DayPoint { date, kcal_earned: k, kcal_consumed: e, answered: a, correct: c }
+            let mut eaten = eaten_by_date.remove(&date).unwrap_or_default();
+            eaten.sort_by(|x, y| x.with_ticket.cmp(&y.with_ticket).then(y.kcal.cmp(&x.kcal)).then(x.name.cmp(&y.name)));
+            DayPoint { date, kcal_earned: k, kcal_consumed: e, answered: a, correct: c, eaten }
         })
         .collect();
 
@@ -1578,13 +1602,20 @@ mod tests {
         assert!(cell("word", "typing").is_none(), "a pair never answered has no cell");
         assert_eq!(s.breakdown.iter().map(|b| b.answered).sum::<i64>(), s.total_answered);
 
-        // The fortnight's chart is what the days earned (after the play mode) and ate.
-        log_eaten(&c, snack_id(&c, "プリン")).unwrap();
+        // The fortnight's chart is what the days earned (after the play mode) and ate, and what was
+        // eaten each day, the most kcal first.
+        let pudding = snack_id(&c, "プリン");
+        log_eaten(&c, snack_id(&c, "クッキー 1枚")).unwrap();
+        log_eaten(&c, pudding).unwrap();
+        log_eaten(&c, pudding).unwrap();
         let s = load_stats(&c).unwrap();
         let day = s.last_14_days.last().unwrap();
         assert_eq!(day.date, today());
-        assert_eq!((day.kcal_earned, day.kcal_consumed), (3, 150), "1 + 2.5 under がんばり, the half kept for later");
-        assert_eq!((s.total_kcal, s.total_consumed, s.total_study_days), (3, 150, 1), "what the averages divide");
+        assert_eq!((day.kcal_earned, day.kcal_consumed), (3, 350), "1 + 2.5 under がんばり, the half kept for later");
+        assert_eq!((s.total_kcal, s.total_consumed, s.total_study_days), (3, 350, 1), "what the averages divide");
+        let eaten: Vec<(&str, i64, i64)> = day.eaten.iter().map(|e| (e.name.as_str(), e.count, e.kcal)).collect();
+        assert_eq!(eaten, vec![("プリン", 2, 300), ("クッキー 1枚", 1, 50)]);
+        assert!(s.last_14_days[0].eaten.is_empty());
     }
 
     #[test]
