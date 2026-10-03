@@ -1046,34 +1046,30 @@ fn irregular_index() -> &'static IrregularIndex {
     })
 }
 
-/// A verb's forms as shown and read, each with `rest` after it ("get" + " up": got up / gotten up).
-fn irregular_forms(v: &IrregularSeed, rest: &str) -> crate::models::IrregularVerb {
-    let written = |forms: &str| alternatives(forms).map(|f| format!("{f}{rest}")).collect::<Vec<_>>().join(" / ");
+/// A verb's forms as shown ("got / gotten") and read (the first of each, or its `say`).
+fn irregular_forms(v: &IrregularSeed) -> crate::models::IrregularVerb {
+    let written = |forms: &str| alternatives(forms).collect::<Vec<_>>().join(" / ");
     let first = |forms: &str| alternatives(forms).next().unwrap_or_default().to_string();
-    let say = v.say.clone().unwrap_or_else(|| vec![v.base.clone(), first(&v.past), first(&v.participle)]);
     crate::models::IrregularVerb {
-        base: format!("{}{rest}", v.base),
+        base: v.base.clone(),
         past: written(&v.past),
         participle: written(&v.participle),
-        say: say.into_iter().map(|s| format!("{s}{rest}")).collect(),
+        say: v.say.clone().unwrap_or_else(|| vec![v.base.clone(), first(&v.past), first(&v.participle)]),
     }
 }
 
-/// The forms of a word that is an irregular verb, or a phrase that starts with one ("give up" –
-/// "gave up" – "given up"). A pattern with places to fill (compare A with B, be afraid of ～) has
-/// none.
+/// The forms of a word that is an irregular verb, or of the verb a phrase starts with: "come
+/// back" has come-came-come (back does not change with it). A pattern with places to fill
+/// (compare A with B, be afraid of ～) has none.
 pub fn irregular_of(word: &str) -> Option<crate::models::IrregularVerb> {
     let word = word.trim();
     if !word.is_ascii() || word.split_whitespace().any(|t| t == "A" || t == "B") {
         return None;
     }
     let lower = word.to_lowercase();
-    let (head, rest) = match lower.split_once(' ') {
-        Some((head, rest)) => (head, format!(" {rest}")),
-        None => (lower.as_str(), String::new()),
-    };
+    let head = lower.split_whitespace().next()?;
     let i = *irregular_index().by_base.get(head)?;
-    Some(irregular_forms(&irregular_verbs()[i], &rest))
+    Some(irregular_forms(&irregular_verbs()[i]))
 }
 
 /// Irregular verbs shown for one sentence at most.
@@ -1190,7 +1186,7 @@ pub fn irregulars_in(texts: &[String]) -> Vec<crate::models::IrregularVerb> {
             }
         }
     }
-    found.into_iter().take(MAX_IRREGULARS).map(|v| irregular_forms(&irregular_verbs()[v], "")).collect()
+    found.into_iter().take(MAX_IRREGULARS).map(|v| irregular_forms(&irregular_verbs()[v])).collect()
 }
 
 /// One piece of a usage pattern, for finding the pattern in a sentence.
@@ -2729,12 +2725,15 @@ mod tests {
     fn a_verb_and_a_phrase_that_starts_with_one_have_their_forms() {
         let cut = irregular_of("cut").unwrap();
         assert_eq!((cut.base.as_str(), cut.past.as_str(), cut.participle.as_str()), ("cut", "cut", "cut"));
-        let get_up = irregular_of("get up").unwrap();
+        // A phrasal verb has the forms of its verb only: back does not change with come.
+        let come_back = irregular_of("come back").unwrap();
         assert_eq!(
-            (get_up.base.as_str(), get_up.past.as_str(), get_up.participle.as_str()),
-            ("get up", "got up", "got up / gotten up")
+            (come_back.base.as_str(), come_back.past.as_str(), come_back.participle.as_str()),
+            ("come", "came", "come")
         );
-        assert_eq!(get_up.say, vec!["get up", "got up", "got up"]);
+        let get_up = irregular_of("get up").unwrap();
+        assert_eq!((get_up.base.as_str(), get_up.participle.as_str()), ("get", "got / gotten"));
+        assert_eq!(get_up.say, vec!["get", "got", "got"]);
         assert_eq!(irregular_of("read").unwrap().say, vec!["read", "red", "red"], "the past is read red");
         assert!(irregular_of("compare").is_none());
         assert!(irregular_of("compare A with B").is_none(), "a pattern is no verb");

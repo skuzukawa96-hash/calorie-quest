@@ -950,22 +950,19 @@ IRREGULAR_SEEDS.forEach((v, i) => {
 irregularByForm.set("has", irregularByBase.get("have")!);
 irregularByForm.set("does", irregularByBase.get("do")!);
 
-function irregularForms(v: IrregularSeed, rest: string): IrregularVerb {
-  const written = (forms: string) => alternatives(forms).map((f) => f + rest).join(" / ");
+function irregularForms(v: IrregularSeed): IrregularVerb {
+  const written = (forms: string) => alternatives(forms).join(" / ");
   const say = v.say ?? [v.base, alternatives(v.past)[0], alternatives(v.participle)[0]];
-  return { base: v.base + rest, past: written(v.past), participle: written(v.participle), say: say.map((s) => s + rest) };
+  return { base: v.base, past: written(v.past), participle: written(v.participle), say };
 }
 
-/** Mirrors db::irregular_of: a word that is an irregular verb, or a phrase starting with one. */
+/** Mirrors db::irregular_of: a word that is an irregular verb, or the verb a phrase starts with (come back: come). */
 function irregularOf(word: string): IrregularVerb | null {
   const w = word.trim();
   if (/[^\x00-\x7f]/.test(w) || w.split(/\s+/).some((t) => t === "A" || t === "B")) return null;
-  const lower = w.toLowerCase();
-  const space = lower.indexOf(" ");
-  const head = space < 0 ? lower : lower.slice(0, space);
-  const rest = space < 0 ? "" : lower.slice(space);
+  const head = w.toLowerCase().split(/\s+/)[0];
   const i = irregularByBase.get(head);
-  return i === undefined ? null : irregularForms(IRREGULAR_SEEDS[i], rest);
+  return i === undefined ? null : irregularForms(IRREGULAR_SEEDS[i]);
 }
 
 const MAX_IRREGULARS = 6;
@@ -1047,7 +1044,7 @@ function irregularsIn(texts: string[]): IrregularVerb[] {
       if (v !== null && !found.includes(v)) found.push(v);
     });
   }
-  return found.slice(0, MAX_IRREGULARS).map((v) => irregularForms(IRREGULAR_SEEDS[v], ""));
+  return found.slice(0, MAX_IRREGULARS).map((v) => irregularForms(IRREGULAR_SEEDS[v]));
 }
 
 /* ---------- Patterns found in a sentence (mirrors db::used_words) ---------- */
