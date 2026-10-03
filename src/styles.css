@@ -2837,7 +2837,7 @@ button.wp-link.open {
   }
 }
 
-/* 不規則動詞: base → past → participle, each marked while it is read */
+/* 不規則動詞: base-past-participle in plain text, each coloured while it is read */
 .irregular-line {
   margin-top: 10px;
   padding: 10px 14px;
@@ -2850,31 +2850,32 @@ button.wp-link.open {
   align-items: baseline;
   gap: 10px;
 }
+.irregular-heads {
+  font-size: 11px;
+  color: var(--muted);
+  opacity: 0.75;
+}
 .irregular-row {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 6px;
+  margin-top: 4px;
   font-size: 16px;
 }
 .irregular-form {
-  padding: 1px 8px;
-  border-radius: 6px;
-  background: #fff;
-  border: 1px solid #ddd6f7;
-  color: var(--choco);
-  font-weight: 700;
-  transition: background 0.15s, color 0.15s;
+  color: var(--text);
+  font-weight: 400;
+  transition: color 0.12s;
 }
 .irregular-form.saying {
-  background: #7b6bd6;
-  border-color: #7b6bd6;
-  color: #fff;
+  color: #6a58d0;
 }
-.irregular-arrow {
-  color: #8d82c9;
-  font-size: 13px;
+.irregular-dash {
+  margin: 0 3px;
+  color: var(--muted);
+}
+.irregular-row .speak-btn {
+  margin-left: 8px;
 }
 
 /* ---------- お気に入り ---------- */

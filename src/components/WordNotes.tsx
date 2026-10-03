@@ -2,7 +2,7 @@ import { Fragment, useEffect, useRef, useState } from "react";
 import GlossedText from "./GlossedText";
 import type { Dictionary } from "../lib/dictionary";
 import { useAddToRecipe } from "../lib/recipe";
-import { isTtsSupported, speak, stopSpeaking } from "../lib/speech";
+import { isTtsSupported, speak, speakInTurn } from "../lib/speech";
 import type { IrregularVerb, PartFamily, RelatedGroup, UsedWord, WordNotes, WordPart, WordUsage } from "../types";
 
 const PART_LABEL: Record<WordPart["kind"], string> = { prefix: "接頭辞", root: "語根", suffix: "接尾辞" };
@@ -22,12 +22,12 @@ function SpeakButton({ text }: { text: string }) {
 }
 
 /** The pause between the three forms read in turn: buy … bought … bought. */
-const FORM_GAP_MS = 350;
+const FORM_GAP_MS = 300;
 /** The forms being read now; a newer reading (or the row going away) stops an older one. */
 let latestReading = 0;
 
 /**
- * An irregular verb's forms, base → past → participle, and a 🔊 that reads the three in turn with a
+ * An irregular verb's forms, base-past-participle, and a 🔊 that reads the three in turn with a
  * short pause between them, marking each as it is read: the rhythm and the sound are what stay.
  */
 function IrregularRow({ v }: { v: IrregularVerb }) {
@@ -41,20 +41,15 @@ function IrregularRow({ v }: { v: IrregularVerb }) {
   }, []);
   const play = async () => {
     const mine = ++latestReading;
-    stopSpeaking();
-    for (let i = 0; i < v.say.length; i++) {
-      if (latestReading !== mine || !mounted.current) break;
-      setAt(i);
-      await speak(v.say[i]).catch(() => undefined);
-      if (i < v.say.length - 1) await new Promise((r) => setTimeout(r, FORM_GAP_MS));
-    }
-    if (mounted.current) setAt(null);
+    const current = () => latestReading === mine && mounted.current;
+    await speakInTurn(v.say, FORM_GAP_MS, (i) => current() && setAt(i)).catch(() => undefined);
+    if (current()) setAt(null);
   };
   return (
     <div className="irregular-row">
       {[v.base, v.past, v.participle].map((form, i) => (
         <Fragment key={i}>
-          {i > 0 && <span className="irregular-arrow">→</span>}
+          {i > 0 && <span className="irregular-dash">-</span>}
           <span className={"irregular-form" + (at === i ? " saying" : "")}>{form}</span>
         </Fragment>
       ))}
@@ -62,7 +57,7 @@ function IrregularRow({ v }: { v: IrregularVerb }) {
         className="btn-link speak-btn"
         onClick={() => void play()}
         disabled={!isTtsSupported()}
-        title="原形 → 過去形 → 過去分詞の順に読み上げる"
+        title="原形-過去形-過去分詞の順に読み上げる"
         aria-label={`${v.base} の活用を読み上げる`}
       >
         🔊
@@ -255,7 +250,7 @@ function PartFamilyList({ piece, family, dict }: { piece: WordPart; family: Part
 }
 
 /**
- * What the answer explains about a word or an idiom beyond its meaning: 不規則動詞 (base → past →
+ * What the answer explains about a word or an idiom beyond its meaning: 不規則動詞 (base-past-
  * participle, read in turn), 成り立ち (prefix, root, suffix), 例文, 用法 (patterns with
  * prepositions, each with a sentence) and, for an idiom, 由来.
  * Every sentence has a 🔊 that reads it aloud; a pattern has none, its ～ / 人 / 原形 being no
@@ -286,7 +281,7 @@ export default function WordNotesPanel({
         <div className="irregular-line">
           <div className="usage-title">
             <span className="label">不規則動詞</span>
-            <span className="muted small">原形 → 過去形 → 過去分詞</span>
+            <span className="irregular-heads">原形-過去形-過去分詞</span>
           </div>
           {irregular.map((v) => (
             // Keyed by the question's English too, so a new question starts quiet.
