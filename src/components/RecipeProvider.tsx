@@ -49,11 +49,11 @@ export default function RecipeProvider({ children }: { children: ReactNode }) {
         const w = r.entry.kind === "usage" ? `用法「${r.entry.word}」` : `「${r.entry.word}」`;
         const text =
           r.status === "added"
-            ? `🧁 ${w}をレシピに追加しました`
+            ? `📖 ${w}をレシピに追加しました`
             : r.status === "restored"
-              ? `🧁 ${w}を習得済みから復習に戻しました`
+              ? `📖 ${w}を習得済みから復習に戻しました`
               : r.status === "unexcluded"
-                ? `🧁 ${w}を除外中から復習に戻しました`
+                ? `📖 ${w}を除外中から復習に戻しました`
                 : `${w}はもうレシピに入っています`;
         if (r.status !== "exists") playPop();
         // Even a word already listed may have just gained its example sentence.

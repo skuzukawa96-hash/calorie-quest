@@ -1,8 +1,13 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import GlossedText from "../components/GlossedText";
+import IpaLine from "../components/IpaLine";
+import PronunciationTips from "../components/PronunciationTips";
 import WordNotesPanel from "../components/WordNotes";
 import { api } from "../lib/api";
 import { loadDictionary, type Dictionary } from "../lib/dictionary";
+import { PHONEMES } from "../lib/phonemes";
+import { loadPronunciations, type Pronunciations } from "../lib/pronunciation";
+import type { TipKey } from "../lib/scoring";
 import { isTtsSupported, speak, stopSpeaking } from "../lib/speech";
 import {
   EXAM_PART_LABEL,
@@ -517,6 +522,7 @@ function StudyDetail({ sq, dict }: { sq: SessionQuestion; dict: Dictionary | nul
             </strong>
             <SpeakButton text={q.en} />
           </Line>
+          {sq.mode === "speaking" && <Pronunciation text={q.en} />}
           <Line label="意味">{q.ja}</Line>
         </>
       )}
@@ -540,6 +546,39 @@ function StudyDetail({ sq, dict }: { sq: SessionQuestion; dict: Dictionary | nul
       )}
       {sq.notes && <WordNotesPanel notes={sq.notes} word={q.en} meaning={q.ja} dict={dict} gloss />}
     </>
+  );
+}
+
+/**
+ * A speaking favorite's English in IPA, as the speaking card shows it. A sound clicked (or
+ * right-clicked) opens 発音のコツ under it with how to make that sound.
+ */
+function Pronunciation({ text }: { text: string }) {
+  const [table, setTable] = useState<Pronunciations | null>(null);
+  const [phoneme, setPhoneme] = useState<string | null>(null);
+  const [tip, setTip] = useState<TipKey | null>(null);
+  useEffect(() => {
+    let alive = true;
+    loadPronunciations()
+      .then((t) => alive && setTable(t))
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, []);
+  if (!table) return null;
+  const pick = (sound: string) => {
+    setPhoneme(sound);
+    const diagram = PHONEMES[sound]?.diagram;
+    if (diagram) setTip(diagram);
+  };
+  return (
+    <div className="fav-ipa">
+      <IpaLine text={text} table={table} active={phoneme} onPick={pick} />
+      {phoneme && (
+        <PronunciationTips text={text} active={tip} onActiveChange={setTip} phoneme={phoneme} onPhonemeChange={setPhoneme} />
+      )}
+    </div>
   );
 }
 

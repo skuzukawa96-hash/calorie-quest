@@ -18,7 +18,7 @@ type Tab = "home" | "snacks" | "recipe" | "favorites" | "stats";
 const TABS: Array<{ id: Tab; label: string }> = [
   { id: "home", label: "🏠 ホーム" },
   { id: "snacks", label: "🍰 お菓子図鑑" },
-  { id: "recipe", label: "🧁 お菓子作りレシピ" },
+  { id: "recipe", label: "📖 レシピ" },
   { id: "favorites", label: "⭐ お気に入り" },
   { id: "stats", label: "📈 記録" },
 ];

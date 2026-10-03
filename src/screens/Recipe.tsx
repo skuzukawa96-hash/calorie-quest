@@ -485,14 +485,14 @@ export default function Recipe({ playMode, onProgress, toast }: Props) {
     run(async () => {
       const n = await api.excludeRecipeWords(mastered.map((w) => w.id));
       setConfirmClear(false);
-      toast(`🧁 習得済みの${n}語を除外中に移しました`);
+      toast(`📖 習得済みの${n}語を除外中に移しました`);
     });
 
   return (
     <div className="screen recipe">
       <section className="card">
         <div className="section-head">
-          <h2>🧁 お菓子作りレシピ</h2>
+          <h2>📖 レシピ</h2>
           <div className="recipe-counts">
             <span>
               材料 <b>{inTab.all.length}</b>語
@@ -1001,7 +1001,7 @@ function RecipeReview({
       try {
         const n = await api.excludeRecipeWords(remembered.map((w) => w.id));
         setCleared(true);
-        toast(`🧁 ${again ? "覚えていた" : "覚えた"}${n}語を除外中に移しました`);
+        toast(`📖 ${again ? "覚えていた" : "覚えた"}${n}語を除外中に移しました`);
       } catch (e) {
         toast(String(e));
       } finally {
@@ -1016,7 +1016,7 @@ function RecipeReview({
           : "「習得」にした単語は習得済みになりました。間違えた単語と「まだ」にした単語は復習中です。";
     return (
       <section className="card recipe-review done">
-        <h2>🧁 復習おしまい！</h2>
+        <h2>📖 復習おしまい！</h2>
         <div className="recipe-counts big">
           <span className="positive">
             {again ? "覚えていた" : "覚えた"} <b>{remembered.length}</b>語

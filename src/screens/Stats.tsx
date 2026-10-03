@@ -94,7 +94,7 @@ export default function Stats({ onChanged, toast }: Props) {
           </div>
           <Breakdown metric={metric} cells={stats.breakdown} />
           <p className="muted small">
-            学習の問題（英単語〜例文）の分で、獲得カロリーは がんばり・お気軽 にかかわらず通常モードの値です。お菓子作りレシピ・試験・チートデイの分は、上の累計にだけ入ります。
+            学習の問題（英単語〜例文）の分で、獲得カロリーは がんばり・お気軽 にかかわらず通常モードの値です。レシピ・試験・チートデイの分は、上の累計にだけ入ります。
           </p>
         </section>
       )}

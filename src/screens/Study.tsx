@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import FavoriteStar, { useFavorites } from "../components/FavoriteStar";
 import GlossedText from "../components/GlossedText";
+import IpaLine from "../components/IpaLine";
 import PronunciationTips, { HighlightedText } from "../components/PronunciationTips";
 import { PlayModeTag } from "../components/PlayModeSwitch";
 import WordNotesPanel from "../components/WordNotes";
-import { PHONEMES, STRESS_MARK } from "../lib/phonemes";
-import { ipaWords, loadPronunciations, type Pronunciations } from "../lib/pronunciation";
+import { PHONEMES } from "../lib/phonemes";
+import { loadPronunciations, type Pronunciations } from "../lib/pronunciation";
 import { api, runningInTauri } from "../lib/api";
 import { loadDictionary, type Dictionary } from "../lib/dictionary";
 import {
@@ -1061,61 +1062,6 @@ function SpeakingCard({
         onPhonemeChange={setPhoneme}
       />
     </>
-  );
-}
-
-/**
- * The sentence in IPA, one clickable span per sound. Right-clicking (or clicking) a sound explains
- * it under 発音のコツ. A word the pronouncing dictionary lacks keeps its spelling in place.
- */
-function IpaLine({
-  text,
-  table,
-  active,
-  onPick,
-}: {
-  text: string;
-  table: Pronunciations;
-  active: string | null;
-  onPick: (sound: string) => void;
-}) {
-  const words = ipaWords(text, table);
-  if (!words.some((w) => w.sounds)) return null;
-  return (
-    <div className="ipa-line" title="発音記号を右クリックすると、下の「発音のコツ」にその音の解説が出ます">
-      /
-      {words.map((w, i) => (
-        <span key={i} className="ipa-word">
-          {i > 0 && " "}
-          {w.sounds ? (
-            w.sounds.map((s, j) =>
-              s === STRESS_MARK ? (
-                <span key={j} className="ipa-stress" title="この後の音節を強く読みます">
-                  {s}
-                </span>
-              ) : (
-                <span
-                  key={j}
-                  className={"ipa-sound" + (s === active ? " active" : "")}
-                  onClick={() => onPick(s)}
-                  onContextMenu={(e) => {
-                    e.preventDefault();
-                    onPick(s);
-                  }}
-                >
-                  {s}
-                </span>
-              ),
-            )
-          ) : (
-            <span className="ipa-missing" title="発音記号の辞書にない語です">
-              {w.word}
-            </span>
-          )}
-        </span>
-      ))}
-      /
-    </div>
   );
 }
 
