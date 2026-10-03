@@ -86,6 +86,9 @@ pub struct WordNotes {
     /// for a sentence (grammar, idiom, phrase, example, dialogue): the words in it whose pattern
     /// it uses ("compared his life to" → compare A to B), or that are easily confused with others
     pub used: Vec<UsedWord>,
+    /// irregular verbs: the word's own forms (buy – bought – bought), or those of the verbs a
+    /// sentence uses
+    pub irregular: Vec<IrregularVerb>,
 }
 
 impl WordNotes {
@@ -96,7 +99,19 @@ impl WordNotes {
             && self.origin.is_none()
             && self.related.is_empty()
             && self.used.is_empty()
+            && self.irregular.is_empty()
     }
+}
+
+/// An irregular verb's three forms, each alternative written out ("got / gotten"), and what is
+/// read aloud for each in turn (the first alternative, or a spelling the voice reads right:
+/// read – red – red).
+#[derive(Debug, Clone, Serialize)]
+pub struct IrregularVerb {
+    pub base: String,
+    pub past: String,
+    pub participle: String,
+    pub say: Vec<String>,
 }
 
 /// A word of a sentence with the patterns of it that the sentence uses.

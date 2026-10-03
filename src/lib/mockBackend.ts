@@ -6,6 +6,7 @@ import grammarNotes from "../../src-tauri/data/grammar-notes.json";
 import pronunciations from "../../src-tauri/data/pronunciations.json";
 import wordPartsList from "../../src-tauri/data/word-parts.json";
 import wordFamilies from "../../src-tauri/data/word-families.json";
+import irregularSeeds from "../../src-tauri/data/irregular-verbs.json";
 import tierOverrides from "../../src-tauri/data/tiers.json";
 import wordExamples from "../../src-tauri/data/word-examples.json";
 import wordUsages from "../../src-tauri/data/word-usage.json";
@@ -37,6 +38,7 @@ import type {
   ExamReviewResult,
   Favorite,
   FavoriteKeys,
+  IrregularVerb,
   GrammarNote,
   Level,
   RelatedGroup,
@@ -215,7 +217,7 @@ const seedQuestions: SeedQuestion[] = [
   ...Object.entries(packModules)
     .filter(
       ([path]) =>
-        !/\/(questions|glossary|grammar-notes|pronunciations|word-parts|tiers|word-examples|word-usage|idiom-origins|word-related|word-pos|word-confusables|word-families|exam-[^/]*)\.json$/.test(
+        !/\/(questions|glossary|grammar-notes|pronunciations|word-parts|tiers|word-examples|word-usage|idiom-origins|word-related|word-pos|word-confusables|word-families|irregular-verbs|exam-[^/]*)\.json$/.test(
           path,
         ),
     )
@@ -914,12 +916,138 @@ function wordNotes(word: string): WordNotes | null {
     origin: originByIdiom.get(key) ?? null,
     related: relatedGroups(key),
     used: [],
+    irregular: [],
   };
   return notesAreEmpty(notes) ? null : notes;
 }
 
 function notesAreEmpty(n: WordNotes): boolean {
-  return !n.parts.length && !n.examples.length && !n.usages.length && !n.origin && !n.related.length && !n.used.length;
+  return (
+    !n.parts.length && !n.examples.length && !n.usages.length && !n.origin && !n.related.length && !n.used.length && !n.irregular.length
+  );
+}
+
+/* ---------- Irregular verbs (mirrors db::irregular_of / db::irregulars_in) ---------- */
+
+interface IrregularSeed {
+  base: string;
+  past: string;
+  participle: string;
+  say?: string[];
+}
+
+const IRREGULAR_SEEDS = irregularSeeds as IrregularSeed[];
+const alternatives = (forms: string) => forms.split("/").map((f) => f.trim());
+const irregularByBase = new Map(IRREGULAR_SEEDS.map((v, i) => [v.base, i]));
+const irregularByForm = new Map<string, number>();
+const irregularParticiples = new Set<string>();
+IRREGULAR_SEEDS.forEach((v, i) => {
+  for (const form of [v.base, ...alternatives(v.past), ...alternatives(v.participle)]) {
+    if (!irregularByForm.has(form)) irregularByForm.set(form, i);
+  }
+  for (const pp of alternatives(v.participle)) irregularParticiples.add(pp);
+});
+irregularByForm.set("has", irregularByBase.get("have")!);
+irregularByForm.set("does", irregularByBase.get("do")!);
+
+function irregularForms(v: IrregularSeed, rest: string): IrregularVerb {
+  const written = (forms: string) => alternatives(forms).map((f) => f + rest).join(" / ");
+  const say = v.say ?? [v.base, alternatives(v.past)[0], alternatives(v.participle)[0]];
+  return { base: v.base + rest, past: written(v.past), participle: written(v.participle), say: say.map((s) => s + rest) };
+}
+
+/** Mirrors db::irregular_of: a word that is an irregular verb, or a phrase starting with one. */
+function irregularOf(word: string): IrregularVerb | null {
+  const w = word.trim();
+  if (/[^\x00-\x7f]/.test(w) || w.split(/\s+/).some((t) => t === "A" || t === "B")) return null;
+  const lower = w.toLowerCase();
+  const space = lower.indexOf(" ");
+  const head = space < 0 ? lower : lower.slice(0, space);
+  const rest = space < 0 ? "" : lower.slice(space);
+  const i = irregularByBase.get(head);
+  return i === undefined ? null : irregularForms(IRREGULAR_SEEDS[i], rest);
+}
+
+const MAX_IRREGULARS = 6;
+const NOT_VERBS_HERE = [
+  "bear", "bears", "bore", "spring", "springs", "lie", "lies", "lying", "lay", "lays", "light", "lights", "ground",
+  "grounds", "bit", "leaves", "bound", "tear", "tears", "upset",
+];
+const NOUN_OR_VERB = [
+  "show", "shows", "drink", "drinks", "run", "runs", "cut", "cuts", "cost", "costs", "hit", "hits", "set", "sets",
+  "bet", "bets", "beat", "beats", "deal", "deals", "ride", "rides", "swing", "swings", "fight", "fights", "fall",
+  "falls", "feed", "feeds", "speed", "speeds", "split", "splits", "spread", "spreads", "sink", "sinks", "ring", "rings",
+  "stick", "sticks", "shot", "cast", "casts", "forecast", "forecasts", "broadcast", "broadcasts", "break", "breaks",
+  "drive", "drives", "pay", "strike", "strikes", "bite", "bites", "blow", "blows", "sleep", "swim", "slide", "slides",
+  "spin", "draw", "draws", "stand", "stands", "lead", "leads", "sting", "stings", "shake", "shakes", "win", "wins",
+  "quit", "burst", "catch", "fly", "flies", "hurt", "creep", "creeps",
+];
+const BEFORE_A_VERB = [
+  "i", "you", "we", "they", "he", "she", "it", "who", "which", "that", "can", "could", "will", "would", "shall",
+  "should", "may", "might", "must", "to", "not", "never", "always", "often", "usually", "sometimes", "also", "just",
+  "really", "still", "even", "already", "let", "please", "don't", "doesn't", "didn't", "can't", "won't", "couldn't",
+  "wouldn't", "shouldn't", "i'll", "you'll", "we'll", "they'll", "he'll", "she'll", "i'd", "you'd", "we'd", "they'd",
+  "am", "is", "are", "was", "were", "be", "been", "being", "have", "has", "had", "having",
+];
+const BEFORE_A_NOUN = [
+  "the", "a", "an", "my", "your", "his", "its", "our", "their", "every", "each", "this", "these", "those", "some", "any",
+  "no", "another", "many", "few", "several",
+];
+const BE_FORMS = ["am", "is", "are", "was", "were", "be", "been", "being"];
+const NOUN_ING = [
+  "building", "buildings", "meeting", "meetings", "feeling", "feelings", "beginning", "beginnings", "setting",
+  "settings", "understanding", "drawing", "drawings", "saying", "sayings", "writing", "writings", "findings",
+];
+const SUBJECTS = ["i", "you", "he", "she", "it", "we", "they", "there"];
+const BEFORE_PARTICIPLE = ["not", "never", "already", "just", "ever", "always", "also", "recently", "finally", "still", "only", "really", "yet"];
+
+function auxiliaryHave(tokens: string[], i: number): boolean {
+  const t = tokens.slice(i + 1, i + 5).find((x) => !BEFORE_PARTICIPLE.includes(x) && !SUBJECTS.includes(x));
+  return !!t && (t === "been" || t === "better" || (t.length > 3 && t.endsWith("ed")) || irregularParticiples.has(t));
+}
+
+/** Mirrors db::irregular_at: the irregular verb tokens[i] is a form of, when it is that verb here. */
+function irregularAt(tokens: string[], i: number): number | null {
+  const t = tokens[i];
+  if (NOT_VERBS_HERE.includes(t)) return null;
+  let v = irregularByForm.get(t);
+  let derived = false;
+  if (v === undefined) {
+    derived = true;
+    const base = lemmas(t).slice(1).find((c) => readsAs(t, c) && irregularByBase.has(c));
+    if (base === undefined) return null;
+    v = irregularByBase.get(base)!;
+  }
+  const base = IRREGULAR_SEEDS[v].base;
+  const prev = i > 0 ? tokens[i - 1] : undefined;
+  const next = tokens[i + 1];
+  const after = (words: string[]) => prev !== undefined && words.includes(prev);
+  if (base === "be" || after(BEFORE_A_NOUN)) return null;
+  if (derived && t.endsWith("ing") && NOUN_ING.includes(t) && !after(BE_FORMS)) return null;
+  if (NOUN_OR_VERB.includes(t) && (i === 0 ? next === "of" : !after(BEFORE_A_VERB))) return null;
+  let skip = false;
+  if (t === "left") {
+    skip =
+      after(["turn", "turned", "turns", "turning", "to", "on", "keep", "go"]) ||
+      ["side", "hand", "lane", "arm", "leg", "foot", "eye", "ear", "corner", "wing", "turn"].includes(next ?? "");
+  } else if (t === "fall" || t === "falls") skip = after(["in", "last", "next", "early", "late"]);
+  else if (t === "mean") skip = after(["is", "are", "was", "were", "be", "so", "very", "too", "really"]);
+  else if (t === "do" || t === "does" || t === "did") skip = next === "not" || SUBJECTS.includes(next ?? "");
+  else if (t === "have" || t === "has" || t === "had") skip = auxiliaryHave(tokens, i);
+  return skip ? null : v;
+}
+
+/** Mirrors db::irregulars_in: the irregular verbs the sentences use, in order. */
+function irregularsIn(texts: string[]): IrregularVerb[] {
+  const found: number[] = [];
+  for (const text of texts) {
+    const tokens = tokenize(text);
+    tokens.forEach((_, i) => {
+      const v = irregularAt(tokens, i);
+      if (v !== null && !found.includes(v)) found.push(v);
+    });
+  }
+  return found.slice(0, MAX_IRREGULARS).map((v) => irregularForms(IRREGULAR_SEEDS[v], ""));
 }
 
 /* ---------- Patterns found in a sentence (mirrors db::used_words) ---------- */
@@ -939,6 +1067,8 @@ const PARTICLES = ["off", "up", "out", "away", "down", "back"];
 const TOO_COMMON_FOR_RELATED = [
   "big", "small", "little", "large", "fast", "sleep", "rest", "close", "cheap", "expensive", "price", "quiet", "wear", "fix", "hurt", "store", "very", "really",
 ];
+/** Mirrors TOO_MANY_SENSES_FOR_RELATED: their 類似表現 is about one sense only. */
+const TOO_MANY_SENSES_FOR_RELATED = ["have", "get", "take", "make", "put", "go", "come", "keep", "find", "give", "let", "do"];
 const NOT_ING = ["morning", "evening", "ceiling", "during", "string", "spring", "sibling", "pudding", "awning", "darling"];
 const NOUNS_AFTER_TO = ["work", "school", "bed", "class", "church", "court", "rain", "store", "water"];
 const DETERMINERS = ["the", "a", "an", "my", "your", "his", "its", "our", "their", "every", "each"];
@@ -1137,11 +1267,22 @@ function usedWords(texts: string[]): UsedWord[] {
           if (hits.length) found.push([u, hits.includes(true)]);
         }
         const close = found.some(([, c]) => c);
-        const usages = found.filter(([, c]) => c || !close).map(([u]) => u);
+        let usages = found.filter(([, c]) => c || !close).map(([u]) => u);
         const related = relatedGroups(word);
-        const onlyRelated =
-          !usages.length && asWord && related.length > 0 && !usagesByWord.has(word) && !TOO_COMMON_FOR_RELATED.includes(word);
-        if (!usages.length && !onlyRelated) continue;
+        // Easily confused (lend / borrow) and no pattern of it found: shown with its 類似表現 and the
+        // patterns it may be using that no sentence could tell (lend 人 ～).
+        const confusable =
+          !usages.length &&
+          asWord &&
+          related.length > 0 &&
+          !TOO_COMMON_FOR_RELATED.includes(word) &&
+          !TOO_MANY_SENSES_FOR_RELATED.includes(word);
+        if (!usages.length && !confusable) continue;
+        if (!usages.length) {
+          usages = ((usagesByWord.get(word) ?? []) as WordUsage[]).filter((u) =>
+            patternWays(u.pattern, word).some((p) => !patternIsTelling(p, word, u.ja)),
+          );
+        }
         const nuance = related.flatMap((g) => g.members).find((m) => m.isSelf)?.nuance ?? null;
         out.push({ word, nuance, usages, related });
         break;
@@ -1153,7 +1294,16 @@ function usedWords(texts: string[]): UsedWord[] {
 
 /** Mirrors notes_for in commands.rs. */
 function notesFor(q: Question, audioText: string): WordNotes | null {
-  if (q.kind === "word") return wordNotes(q.en);
+  if (q.kind === "word") {
+    const notes = wordNotes(q.en) ?? { parts: [], examples: [], usages: [], origin: null, related: [], used: [], irregular: [] };
+    // A verb's forms; a noun spelled like one ("a cut") has none.
+    const pos = (wordPos as Record<string, string>)[q.key];
+    if (!pos || pos === "verb") {
+      const forms = irregularOf(q.en);
+      notes.irregular = forms ? [forms] : [];
+    }
+    return notesAreEmpty(notes) ? null : notes;
+  }
   const texts =
     q.kind === "grammar"
       ? [audioText]
@@ -1163,8 +1313,8 @@ function notesFor(q: Question, audioText: string): WordNotes | null {
           ? [...(q.prompt ? [q.prompt] : []), q.en]
           : [q.en];
   const base: WordNotes =
-    (q.kind === "idiom" ? wordNotes(q.en) : null) ?? { parts: [], examples: [], usages: [], origin: null, related: [], used: [] };
-  const notes = { ...base, used: usedWords(texts) };
+    (q.kind === "idiom" ? wordNotes(q.en) : null) ?? { parts: [], examples: [], usages: [], origin: null, related: [], used: [], irregular: [] };
+  const notes = { ...base, used: usedWords(texts), irregular: irregularsIn(texts) };
   return notesAreEmpty(notes) ? null : notes;
 }
 
@@ -1363,8 +1513,9 @@ function examSentences(passage: string): string[] {
 function examNotes(answer: string, texts: string[]): WordNotes | null {
   const short = answer.trim().split(/\s+/).length <= 3 && !/[.,?]/.test(answer);
   const own = short ? wordNotes(answer) : null;
-  const notes: WordNotes = own ?? { parts: [], examples: [], usages: [], origin: null, related: [], used: [] };
+  const notes: WordNotes = own ?? { parts: [], examples: [], usages: [], origin: null, related: [], used: [], irregular: [] };
   notes.used = usedWords(texts);
+  notes.irregular = irregularsIn(texts);
   return notesAreEmpty(notes) ? null : notes;
 }
 
@@ -2032,8 +2183,14 @@ export async function mockInvoke<T>(cmd: string, args: Record<string, unknown>):
       return { nativeTts: false, ttsVoices: [], nativeStt: false, sttLanguages: [], sttError: "browser preview" } as T;
     case "get_dictionary":
       return mockDictionary() as T;
-    case "get_word_notes":
-      return wordNotes(String(args.word ?? "")) as T;
+    case "get_word_notes": {
+      // Mirrors commands::get_word_notes: the word's notes and, for an irregular verb, its forms.
+      const word = String(args.word ?? "");
+      const notes = wordNotes(word) ?? { parts: [], examples: [], usages: [], origin: null, related: [], used: [], irregular: [] };
+      const forms = irregularOf(word);
+      notes.irregular = forms ? [forms] : [];
+      return (notesAreEmpty(notes) ? null : notes) as T;
+    }
     case "get_pronunciations":
       return pronunciations as T;
     case "get_idioms": {

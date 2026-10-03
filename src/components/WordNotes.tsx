@@ -1,9 +1,9 @@
-import { Fragment, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import GlossedText from "./GlossedText";
 import type { Dictionary } from "../lib/dictionary";
 import { useAddToRecipe } from "../lib/recipe";
-import { isTtsSupported, speak } from "../lib/speech";
-import type { PartFamily, RelatedGroup, UsedWord, WordNotes, WordPart, WordUsage } from "../types";
+import { isTtsSupported, speak, stopSpeaking } from "../lib/speech";
+import type { IrregularVerb, PartFamily, RelatedGroup, UsedWord, WordNotes, WordPart, WordUsage } from "../types";
 
 const PART_LABEL: Record<WordPart["kind"], string> = { prefix: "接頭辞", root: "語根", suffix: "接尾辞" };
 
@@ -18,6 +18,56 @@ function SpeakButton({ text }: { text: string }) {
     >
       🔊
     </button>
+  );
+}
+
+/** The pause between the three forms read in turn: buy … bought … bought. */
+const FORM_GAP_MS = 350;
+/** The forms being read now; a newer reading (or the row going away) stops an older one. */
+let latestReading = 0;
+
+/**
+ * An irregular verb's forms, base → past → participle, and a 🔊 that reads the three in turn with a
+ * short pause between them, marking each as it is read: the rhythm and the sound are what stay.
+ */
+function IrregularRow({ v }: { v: IrregularVerb }) {
+  const [at, setAt] = useState<number | null>(null);
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+  const play = async () => {
+    const mine = ++latestReading;
+    stopSpeaking();
+    for (let i = 0; i < v.say.length; i++) {
+      if (latestReading !== mine || !mounted.current) break;
+      setAt(i);
+      await speak(v.say[i]).catch(() => undefined);
+      if (i < v.say.length - 1) await new Promise((r) => setTimeout(r, FORM_GAP_MS));
+    }
+    if (mounted.current) setAt(null);
+  };
+  return (
+    <div className="irregular-row">
+      {[v.base, v.past, v.participle].map((form, i) => (
+        <Fragment key={i}>
+          {i > 0 && <span className="irregular-arrow">→</span>}
+          <span className={"irregular-form" + (at === i ? " saying" : "")}>{form}</span>
+        </Fragment>
+      ))}
+      <button
+        className="btn-link speak-btn"
+        onClick={() => void play()}
+        disabled={!isTtsSupported()}
+        title="原形 → 過去形 → 過去分詞の順に読み上げる"
+        aria-label={`${v.base} の活用を読み上げる`}
+      >
+        🔊
+      </button>
+    </div>
   );
 }
 
@@ -205,8 +255,9 @@ function PartFamilyList({ piece, family, dict }: { piece: WordPart; family: Part
 }
 
 /**
- * What the answer explains about a word or an idiom beyond its meaning: 成り立ち (prefix, root,
- * suffix), 例文, 用法 (patterns with prepositions, each with a sentence) and, for an idiom, 由来.
+ * What the answer explains about a word or an idiom beyond its meaning: 不規則動詞 (base → past →
+ * participle, read in turn), 成り立ち (prefix, root, suffix), 例文, 用法 (patterns with
+ * prepositions, each with a sentence) and, for an idiom, 由来.
  * Every sentence has a 🔊 that reads it aloud; a pattern has none, its ～ / 人 / 原形 being no
  * English an English voice could read. Shown under a study answer and under a recipe
  * review answer alike.
@@ -225,12 +276,24 @@ export default function WordNotesPanel({
   /** show meanings on hover (the study screen's 単語の意味 toggle) */
   gloss: boolean;
 }) {
-  const { parts, examples, usages, origin, related, used } = notes;
+  const { parts, examples, usages, origin, related, used, irregular = [] } = notes;
   // Keyed by the word, so the next question starts closed without remounting the panel.
   const [openFor, setOpenFor] = useState<string | null>(null);
   const relatedOpen = openFor === word;
   return (
     <>
+      {irregular.length > 0 && (
+        <div className="irregular-line">
+          <div className="usage-title">
+            <span className="label">不規則動詞</span>
+            <span className="muted small">原形 → 過去形 → 過去分詞</span>
+          </div>
+          {irregular.map((v) => (
+            // Keyed by the question's English too, so a new question starts quiet.
+            <IrregularRow key={`${word}|${v.base}`} v={v} />
+          ))}
+        </div>
+      )}
       {parts.length > 0 && <WordParts parts={parts} word={word} meaning={meaning} dict={dict} />}
       {examples.length > 0 && (
         <div className="example-line">

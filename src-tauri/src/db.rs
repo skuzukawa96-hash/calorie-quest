@@ -45,6 +45,7 @@ const WORD_PARTS_JSON: &str = include_str!("../data/word-parts.json");
 /// picked by hand for how well they help remember each other, a few to a piece. Shown when the
 /// piece is clicked in 成り立ち.
 const WORD_FAMILIES_JSON: &str = include_str!("../data/word-families.json");
+const IRREGULAR_VERBS_JSON: &str = include_str!("../data/irregular-verbs.json");
 /// A sentence for every word of the bank, shown under its answer: a sentence of the bank that uses
 /// the word in the question's sense where there is one, a sentence written for it otherwise.
 const WORD_EXAMPLES_JSON: &str = include_str!("../data/word-examples.json");
@@ -986,8 +987,210 @@ pub fn word_notes(word: &str) -> Option<crate::models::WordNotes> {
         origin: idiom_origins().get(&key).cloned(),
         related: related_groups(&key),
         used: Vec::new(),
+        irregular: Vec::new(),
     };
     (!notes.is_empty()).then_some(notes)
+}
+
+/* ---------- irregular verbs ---------- */
+
+/// One verb of data/irregular-verbs.json: alternatives are written "got/gotten", and `say` gives
+/// what to read aloud when the spelling would be read wrong (read – red – red).
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct IrregularSeed {
+    pub base: String,
+    pub past: String,
+    pub participle: String,
+    #[serde(default)]
+    pub say: Option<Vec<String>>,
+}
+
+pub fn irregular_verbs() -> &'static [IrregularSeed] {
+    static TABLE: std::sync::OnceLock<Vec<IrregularSeed>> = std::sync::OnceLock::new();
+    TABLE.get_or_init(|| {
+        serde_json::from_str(IRREGULAR_VERBS_JSON).expect("data/irregular-verbs.json must be a valid JSON array")
+    })
+}
+
+/// The forms written "got/gotten", one by one.
+fn alternatives(forms: &str) -> impl Iterator<Item = &str> {
+    forms.split('/').map(str::trim)
+}
+
+struct IrregularIndex {
+    /// base → verb
+    by_base: HashMap<String, usize>,
+    /// base, past and participle (every alternative), and has / does → verb
+    by_form: HashMap<String, usize>,
+    /// every past participle, for telling "have" the auxiliary ("have gone") from the verb
+    participles: std::collections::HashSet<String>,
+}
+
+fn irregular_index() -> &'static IrregularIndex {
+    static INDEX: std::sync::OnceLock<IrregularIndex> = std::sync::OnceLock::new();
+    INDEX.get_or_init(|| {
+        let mut index = IrregularIndex { by_base: HashMap::new(), by_form: HashMap::new(), participles: Default::default() };
+        for (i, v) in irregular_verbs().iter().enumerate() {
+            index.by_base.insert(v.base.clone(), i);
+            for form in std::iter::once(v.base.as_str()).chain(alternatives(&v.past)).chain(alternatives(&v.participle)) {
+                index.by_form.entry(form.to_string()).or_insert(i);
+            }
+            index.participles.extend(alternatives(&v.participle).map(str::to_string));
+        }
+        // The third person no suffix rule can undo.
+        for (form, base) in [("has", "have"), ("does", "do")] {
+            let i = index.by_base[base];
+            index.by_form.insert(form.to_string(), i);
+        }
+        index
+    })
+}
+
+/// A verb's forms as shown and read, each with `rest` after it ("get" + " up": got up / gotten up).
+fn irregular_forms(v: &IrregularSeed, rest: &str) -> crate::models::IrregularVerb {
+    let written = |forms: &str| alternatives(forms).map(|f| format!("{f}{rest}")).collect::<Vec<_>>().join(" / ");
+    let first = |forms: &str| alternatives(forms).next().unwrap_or_default().to_string();
+    let say = v.say.clone().unwrap_or_else(|| vec![v.base.clone(), first(&v.past), first(&v.participle)]);
+    crate::models::IrregularVerb {
+        base: format!("{}{rest}", v.base),
+        past: written(&v.past),
+        participle: written(&v.participle),
+        say: say.into_iter().map(|s| format!("{s}{rest}")).collect(),
+    }
+}
+
+/// The forms of a word that is an irregular verb, or a phrase that starts with one ("give up" –
+/// "gave up" – "given up"). A pattern with places to fill (compare A with B, be afraid of ～) has
+/// none.
+pub fn irregular_of(word: &str) -> Option<crate::models::IrregularVerb> {
+    let word = word.trim();
+    if !word.is_ascii() || word.split_whitespace().any(|t| t == "A" || t == "B") {
+        return None;
+    }
+    let lower = word.to_lowercase();
+    let (head, rest) = match lower.split_once(' ') {
+        Some((head, rest)) => (head, format!(" {rest}")),
+        None => (lower.as_str(), String::new()),
+    };
+    let i = *irregular_index().by_base.get(head)?;
+    Some(irregular_forms(&irregular_verbs()[i], &rest))
+}
+
+/// Irregular verbs shown for one sentence at most.
+const MAX_IRREGULARS: usize = 6;
+/// Forms that are mostly other words in the bank's sentences: a bear, spring, a lie, the light,
+/// the ground, a bit, the leaves, bound for, tears, upset (the adjective).
+const NOT_VERBS_HERE: &[&str] = &[
+    "bear", "bears", "bore", "spring", "springs", "lie", "lies", "lying", "lay", "lays", "light", "lights", "ground",
+    "grounds", "bit", "leaves", "bound", "tear", "tears", "upset",
+];
+/// Forms as often a noun as a verb ("a TV show", "buy drinks", "budget cuts"): a verb only after
+/// a subject, a modal, to, a negation and the like, or at the start (an order).
+const NOUN_OR_VERB: &[&str] = &[
+    "show", "shows", "drink", "drinks", "run", "runs", "cut", "cuts", "cost", "costs", "hit", "hits", "set", "sets",
+    "bet", "bets", "beat", "beats", "deal", "deals", "ride", "rides", "swing", "swings", "fight", "fights", "fall",
+    "falls", "feed", "feeds", "speed", "speeds", "split", "splits", "spread", "spreads", "sink", "sinks", "ring", "rings",
+    "stick", "sticks", "shot", "cast", "casts", "forecast", "forecasts", "broadcast", "broadcasts", "break", "breaks",
+    "drive", "drives", "pay", "strike", "strikes", "bite", "bites", "blow", "blows", "sleep", "swim", "slide", "slides",
+    "spin", "draw", "draws", "stand", "stands", "lead", "leads", "sting", "stings", "shake", "shakes", "win", "wins",
+    "quit", "burst", "catch", "fly", "flies", "hurt", "creep", "creeps",
+];
+/// Words a verb comes right after.
+const BEFORE_A_VERB: &[&str] = &[
+    "i", "you", "we", "they", "he", "she", "it", "who", "which", "that", "can", "could", "will", "would", "shall",
+    "should", "may", "might", "must", "to", "not", "never", "always", "often", "usually", "sometimes", "also", "just",
+    "really", "still", "even", "already", "let", "please", "don't", "doesn't", "didn't", "can't", "won't", "couldn't",
+    "wouldn't", "shouldn't", "i'll", "you'll", "we'll", "they'll", "he'll", "she'll", "i'd", "you'd", "we'd", "they'd",
+    "am", "is", "are", "was", "were", "be", "been", "being", "have", "has", "had", "having",
+];
+/// Words a noun comes right after: the determiners and a few more ("this fall", "some drinks").
+const BEFORE_A_NOUN: &[&str] =
+    &["the", "a", "an", "my", "your", "his", "its", "our", "their", "every", "each", "this", "these", "those", "some", "any", "no", "another", "many", "few", "several"];
+const BE_FORMS: &[&str] = &["am", "is", "are", "was", "were", "be", "been", "being"];
+/// -ing words that are mostly nouns ("the building", "a meeting"), a verb only after be.
+const NOUN_ING: &[&str] = &[
+    "building", "buildings", "meeting", "meetings", "feeling", "feelings", "beginning", "beginnings", "setting",
+    "settings", "understanding", "drawing", "drawings", "saying", "sayings", "writing", "writings", "findings",
+];
+/// The subjects a question puts after do / have ("Did you go?", "Have you finished?").
+const SUBJECTS: &[&str] = &["i", "you", "he", "she", "it", "we", "they", "there"];
+/// Words between have and its participle ("I have already finished").
+const BEFORE_PARTICIPLE: &[&str] =
+    &["not", "never", "already", "just", "ever", "always", "also", "recently", "finally", "still", "only", "really", "yet"];
+
+/// Whether have at `i` is the auxiliary of a perfect ("have finished", "Have you seen") or of
+/// had better, not the verb.
+fn auxiliary_have(tokens: &[String], i: usize) -> bool {
+    tokens
+        .iter()
+        .skip(i + 1)
+        .take(4)
+        .map(String::as_str)
+        .find(|t| !BEFORE_PARTICIPLE.contains(t) && !SUBJECTS.contains(t))
+        .is_some_and(|t| t == "been" || t == "better" || (t.len() > 3 && t.ends_with("ed")) || irregular_index().participles.contains(t))
+}
+
+/// The irregular verb `tokens[i]` is a form of, when it is that verb here: not a noun after a
+/// determiner, not be (everywhere), not do / have as auxiliaries ("Did you go?", "I have seen").
+fn irregular_at(tokens: &[String], i: usize) -> Option<usize> {
+    let index = irregular_index();
+    let t = tokens[i].as_str();
+    if NOT_VERBS_HERE.contains(&t) {
+        return None;
+    }
+    let (v, derived) = match index.by_form.get(t) {
+        Some(&v) => (v, false),
+        None => (
+            crate::util::lemmas(t).into_iter().skip(1).filter(|c| reads_as(t, c)).find_map(|c| index.by_base.get(&c).copied())?,
+            true,
+        ),
+    };
+    let base = irregular_verbs()[v].base.as_str();
+    let prev = i.checked_sub(1).map(|p| tokens[p].as_str());
+    let next = tokens.get(i + 1).map(String::as_str);
+    let after = |words: &[&str]| prev.is_some_and(|p| words.contains(&p));
+    if base == "be" || after(BEFORE_A_NOUN) {
+        return None;
+    }
+    if derived && t.ends_with("ing") && NOUN_ING.contains(&t) && !after(BE_FORMS) {
+        return None;
+    }
+    // At the start it is an order ("Run!"), unless "of" follows ("run of the mill").
+    if NOUN_OR_VERB.contains(&t) && if i == 0 { next == Some("of") } else { !after(BEFORE_A_VERB) } {
+        return None;
+    }
+    let skip = match t {
+        // turn left, on the left, the left side
+        "left" => {
+            after(&["turn", "turned", "turns", "turning", "to", "on", "keep", "go"])
+                || next.is_some_and(|n| ["side", "hand", "lane", "arm", "leg", "foot", "eye", "ear", "corner", "wing", "turn"].contains(&n))
+        }
+        // in fall, last fall
+        "fall" | "falls" => after(&["in", "last", "next", "early", "late"]),
+        // He is mean.
+        "mean" => after(&["is", "are", "was", "were", "be", "so", "very", "too", "really"]),
+        // Did you go? I do not know.
+        "do" | "does" | "did" => next.is_some_and(|n| n == "not" || SUBJECTS.contains(&n)),
+        "have" | "has" | "had" => auxiliary_have(tokens, i),
+        _ => false,
+    };
+    (!skip).then_some(v)
+}
+
+/// The irregular verbs the sentences use, in the order they come, each with its three forms.
+pub fn irregulars_in(texts: &[String]) -> Vec<crate::models::IrregularVerb> {
+    let mut found: Vec<usize> = Vec::new();
+    for text in texts {
+        let tokens = crate::util::tokens(text);
+        for i in 0..tokens.len() {
+            if let Some(v) = irregular_at(&tokens, i) {
+                if !found.contains(&v) {
+                    found.push(v);
+                }
+            }
+        }
+    }
+    found.into_iter().take(MAX_IRREGULARS).map(|v| irregular_forms(&irregular_verbs()[v], "")).collect()
 }
 
 /// One piece of a usage pattern, for finding the pattern in a sentence.
@@ -1024,6 +1227,9 @@ const PARTICLES: &[&str] = &["off", "up", "out", "away", "down", "back"];
 /// they are listed when the sentence uses one of their patterns.
 const TOO_COMMON_FOR_RELATED: &[&str] =
     &["big", "small", "little", "large", "fast", "sleep", "rest", "close", "cheap", "expensive", "price", "quiet", "wear", "fix", "hurt", "store", "very", "really"];
+/// Verbs of so many senses that their 類似表現 (make / let / have, bring / take) is about one of
+/// them only: shown in a sentence when a pattern of theirs is found, not just for being there.
+const TOO_MANY_SENSES_FOR_RELATED: &[&str] = &["have", "get", "take", "make", "put", "go", "come", "keep", "find", "give", "let", "do"];
 /// How many words may fill a slot between two words of a pattern ("compared [the new model] with").
 const MAX_SLOT_WORDS: usize = 6;
 /// Words ending in -ing that are no verb's -ing (the "-thing" words are left out as well).
@@ -1358,16 +1564,23 @@ pub fn used_words(texts: &[String]) -> Vec<crate::models::UsedWord> {
                     })
                     .unwrap_or_default();
                 let close = found.iter().any(|(_, c)| *c);
-                let usages: Vec<crate::models::WordUsage> =
+                let mut usages: Vec<crate::models::WordUsage> =
                     found.into_iter().filter(|(_, c)| *c || !close).map(|(u, _)| u).collect();
                 let related = related_groups(word);
-                let only_related = usages.is_empty()
+                // Easily confused with other words (lend / borrow / rent) and no pattern of it found:
+                // it is shown all the same, with how it differs, its 類似表現, and the patterns it may
+                // well be using but no sentence could tell (lend 人 ～ in "Could you lend me your
+                // textbook?").
+                let confusable = usages.is_empty()
                     && as_word
                     && !related.is_empty()
-                    && !word_usages().contains_key(word)
-                    && !TOO_COMMON_FOR_RELATED.contains(&word.as_str());
-                if usages.is_empty() && !only_related {
+                    && !TOO_COMMON_FOR_RELATED.contains(&word.as_str())
+                    && !TOO_MANY_SENSES_FOR_RELATED.contains(&word.as_str());
+                if usages.is_empty() && !confusable {
                     continue;
+                }
+                if usages.is_empty() {
+                    usages = untold_usages(word);
                 }
                 let nuance = related.iter().flat_map(|g| &g.members).find(|m| m.is_self).map(|m| m.nuance.clone());
                 out.push(crate::models::UsedWord { word: word.clone(), nuance, usages, related });
@@ -1377,6 +1590,20 @@ pub fn used_words(texts: &[String]) -> Vec<crate::models::UsedWord> {
     }
     out.truncate(MAX_USED_WORDS);
     out
+}
+
+/// The patterns of `word` that are the word and what fills it ("lend 人 ～"): found wherever the
+/// word is, so never looked for, but what a sentence may well be using.
+fn untold_usages(word: &str) -> Vec<crate::models::WordUsage> {
+    word_usages()
+        .get(word)
+        .map(|all| {
+            all.iter()
+                .filter(|u| pattern_ways(&u.pattern, word).iter().any(|p| !pattern_is_telling(p, word, &u.ja)))
+                .cloned()
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 /// Word (lowercase) → its sounds, separated by spaces with ˈ before the stressed syllable:
@@ -1618,6 +1845,7 @@ mod tests {
                     && n != "word-pos.json"
                     && n != "word-confusables.json"
                     && n != "word-families.json"
+                    && n != "irregular-verbs.json"
                     && !n.starts_with("exam-")
             })
             .count();
@@ -2481,5 +2709,56 @@ mod tests {
             assert!(text.ends_with('。'), "the origin of {k} is not a finished sentence");
         }
     }
-}
 
+    #[test]
+    fn irregular_verbs_are_well_formed() {
+        let mut seen = HashSet::new();
+        for v in irregular_verbs() {
+            assert!(v.base.chars().all(|c| c.is_ascii_lowercase()), "{}", v.base);
+            assert!(seen.insert(v.base.clone()), "{} is listed twice", v.base);
+            for f in alternatives(&v.past).chain(alternatives(&v.participle)) {
+                assert!(!f.is_empty() && f.chars().all(|c| c.is_ascii_lowercase()), "{}: {f:?}", v.base);
+            }
+            if let Some(say) = &v.say {
+                assert_eq!(say.len(), 3, "{} says the three forms", v.base);
+            }
+        }
+    }
+
+    #[test]
+    fn a_verb_and_a_phrase_that_starts_with_one_have_their_forms() {
+        let cut = irregular_of("cut").unwrap();
+        assert_eq!((cut.base.as_str(), cut.past.as_str(), cut.participle.as_str()), ("cut", "cut", "cut"));
+        let get_up = irregular_of("get up").unwrap();
+        assert_eq!(
+            (get_up.base.as_str(), get_up.past.as_str(), get_up.participle.as_str()),
+            ("get up", "got up", "got up / gotten up")
+        );
+        assert_eq!(get_up.say, vec!["get up", "got up", "got up"]);
+        assert_eq!(irregular_of("read").unwrap().say, vec!["read", "red", "red"], "the past is read red");
+        assert!(irregular_of("compare").is_none());
+        assert!(irregular_of("compare A with B").is_none(), "a pattern is no verb");
+        assert!(irregular_of("be afraid of ～").is_none());
+    }
+
+    #[test]
+    fn the_irregular_verbs_a_sentence_uses() {
+        let bases = |s: &str| irregulars_in(&[s.to_string()]).into_iter().map(|v| v.base).collect::<Vec<_>>();
+        assert_eq!(bases("She bought a new car yesterday."), vec!["buy"]);
+        assert_eq!(bases("I read the book and wrote a report."), vec!["read", "write"]);
+        assert_eq!(bases("He left the office early."), vec!["leave"]);
+        assert!(bases("Turn left at the corner.").is_empty(), "a direction");
+        assert!(bases("I have finished my homework.").is_empty(), "have the auxiliary");
+        assert_eq!(bases("I had a cold last week."), vec!["have"]);
+        assert_eq!(bases("What did you do yesterday?"), vec!["do"], "did the auxiliary, do the verb");
+        assert_eq!(bases("Did you go to the party?"), vec!["go"]);
+        assert_eq!(bases("The cut on my finger still hurts."), vec!["hurt"], "a cut is a noun");
+        assert_eq!(bases("They are building a new bridge."), vec!["build"]);
+        assert!(bases("The building is very tall.").is_empty());
+        assert!(bases("She is happy.").is_empty(), "be is everywhere");
+        assert!(bases("We watched a TV show.").is_empty(), "a show is a noun");
+        assert_eq!(bases("Can you lend me your pen?"), vec!["lend"]);
+        assert!(bases("She's worried about scope creep.").is_empty());
+        assert!(bases("run of the mill").is_empty(), "a run");
+    }
+}

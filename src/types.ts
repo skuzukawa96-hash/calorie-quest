@@ -97,6 +97,19 @@ export interface WordNotes {
    * ("compared his life to" → compare A to B), or that are easily confused with others
    */
   used: UsedWord[];
+  /** irregular verbs: the word's own forms (buy – bought – bought), or those of the verbs a sentence uses */
+  irregular: IrregularVerb[];
+}
+
+/**
+ * An irregular verb's three forms, each alternative written out ("got / gotten"), and what is read
+ * aloud for each in turn (the first alternative, or a spelling the voice reads right: read – red – red).
+ */
+export interface IrregularVerb {
+  base: string;
+  past: string;
+  participle: string;
+  say: string[];
 }
 
 /** A word of a sentence with the patterns of it that the sentence uses. */

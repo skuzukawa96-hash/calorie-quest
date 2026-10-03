@@ -756,7 +756,13 @@ pub(crate) fn build_session_question(
 /// an idiom, where it comes from).
 fn notes_for(q: &Question, audio_text: &str) -> Option<WordNotes> {
     if q.kind == "word" {
-        return db::word_notes(&q.en);
+        let mut notes = db::word_notes(&q.en).unwrap_or_default();
+        // A verb's forms (cut – cut – cut, get up – got up – got up / gotten up); a noun spelled
+        // like one ("a cut") has none.
+        if db::word_pos().get(&q.key).map_or(true, |pos| pos == "verb") {
+            notes.irregular = db::irregular_of(&q.en).into_iter().collect();
+        }
+        return (!notes.is_empty()).then_some(notes);
     }
     let texts: Vec<String> = match q.kind.as_str() {
         "grammar" => vec![audio_text.to_string()],
@@ -766,6 +772,7 @@ fn notes_for(q: &Question, audio_text: &str) -> Option<WordNotes> {
     };
     let mut notes = if q.kind == "idiom" { db::word_notes(&q.en).unwrap_or_default() } else { WordNotes::default() };
     notes.used = db::used_words(&texts);
+    notes.irregular = db::irregulars_in(&texts);
     (!notes.is_empty()).then_some(notes)
 }
 
@@ -1165,7 +1172,9 @@ pub fn get_pronunciations() -> HashMap<String, String> {
 /// What the answer explains about a word, for a word saved to the recipe (see `db::word_notes`).
 #[tauri::command]
 pub fn get_word_notes(word: String) -> Option<WordNotes> {
-    db::word_notes(&word)
+    let mut notes = db::word_notes(&word).unwrap_or_default();
+    notes.irregular = db::irregular_of(&word).into_iter().collect();
+    (!notes.is_empty()).then_some(notes)
 }
 
 /// The dictionary keys that are idioms (see `db::idiom_keys`).
@@ -2456,5 +2465,26 @@ mod tests {
             );
         }
         assert!(cats.iter().any(|x| x.name == "あいさつ・あいづち" && x.phrase > 0));
+    }
+
+    #[test]
+    fn notes_show_irregular_verbs_and_words_easily_confused() {
+        let c = conn();
+        let first = |filter: &str| -> Question {
+            c.query_row(&format!("SELECT {Q_COLS} FROM questions q WHERE {filter} LIMIT 1"), [], db::row_to_question)
+                .unwrap_or_else(|_| panic!("no question where {filter}"))
+        };
+        // A word question that is an irregular verb has its forms.
+        let buy = first("q.kind = 'word' AND q.en = 'buy'");
+        let notes = notes_for(&buy, &audio_text_for(&buy)).unwrap();
+        assert_eq!(notes.irregular.iter().map(|v| v.past.as_str()).collect::<Vec<_>>(), vec!["bought"]);
+        // A sentence: the forms of the verbs it uses, and lend with 類似表現 and the pattern it may
+        // be using though no pattern of it is found.
+        let lend = first("q.en = 'Could you lend me your textbook?'");
+        let notes = notes_for(&lend, &audio_text_for(&lend)).unwrap();
+        assert_eq!(notes.irregular.iter().map(|v| v.base.as_str()).collect::<Vec<_>>(), vec!["lend"]);
+        let used = notes.used.iter().find(|w| w.word == "lend").expect("lend is easily confused with borrow");
+        assert!(!used.related.is_empty());
+        assert!(used.usages.iter().any(|u| u.pattern.starts_with("lend 人")), "{:?}", used.usages);
     }
 }

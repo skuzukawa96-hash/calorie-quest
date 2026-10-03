@@ -2837,6 +2837,46 @@ button.wp-link.open {
   }
 }
 
+/* 不規則動詞: base → past → participle, each marked while it is read */
+.irregular-line {
+  margin-top: 10px;
+  padding: 10px 14px;
+  border-left: 3px solid #7b6bd6;
+  border-radius: 10px;
+  background: #f4f2fd;
+}
+.irregular-line .usage-title {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.irregular-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+  font-size: 16px;
+}
+.irregular-form {
+  padding: 1px 8px;
+  border-radius: 6px;
+  background: #fff;
+  border: 1px solid #ddd6f7;
+  color: var(--choco);
+  font-weight: 700;
+  transition: background 0.15s, color 0.15s;
+}
+.irregular-form.saying {
+  background: #7b6bd6;
+  border-color: #7b6bd6;
+  color: #fff;
+}
+.irregular-arrow {
+  color: #8d82c9;
+  font-size: 13px;
+}
+
 /* ---------- お気に入り ---------- */
 .section-head .fav-total {
   margin-left: 6px;

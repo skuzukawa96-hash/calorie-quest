@@ -158,6 +158,7 @@ fn notes_for(answer: &str, texts: &[String]) -> Option<WordNotes> {
     let short = answer.split_whitespace().count() <= 3 && !answer.contains(['.', ',', '?']);
     let mut notes = if short { crate::db::word_notes(answer).unwrap_or_default() } else { WordNotes::default() };
     notes.used = crate::db::used_words(texts);
+    notes.irregular = crate::db::irregulars_in(texts);
     (!notes.is_empty()).then_some(notes)
 }
 
