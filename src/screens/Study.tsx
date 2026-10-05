@@ -13,6 +13,7 @@ import {
   answerWordCount,
   gradeTyping,
   maskWord,
+  CLEAR_SCORE,
   PASS_SCORE,
   scorePronunciation,
   formatKcal,
@@ -888,7 +889,7 @@ function ListeningCard({
 
 /* ---------- Speaking ---------- */
 
-type ListenState = "idle" | "listening" | "processing";
+type ListenState = "idle" | "preparing" | "listening" | "processing";
 const MAX_ATTEMPTS = 3;
 
 function SpeakingCard({
@@ -952,8 +953,9 @@ function SpeakingCard({
     setError(null);
     stopSpeaking();
     playPop();
-    setState("listening");
-    const h = recognizeOnce({ target: q.question.en, alternatives, timeoutMs: 9000 });
+    // Listening only once the recognizer is: until then, words said would be lost.
+    setState("preparing");
+    const h = recognizeOnce({ target: q.question.en, alternatives, timeoutMs: 9000, onListening: () => setState("listening") });
     handle.current = h;
     try {
       const out = await h.result;
@@ -991,7 +993,11 @@ function SpeakingCard({
           🔊 お手本を聞く
         </button>
         {supported ? (
-          state === "listening" ? (
+          state === "preparing" ? (
+            <button type="button" className="btn" disabled>
+              🎙 準備中…（まだ話さないでください）
+            </button>
+          ) : state === "listening" ? (
             <button type="button" className="btn btn-danger" onClick={stop} disabled={backend === "native"}>
               🎙 聞き取り中…（話し終わると自動で止まります）
             </button>
@@ -1006,7 +1012,7 @@ function SpeakingCard({
             </button>
           )
         ) : null}
-        {state === "listening" && <span className="listening-dot">● 録音中</span>}
+        {state === "listening" && <span className="listening-dot">● 録音中 — 話してください</span>}
       </div>
 
       {!isTtsSupported() && <div className="notice">この環境では読み上げ（TTS）が利用できません。</div>}
@@ -1029,7 +1035,7 @@ function SpeakingCard({
             </button>
             {attempts.length < MAX_ATTEMPTS && (
               <span className="muted small">
-                合格ラインは {PASS_SCORE} 点。あと {MAX_ATTEMPTS - attempts.length} 回やり直せます。
+                合格ラインは {PASS_SCORE} 点（{CLEAR_SCORE} 点未満は復習に回ります）。あと {MAX_ATTEMPTS - attempts.length} 回やり直せます。
               </span>
             )}
           </div>
@@ -1084,7 +1090,7 @@ function ReviewNote({ result, correct, rate }: { result: AnswerResult; correct: 
   if (result.staysToday) {
     return (
       <div className="muted">
-        {correct ? "発音が70点未満なので、" : ""}この復習は正解するまで今日の復習に残ります（この回の最後にもう一度解けます）。正解すると消化され、カロリー ×{rate}。
+        {correct ? `発音が${CLEAR_SCORE}点未満なので、` : ""}この復習は正解するまで今日の復習に残ります（この回の最後にもう一度解けます）。正解すると消化され、カロリー ×{rate}。
       </div>
     );
   }

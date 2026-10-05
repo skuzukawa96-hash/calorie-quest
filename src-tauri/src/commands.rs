@@ -1734,13 +1734,13 @@ mod tests {
         assert!(r.stays_today);
         assert_eq!(r.kcal_earned, 0);
 
-        // A review spoken under 70 is not done: nothing paid, still due today.
+        // A review spoken under 65 is not done: nothing paid, still due today.
         let spoken: i64 = c
             .query_row("SELECT id FROM questions WHERE modes LIKE '%\"speaking\"%' LIMIT 1", [], |r| r.get(0))
             .unwrap();
         answer(&mut c, spoken, "speaking", false, Some(20.0));
         c.execute("UPDATE learning_history SET next_due_at = ?1 WHERE question_id = ?2", params![today(), spoken]).unwrap();
-        let r = answer(&mut c, spoken, "speaking", true, Some(65.0));
+        let r = answer(&mut c, spoken, "speaking", true, Some(62.0));
         assert!(r.stays_today);
         assert_eq!(r.kcal_earned, 0);
         assert_eq!(history(&c, spoken).2, Some(today()));
@@ -1886,9 +1886,14 @@ mod tests {
         let r = answer(&mut c, qid, "speaking", true, Some(80.0));
         assert_eq!(r.kcal_earned, 4);
         assert!(!r.needs_review);
-        let r = answer(&mut c, qid, "speaking", true, Some(65.0));
+        let r = answer(&mut c, qid, "speaking", true, Some(62.0));
+        assert_eq!(r.kcal_earned, 3, "3.1 rounds down");
+        assert!(r.needs_review, "scores under 65 are scheduled for review");
+        // 65 clears it, and still pays by the score.
+        let cleared = question_id(&c, "p002");
+        let r = answer(&mut c, cleared, "speaking", true, Some(65.0));
         assert_eq!(r.kcal_earned, 3, "3.25 rounds down");
-        assert!(r.needs_review, "scores under 70 are scheduled for review");
+        assert!(!r.needs_review, "65 is the line a spoken question is cleared at");
     }
 
     /// がんばり halves every reward, お気軽 makes it 1.5 times: a word picked pays 0.5 / 1 / 1.5 kcal,

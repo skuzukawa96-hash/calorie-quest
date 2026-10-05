@@ -644,6 +644,10 @@ export interface NativeRecognition {
   rawConfidence: number;
   durationMs: number;
   matched: boolean;
+  /** how sure the engine was of the target phrase, from the result or the alternates it weighed */
+  targetConfidence: number | null;
+  /** the engine heard speech, even if it could not make out a phrase */
+  heard: boolean;
 }
 
 export const MODE_LABEL: Record<Mode, string> = {

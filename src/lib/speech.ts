@@ -5,6 +5,7 @@
 //  - "web":    the Web Speech API (works in normal browsers)
 //  - "native": Windows SAPI5 / WinRT through the Rust side. Used inside Tauri, because
 //              WebView2 does not implement SpeechRecognition (it fails with `network`).
+import { listen } from "@tauri-apps/api/event";
 import { api, runningInTauri } from "./api";
 import type { NativeRecognition, SpeechCapabilities } from "../types";
 
@@ -279,6 +280,9 @@ export function stopSpeaking() {
 
 /* ---------- speech recognition ---------- */
 
+/** Mirrors speech::LISTENING_EVENT: the native recognizer is ready, so the learner may speak. */
+const LISTENING_EVENT = "speech-listening";
+
 export interface RecognitionOutcome {
   /** candidate transcripts, best first */
   transcripts: string[];
@@ -312,17 +316,25 @@ export function recognizeOnce(opts: RecognizeOptions): RecognitionHandle {
 }
 
 function recognizeNative(opts: RecognizeOptions): RecognitionHandle {
-  opts.onListening?.();
   const timeoutSecs = Math.round((opts.timeoutMs ?? 8000) / 1000);
-  const result = api
-    .nativeRecognize(opts.target, opts.alternatives ?? [], timeoutSecs, opts.lang ?? "en-US")
+  // "Speak now" only once the recognizer is listening (speech.rs emits it): setting it up takes a
+  // moment, and the first words said in it would be lost.
+  const ready = listen(LISTENING_EVENT, () => opts.onListening?.()).catch(() => {
+    opts.onListening?.();
+    return () => undefined;
+  });
+  const result = ready
+    .then(() => api.nativeRecognize(opts.target, opts.alternatives ?? [], timeoutSecs, opts.lang ?? "en-US"))
     .then((native): RecognitionOutcome => {
-      if (native.status === "timeout" || (native.status === "success" && !native.text)) {
-        throw new Error("no-speech");
+      const guessed = native.targetConfidence !== null && native.targetConfidence !== undefined;
+      if (native.status === "timeout" || (native.status === "success" && !native.text && !guessed)) {
+        // Heard but not made out is not the same as silence.
+        throw new Error(native.heard ? "unclear" : "no-speech");
       }
-      if (native.status !== "success") throw new Error(native.status);
+      if (native.status !== "success" && !guessed) throw new Error(native.status);
       return { transcripts: native.text ? [native.text] : [], durationMs: native.durationMs, native };
-    });
+    })
+    .finally(() => void ready.then((stop) => stop()));
   // The WinRT recognizer stops by itself on silence; there is no cancel from JS.
   return { result, abort: () => undefined };
 }
@@ -404,7 +416,9 @@ export function describeRecognitionError(code: string): string {
       return "マイクが見つかりません。マイクの接続を確認してください。";
     case "no-speech":
     case "timeout":
-      return "音声が検出されませんでした。もう一度、はっきり話してみてください。";
+      return "音声が検出されませんでした。「● 録音中」が出てから、マイクに向かって話してみてください。";
+    case "unclear":
+      return "声は届きましたが、聞き取れませんでした。マイクに少し近づいて、文全体を一息に話してみてください（この回は回数に数えません）。";
     case "audio-quality-failure":
       return "音声がうまく聞き取れませんでした。マイクに近づいて話してみてください。";
     case "network":

@@ -18,7 +18,7 @@ import examBasic from "../../src-tauri/data/exam-basic.json";
 import exam600 from "../../src-tauri/data/exam-600.json";
 import exam800 from "../../src-tauri/data/exam-800.json";
 import { expandDictionary, lemmas, tokenize, type Dictionary } from "./dictionary";
-import { answerWordCount, hintPenalty, kcalFor, scoredKind, scoresPerWord } from "./scoring";
+import { answerWordCount, CLEAR_SCORE, hintPenalty, kcalFor, scoredKind, scoresPerWord } from "./scoring";
 import { exampleSentence, sentences } from "./sentences";
 import type {
   AnswerPayload,
@@ -1873,7 +1873,7 @@ function submitAnswer(p: AnswerPayload): AnswerResult {
   const t = today();
   const h = state.history[q.key] ?? { level: 0, needsReview: false, nextDue: null, correct: 0, wrong: 0, lastScore: null, lastStudiedAt: "" };
   const isDueReview = h.needsReview && h.nextDue !== null && h.nextDue <= t;
-  const lowScore = p.mode === "speaking" && (p.score ?? 100) < 70;
+  const lowScore = p.mode === "speaking" && (p.score ?? 100) < CLEAR_SCORE;
   // Mirrors record_answer: a due review is done when answered right (70 or more if spoken).
   const done = p.correct && !lowScore;
   const hints = Math.max(0, p.hintsUsed ?? 0);

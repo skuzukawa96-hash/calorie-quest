@@ -12,8 +12,9 @@ pub const CHEAT_DAY_BONUS: i64 = 300;
 /// 使わずに残ったカロリーの貯蓄が、この量に達するごとにお菓子引換券1枚になる。
 pub const SAVINGS_PER_TICKET: i64 = 2000;
 
-/// Pronunciation score below which the question is scheduled for review even if it "passed".
-pub const SPEAKING_REVIEW_THRESHOLD: f64 = 70.0;
+/// Pronunciation score below which the question is scheduled for review even if it "passed"
+/// (60, `PASS_SCORE` in scoring.ts): the line a spoken question is cleared at (CLEAR_SCORE there).
+pub const SPEAKING_REVIEW_THRESHOLD: f64 = 65.0;
 
 /// A review left undone for more than this many days after it was due goes back to the ordinary
 /// questions (`commands::release_stale_reviews`), so the reviews do not pile up.

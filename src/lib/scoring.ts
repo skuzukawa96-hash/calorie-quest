@@ -1,6 +1,8 @@
 // Text comparison, pronunciation scoring and "tricky sound" detection.
 
 export const PASS_SCORE = 60;
+/** Below this a spoken question goes to review, and a review spoken is not done (srs::SPEAKING_REVIEW_THRESHOLD). */
+export const CLEAR_SCORE = 65;
 
 export function normalizeText(s: string): string {
   return s
@@ -140,14 +142,19 @@ export interface NativeJudgement {
   confidence: "high" | "medium" | "low" | "rejected";
   rawConfidence: number;
   text: string;
+  /** how sure the engine was of the target, also when it gave no result (its closest guess) */
+  targetConfidence?: number | null;
 }
 
 /**
- * Score = 80% text match + 20% fluency.
+ * Score = 80% text match + 20% fluency. Nothing is judged by the pitch of the voice.
  * - Web Speech API: match = similarity between the target and the best transcript; fluency
  *   compares time-to-result with a natural pace.
- * - Native (Windows) recognizer: match comes from the engine's confidence for the target
- *   phrase in a list grammar; fluency uses the measured phrase duration.
+ * - Native (Windows) recognizer: match is whether the engine took the target out of the list of
+ *   phrases. Its confidence moves the score only a little (0.9 to 1.0 of the match), since the
+ *   engine is surer of some voices than others (a low voice and a high one score alike). A result
+ *   too unsure to give, whose closest guess was the target, counts as unclear (0.6 to 0.8); another
+ *   phrase heard counts by how alike it is. Fluency uses the measured phrase duration.
  */
 export function scorePronunciation(
   target: string,
@@ -162,13 +169,17 @@ export function scorePronunciation(
 
   if (native) {
     best = native.text;
+    const sure = (c: number) => Math.max(0, Math.min(1, c));
+    const guessed = native.targetConfidence ?? null;
     if (native.matched) {
-      const floor = native.confidence === "high" ? 0.9 : native.confidence === "medium" ? 0.75 : native.confidence === "low" ? 0.6 : 0.3;
-      bestSim = Math.max(floor, Math.min(1, native.rawConfidence));
-    } else if (native.confidence === "rejected" || !native.text) {
-      bestSim = 0.2;
+      bestSim = 0.9 + 0.1 * sure(native.rawConfidence);
+    } else if (!native.text && guessed !== null) {
+      bestSim = 0.6 + 0.2 * sure(guessed);
+      best = target;
+    } else if (native.text) {
+      bestSim = Math.max(Math.min(0.5, similarity(target, native.text)), guessed !== null ? 0.4 + 0.1 * sure(guessed) : 0);
     } else {
-      bestSim = Math.min(0.5, similarity(target, native.text));
+      bestSim = 0.2;
     }
     // PhraseDuration excludes leading/trailing silence, so allow less slack.
     expectedMs = words * 450 + 400;

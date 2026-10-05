@@ -24,6 +24,12 @@ pub struct NativeRecognition {
     pub raw_confidence: f64,
     pub duration_ms: i64,
     pub matched: bool,
+    /// how sure the engine was of the target phrase: from the result when it is the target, else
+    /// from the alternates it weighed (a result too unsure to give has its text empty, but the
+    /// target may still be its closest guess)
+    pub target_confidence: Option<f64>,
+    /// the engine heard speech, even if it could not make out a phrase
+    pub heard: bool,
 }
 
 #[cfg(windows)]
@@ -290,7 +296,16 @@ mod platform {
         }
     }
 
-    pub fn recognize(lang: &str, target: &str, alternatives: Vec<String>, timeout_secs: u32) -> Result<NativeRecognition, String> {
+    /// Listens once for `target` among `alternatives`. `on_listening` is called when the
+    /// recognizer is ready and listening, not before: creating it and compiling the phrases takes a
+    /// moment, and words said in that moment are lost.
+    pub fn recognize(
+        lang: &str,
+        target: &str,
+        alternatives: Vec<String>,
+        timeout_secs: u32,
+        on_listening: impl FnOnce() + Send + 'static,
+    ) -> Result<NativeRecognition, String> {
         let lang = lang.to_string();
         let target = target.to_string();
         std::thread::spawn(move || unsafe {
@@ -316,24 +331,44 @@ mod platform {
 
             let timeouts = rec.Timeouts().map_err(e)?;
             let _ = timeouts.SetInitialSilenceTimeout(TimeSpan { Duration: timeout_secs as i64 * 10_000_000 });
-            let _ = timeouts.SetEndSilenceTimeout(TimeSpan { Duration: 8_000_000 });
+            // A short pause inside a longer sentence must not end it.
+            let _ = timeouts.SetEndSilenceTimeout(TimeSpan { Duration: 12_000_000 });
             let _ = timeouts.SetBabbleTimeout(TimeSpan { Duration: 12 * 10_000_000 });
 
-            let result = rec.RecognizeAsync().map_err(e)?.join().map_err(e)?;
+            let listening = rec.RecognizeAsync().map_err(e)?;
+            on_listening();
+            let result = listening.join().map_err(e)?;
             let status = result.Status().map_err(e)?;
             let text = result.Text().map(|t| t.to_string()).unwrap_or_default();
             let confidence = result.Confidence().unwrap_or(SpeechRecognitionConfidence::Rejected);
             let raw_confidence = result.RawConfidence().unwrap_or(0.0);
             let duration_ms = result.PhraseDuration().map(|d| d.Duration / 10_000).unwrap_or(0);
+            let matched = same_phrase(&text, &target);
+            // The phrases the engine weighed, the target among them even when it gave no result.
+            let mut target_confidence = matched.then_some(raw_confidence);
+            let mut heard = duration_ms > 0 || !text.is_empty();
+            if let Ok(alternates) = result.GetAlternates(5) {
+                for i in 0..alternates.Size().unwrap_or(0) {
+                    let Ok(alt) = alternates.GetAt(i) else { continue };
+                    let alt_text = alt.Text().map(|t| t.to_string()).unwrap_or_default();
+                    heard |= !alt_text.is_empty();
+                    if same_phrase(&alt_text, &target) {
+                        let raw = alt.RawConfidence().unwrap_or(0.0);
+                        target_confidence = Some(target_confidence.map_or(raw, |t: f64| t.max(raw)));
+                    }
+                }
+            }
             let _ = rec.Close();
 
             Ok(NativeRecognition {
                 status: status_name(status),
-                matched: same_phrase(&text, &target),
+                matched,
                 text,
                 confidence: confidence_name(confidence),
                 raw_confidence,
                 duration_ms,
+                target_confidence,
+                heard,
             })
         })
         .join()
@@ -363,7 +398,13 @@ mod platform {
         Err("native speech is only implemented on Windows".to_string())
     }
 
-    pub fn recognize(_lang: &str, _target: &str, _alternatives: Vec<String>, _timeout_secs: u32) -> Result<NativeRecognition, String> {
+    pub fn recognize(
+        _lang: &str,
+        _target: &str,
+        _alternatives: Vec<String>,
+        _timeout_secs: u32,
+        _on_listening: impl FnOnce() + Send + 'static,
+    ) -> Result<NativeRecognition, String> {
         Err("native speech is only implemented on Windows".to_string())
     }
 }
@@ -384,7 +425,7 @@ mod tests {
         let caps = platform::capabilities();
         println!("capabilities: {caps:?}");
         assert!(caps.native_stt, "English recognizer not installed: {:?}", caps.stt_languages);
-        let result = platform::recognize("en-US", "hello", vec!["good morning".into(), "thank you".into()], 2);
+        let result = platform::recognize("en-US", "hello", vec!["good morning".into(), "thank you".into()], 2, || ());
         println!("recognition: {result:?}");
         let r = result.expect("recognizer should run even when nobody speaks");
         assert!(["success", "timeout", "audio-quality-failure"].contains(&r.status.as_str()), "unexpected status {}", r.status);
@@ -430,17 +471,25 @@ pub fn native_synthesize_all(texts: Vec<String>, rate: Option<i32>) -> Result<ta
     Ok(tauri::ipc::Response::new(out))
 }
 
+/// The event the frontend waits for before it tells the learner to speak.
+pub const LISTENING_EVENT: &str = "speech-listening";
+
 #[tauri::command(async)]
 pub fn native_recognize(
+    app: tauri::AppHandle,
     lang: Option<String>,
     target: String,
     alternatives: Option<Vec<String>>,
     timeout_secs: Option<u32>,
 ) -> Result<NativeRecognition, String> {
+    use tauri::Emitter;
     platform::recognize(
         lang.as_deref().unwrap_or("en-US"),
         &target,
         alternatives.unwrap_or_default(),
         timeout_secs.unwrap_or(6).clamp(2, 20),
+        move || {
+            let _ = app.emit(LISTENING_EVENT, ());
+        },
     )
 }
