@@ -697,16 +697,17 @@ mod tests {
         }
     }
 
-    /// Each level has questions enough for several different exams.
+    /// Each level has questions enough for five exams in a row with nothing asked twice.
     #[test]
     fn every_level_can_make_varied_exams() {
+        const EXAMS: usize = 5;
         for level in LEVELS {
             let list = &sets()[level];
             let count = |part: &str| list.iter().filter(|s| s.part == part).map(|s| s.questions.len()).sum::<usize>();
-            assert!(count("listening") >= LISTENING * 2, "{level}: {} 応答問題", count("listening"));
-            assert!(count("short") >= 24, "{level}: {} 短文穴埋め", count("short"));
-            assert!(list.iter().filter(|s| s.part == "text").count() >= 3, "{level}: 長文穴埋め");
-            assert!(count("reading") >= READING * 2 - 2, "{level}: {} 読解", count("reading"));
+            assert!(count("listening") >= LISTENING * EXAMS, "{level}: {} 応答問題", count("listening"));
+            assert!(count("short") >= 12 * EXAMS, "{level}: {} 短文穴埋め", count("short"));
+            assert!(list.iter().filter(|s| s.part == "text").count() >= TEXT_SETS * EXAMS, "{level}: 長文穴埋め");
+            assert!(count("reading") >= READING * EXAMS, "{level}: {} 読解", count("reading"));
         }
     }
 
