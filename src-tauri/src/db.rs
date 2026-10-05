@@ -283,6 +283,14 @@ CREATE TABLE IF NOT EXISTS exam_mistakes (
   misses INTEGER NOT NULL DEFAULT 1,
   PRIMARY KEY (user_id, question_id)
 );
+-- 試験: when a set (a question, or a passage and its questions) was last asked, so a new exam
+-- takes the sets not asked yet, then those asked longest ago.
+CREATE TABLE IF NOT EXISTS exam_seen (
+  user_id INTEGER NOT NULL,
+  set_id TEXT NOT NULL,
+  asked_at TEXT NOT NULL,
+  PRIMARY KEY (user_id, set_id)
+);
 -- 試験の中断: the exam of a level left before it was handed in, to go on with (JSON: the question
 -- ids in order, and the answers so far as [{id, chosen}]).
 CREATE TABLE IF NOT EXISTS exam_progress (

@@ -135,6 +135,8 @@ interface MockState {
   examAttempts: ExamAttempt[];
   /** exam question id → missed and not yet put right in the exam review (mirrors exam_mistakes) */
   examMistakes: Record<string, { level: ExamLevel; addedAt: string; misses: number }>;
+  /** exam set id → when it was last asked (mirrors exam_seen) */
+  examSeen: Record<string, string>;
   /** the exam of a level left part-way (mirrors exam_progress) */
   examProgress: Partial<Record<ExamLevel, { questionIds: string[]; answers: ExamAnswer[]; savedAt: string }>>;
   /** お気に入り (mirrors favorites); a study question by its `key`, as `history` is */
@@ -323,6 +325,7 @@ function freshState(): MockState {
     recipePaid: {},
     examAttempts: [],
     examMistakes: {},
+    examSeen: {},
     examProgress: {},
     favorites: [],
     nextId: 100,
@@ -356,6 +359,7 @@ function load(): MockState {
           | "recipePaid"
           | "examAttempts"
           | "examMistakes"
+          | "examSeen"
           | "examProgress"
           | "favorites"
         > & {
@@ -384,6 +388,7 @@ function load(): MockState {
         recipePaid: stored.recipePaid ?? {},
         examAttempts: stored.examAttempts ?? [],
         examMistakes: stored.examMistakes ?? {},
+        examSeen: stored.examSeen ?? {},
         examProgress: stored.examProgress ?? {},
         favorites: stored.favorites ?? [],
       };
@@ -1619,26 +1624,54 @@ function examQuestion(id: string): ExamQuestion | null {
 }
 
 /** Mirrors exam::build_exam. */
+/** Mirrors exam::fullest: the first of `items` that together come closest to `room` without going over. */
+function fullest(items: number[], size: (i: number) => number, room: number): number[] {
+  let best: { sum: number; chosen: number[] } = { sum: 0, chosen: [] };
+  const search = (at: number, chosen: number[], sum: number) => {
+    if (sum > best.sum) best = { sum, chosen: [...chosen] };
+    if (best.sum === room) return;
+    for (let i = at; i < items.length; i++) {
+      if (sum + size(items[i]) > room) continue;
+      search(i + 1, [...chosen, items[i]], sum + size(items[i]));
+      if (best.sum === room) return;
+    }
+  };
+  search(0, [], 0);
+  return best.chosen;
+}
+
+/** Mirrors exam::build_exam_from: each part takes the sets not asked yet, then those asked longest ago. */
 function buildExam(level: ExamLevel): ExamQuestion[] {
   const list = EXAM_SETS[level];
   if (!list) throw new Error(`unknown exam level ${level}`);
-  const ofPart = (part: ExamPart) => shuffle(list.map((s, i) => [s, i] as const).filter(([s]) => s.part === part).map(([, i]) => i));
+  const askedAt = (i: number) => state.examSeen[list[i].id] ?? "";
+  const ofPart = (part: ExamPart) =>
+    shuffle(list.map((s, i) => [s, i] as const).filter(([s]) => s.part === part).map(([, i]) => i)).sort((a, b) =>
+      askedAt(a).localeCompare(askedAt(b)),
+    );
   const listening = ofPart("listening").slice(0, EXAM.listening);
   const text = ofPart("text").slice(0, EXAM.textSets);
-  const reading: number[] = [];
-  let readingCount = 0;
-  for (const i of ofPart("reading")) {
-    const n = list[i].questions.length;
-    if (readingCount + n <= EXAM.reading) {
-      reading.push(i);
-      readingCount += n;
-    }
-  }
   const count = (sets: number[]) => sets.reduce((s, i) => s + list[i].questions.length, 0);
+  // 読解: the passages not asked yet that come closest to 8, topped up only when they make fewer than 6.
+  const readingOrder = ofPart("reading");
+  const fresh = readingOrder.filter((i) => !state.examSeen[list[i].id]);
+  const asked = readingOrder.filter((i) => !!state.examSeen[list[i].id]);
+  const reading = fullest(fresh, (i) => list[i].questions.length, EXAM.reading);
+  if (count(reading) < EXAM.reading - 2) reading.push(...fullest(asked, (i) => list[i].questions.length, EXAM.reading - count(reading)));
+  const readingCount = count(reading);
   const short = ofPart("short").slice(0, Math.max(0, EXAM.size - count(listening) - count(text) - readingCount));
   return [listening, short, text, reading].flatMap((group) =>
     group.flatMap((si) => list[si].questions.map((_, qi) => buildExamQuestion(level, list[si], qi))),
   );
+}
+
+/** Mirrors exam::mark_seen: the sets of the questions answered were asked now. */
+function markExamSeen(answers: ExamAnswer[]) {
+  const now = nowTs();
+  for (const a of answers) {
+    const q = examQuestion(a.id);
+    if (q) state.examSeen[q.setId] = now;
+  }
 }
 
 /** Mirrors exam::finish. */
@@ -1657,8 +1690,9 @@ function finishExam(level: ExamLevel, answers: ExamAnswer[]): ExamResult {
   const now = nowTs();
   // Every exam handed in pays (mirrors exam::finish).
   const kcal = passed ? EXAM_REWARD[level] : EXAM.effortKcal;
-  // Handed in: nothing of this level is left part-way any more.
+  // Handed in: nothing of this level is left part-way any more, and every question was asked.
   delete state.examProgress[level];
+  markExamSeen(answers);
   state.examAttempts.push({ level, date: t, total, correct, passed, kcal, finishedAt: now });
   let reviewAdded = 0;
   for (const g of graded) {
@@ -1779,8 +1813,10 @@ function answerExamReview(id: string, chosen: string): ExamReviewResult {
 /** Mirrors exam::save_progress: every answer keeps the exam left part-way. */
 function saveExamProgress(level: ExamLevel, questionIds: string[], answers: ExamAnswer[]) {
   if (!EXAM_LEVELS.includes(level)) throw new Error(`unknown exam level ${level}`);
-  if (answers.length) state.examProgress[level] = { questionIds, answers, savedAt: nowTs() };
-  else delete state.examProgress[level];
+  if (answers.length) {
+    markExamSeen(answers);
+    state.examProgress[level] = { questionIds, answers, savedAt: nowTs() };
+  } else delete state.examProgress[level];
   save();
 }
 

@@ -9,7 +9,7 @@
 //! paid every time an exam is handed in. A question missed goes into the exam's own review (apart
 //! from the study review); put right there it pays 3 kcal and leaves the review.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::OnceLock;
 
 use rusqlite::{params, Connection, OptionalExtension};
@@ -237,27 +237,39 @@ pub fn question(id: &str) -> Option<ExamQuestion> {
     Some(build_question(level, &sets()[level][si], qi))
 }
 
-/// A new exam of `level`: 応答問題 6, 短文穴埋め to make up 30, 長文穴埋め one passage, 読解 8
-/// questions, a passage at a time, each part drawn at random and the parts in TOEIC's order.
+/// A new exam of `level` drawn at random, as if nothing had been asked before.
 pub fn build_exam(level: &str) -> Result<Vec<ExamQuestion>, String> {
+    build_exam_from(level, &HashMap::new())
+}
+
+/// A new exam of `level`: 応答問題 6, 短文穴埋め to make up 30, 長文穴埋め one passage, 読解 8
+/// questions, a passage at a time, the parts in TOEIC's order. Each part takes the sets not asked
+/// yet first, then those asked longest ago (`seen`: set id → when last asked), at random among
+/// equals, so exams do not repeat a question while the bank still has some not asked.
+pub fn build_exam_from(level: &str, seen: &HashMap<String, String>) -> Result<Vec<ExamQuestion>, String> {
     let list = sets().get(level).ok_or_else(|| format!("unknown exam level {level}"))?;
-    let mut of_part = |part: &str| -> Vec<usize> {
+    let of_part = |part: &str| -> Vec<usize> {
         let mut v: Vec<usize> = (0..list.len()).filter(|&i| list[i].part == part).collect();
         shuffle(&mut v);
+        // Stable: never asked ("") first, then the oldest, the shuffle kept among equals.
+        v.sort_by_key(|&i| seen.get(&list[i].id).cloned().unwrap_or_default());
         v
     };
     let listening: Vec<usize> = of_part("listening").into_iter().take(LISTENING).collect();
     let text: Vec<usize> = of_part("text").into_iter().take(TEXT_SETS).collect();
-    let mut reading = Vec::new();
-    let mut reading_count = 0;
-    for i in of_part("reading") {
-        let n = list[i].questions.len();
-        if reading_count + n <= READING {
-            reading.push(i);
-            reading_count += n;
-        }
-    }
     let count = |sets: &[usize]| sets.iter().map(|&i| list[i].questions.len()).sum::<usize>();
+    // 読解 comes a passage (2 to 4 questions) at a time: the passages not asked yet that come
+    // closest to READING, topped up with those asked longest ago only when they make fewer than
+    // READING - 2; the 短文穴埋め make up the rest.
+    let (fresh, asked): (Vec<usize>, Vec<usize>) =
+        of_part("reading").into_iter().partition(|&i| !seen.contains_key(&list[i].id));
+    let sizes = |v: &[usize]| v.iter().map(|&i| (i, list[i].questions.len())).collect::<Vec<_>>();
+    let mut reading = fullest(&sizes(&fresh), READING);
+    if count(&reading) < READING - 2 {
+        let room = READING - count(&reading);
+        reading.extend(fullest(&sizes(&asked), room));
+    }
+    let reading_count = count(&reading);
     let short_needed = EXAM_SIZE.saturating_sub(count(&listening) + count(&text) + reading_count);
     let short: Vec<usize> = of_part("short").into_iter().take(short_needed).collect();
 
@@ -270,6 +282,33 @@ pub fn build_exam(level: &str) -> Result<Vec<ExamQuestion>, String> {
         }
     }
     Ok(out)
+}
+
+/// The first of `items` ((id, size), in the order to prefer) that together come closest to `room`
+/// without going over: exactly `room` when some do.
+fn fullest(items: &[(usize, usize)], room: usize) -> Vec<usize> {
+    fn search(items: &[(usize, usize)], room: usize, at: usize, chosen: &mut Vec<usize>, sum: usize, best: &mut (usize, Vec<usize>)) {
+        if sum > best.0 {
+            *best = (sum, chosen.clone());
+        }
+        if best.0 == room {
+            return;
+        }
+        for i in at..items.len() {
+            let (id, n) = items[i];
+            if sum + n <= room {
+                chosen.push(id);
+                search(items, room, i + 1, chosen, sum + n, best);
+                chosen.pop();
+                if best.0 == room {
+                    return;
+                }
+            }
+        }
+    }
+    let mut best = (0, Vec::new());
+    search(items, room, 0, &mut Vec::new(), 0, &mut best);
+    best.1
 }
 
 /// Grades an exam handed in, pays for it and puts the questions missed into the exam review
@@ -292,8 +331,9 @@ pub fn finish(conn: &mut Connection, level: &str, answers: &[ExamAnswer]) -> Res
     let (today, now) = (today(), now_ts());
 
     let tx = conn.transaction().map_err(err)?;
-    // Handed in: nothing of this level is left part-way any more.
+    // Handed in: nothing of this level is left part-way any more, and every question was asked.
     tx.execute("DELETE FROM exam_progress WHERE user_id = ?1 AND level = ?2", params![USER_ID, level]).map_err(err)?;
+    mark_seen(&tx, answers.iter().map(|a| a.id.as_str())).map_err(err)?;
     let kcal = if passed { reward(level) } else { EFFORT_KCAL };
     tx.execute(
         "INSERT INTO exam_attempts (user_id, level, date, total, correct, passed, kcal, finished_at)
@@ -340,6 +380,35 @@ pub fn finish(conn: &mut Connection, level: &str, answers: &[ExamAnswer]) -> Res
     })
 }
 
+/// When each set of `level` was last asked: set id → time.
+pub fn seen_sets(conn: &Connection, level: &str) -> rusqlite::Result<HashMap<String, String>> {
+    let ids: HashSet<&str> = sets().get(level).map(|l| l.iter().map(|s| s.id.as_str()).collect()).unwrap_or_default();
+    let mut stmt = conn.prepare("SELECT set_id, asked_at FROM exam_seen WHERE user_id = ?1")?;
+    let rows = stmt.query_map(params![USER_ID], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?;
+    let mut out = HashMap::new();
+    for row in rows {
+        let (id, at) = row?;
+        if ids.contains(id.as_str()) {
+            out.insert(id, at);
+        }
+    }
+    Ok(out)
+}
+
+/// Marks the sets of the questions answered (`ids`, question ids) as asked now.
+fn mark_seen<'a>(conn: &Connection, ids: impl IntoIterator<Item = &'a str>) -> rusqlite::Result<()> {
+    let now = now_ts();
+    for id in ids {
+        let Some(&(level, si, _)) = index().get(id) else { continue };
+        conn.execute(
+            "INSERT INTO exam_seen (user_id, set_id, asked_at) VALUES (?1, ?2, ?3)
+             ON CONFLICT(user_id, set_id) DO UPDATE SET asked_at = excluded.asked_at",
+            params![USER_ID, sets()[level][si].id, now],
+        )?;
+    }
+    Ok(())
+}
+
 /* ---------- 中断: an exam left part-way, kept to go on with ---------- */
 
 /// Keeps the exam of `level` left part-way: its questions in order and the answers so far. Every
@@ -352,6 +421,8 @@ pub fn save_progress(conn: &Connection, level: &str, question_ids: &[String], an
     if answers.is_empty() {
         return discard_progress(conn, level);
     }
+    // A question answered has been asked, even if the exam is given up afterwards.
+    mark_seen(conn, answers.iter().map(|a| a.id.as_str())).map_err(err)?;
     let ids = serde_json::to_string(question_ids).map_err(err)?;
     let answers = serde_json::to_string(answers).map_err(err)?;
     conn.execute(
@@ -508,8 +579,10 @@ pub fn overview(conn: &Connection) -> rusqlite::Result<ExamOverview> {
 /* ---------- Tauri commands ---------- */
 
 #[tauri::command]
-pub fn start_exam(level: String) -> CmdResult<Vec<ExamQuestion>> {
-    build_exam(&level)
+pub fn start_exam(state: State<'_, AppState>, level: String) -> CmdResult<Vec<ExamQuestion>> {
+    let conn = state.db.lock().map_err(err)?;
+    let seen = seen_sets(&conn, &level).map_err(err)?;
+    build_exam_from(&level, &seen)
 }
 
 #[tauri::command]
@@ -713,6 +786,36 @@ mod tests {
             review[1..].iter().map(|q| ExamAnswer { id: q.id.clone(), chosen: q.answer.clone() }).collect();
         finish(&mut c, "toeic800", &redo).unwrap();
         assert_eq!(overview(&c).unwrap().review_count, 0);
+    }
+
+    /// Exams take what has not been asked yet: one after another, no set comes back while the level
+    /// still has sets of that part not asked.
+    #[test]
+    fn exams_ask_what_has_not_been_asked_first() {
+        for level in LEVELS {
+            let mut c = conn();
+            let list = &sets()[level];
+            let mut asked: HashMap<&str, HashSet<String>> = HashMap::new();
+            // Each exam's sets, part by part, until a part has fewer sets left than one exam takes.
+            for round in 0..4 {
+                let exam = build_exam_from(level, &seen_sets(&c, level).unwrap()).unwrap();
+                assert_eq!(exam.len(), EXAM_SIZE, "{level} #{round}");
+                let mut this: HashMap<&str, HashSet<String>> = HashMap::new();
+                for q in &exam {
+                    let part = list.iter().find(|s| s.id == q.set_id).unwrap().part.as_str();
+                    this.entry(part).or_default().insert(q.set_id.clone());
+                }
+                for (part, ids) in &this {
+                    let before = asked.entry(part).or_default();
+                    let pool = list.iter().filter(|s| s.part == *part).count();
+                    if pool - before.len() >= ids.len() {
+                        assert!(ids.is_disjoint(before), "{level} #{round}: a {part} set asked again too soon");
+                    }
+                    before.extend(ids.iter().cloned());
+                }
+                finish(&mut c, level, &answers(&exam, 30)).unwrap();
+            }
+        }
     }
 
     /// An exam left part-way is kept with its answers until it is handed in or given up, and only
