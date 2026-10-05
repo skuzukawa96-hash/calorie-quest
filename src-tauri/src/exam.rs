@@ -18,7 +18,8 @@ use tauri::State;
 
 use crate::commands::{credit, err, load_daily, mark_studied, CmdResult, Studied, USER_ID};
 use crate::models::{
-    ExamAnswer, ExamLevelInfo, ExamOverview, ExamQuestion, ExamResult, ExamReviewResult, WordNotes,
+    ExamAnswer, ExamLevelInfo, ExamOverview, ExamProgress, ExamQuestion, ExamResult, ExamReviewResult, ExamSuspended,
+    WordNotes,
 };
 use crate::srs;
 use crate::util::{now_ts, shuffle, today};
@@ -291,6 +292,8 @@ pub fn finish(conn: &mut Connection, level: &str, answers: &[ExamAnswer]) -> Res
     let (today, now) = (today(), now_ts());
 
     let tx = conn.transaction().map_err(err)?;
+    // Handed in: nothing of this level is left part-way any more.
+    tx.execute("DELETE FROM exam_progress WHERE user_id = ?1 AND level = ?2", params![USER_ID, level]).map_err(err)?;
     let kcal = if passed { reward(level) } else { EFFORT_KCAL };
     tx.execute(
         "INSERT INTO exam_attempts (user_id, level, date, total, correct, passed, kcal, finished_at)
@@ -335,6 +338,66 @@ pub fn finish(conn: &mut Connection, level: &str, answers: &[ExamAnswer]) -> Res
         new_ticket,
         review_added,
     })
+}
+
+/* ---------- 中断: an exam left part-way, kept to go on with ---------- */
+
+/// Keeps the exam of `level` left part-way: its questions in order and the answers so far. Every
+/// answer saves it, so leaving by 中断, by another tab or by closing the app all keep it. With no
+/// answer there is nothing to keep.
+pub fn save_progress(conn: &Connection, level: &str, question_ids: &[String], answers: &[ExamAnswer]) -> Result<(), String> {
+    if !LEVELS.contains(&level) {
+        return Err(format!("unknown exam level {level}"));
+    }
+    if answers.is_empty() {
+        return discard_progress(conn, level);
+    }
+    let ids = serde_json::to_string(question_ids).map_err(err)?;
+    let answers = serde_json::to_string(answers).map_err(err)?;
+    conn.execute(
+        "INSERT INTO exam_progress (user_id, level, question_ids, answers, saved_at) VALUES (?1, ?2, ?3, ?4, ?5)
+         ON CONFLICT(user_id, level) DO UPDATE SET
+           question_ids = excluded.question_ids, answers = excluded.answers, saved_at = excluded.saved_at",
+        params![USER_ID, level, ids, answers, now_ts()],
+    )
+    .map_err(err)?;
+    Ok(())
+}
+
+/// The question ids and answers kept for `level`, as they were saved.
+fn stored_progress(conn: &Connection, level: &str) -> rusqlite::Result<Option<(Vec<String>, Vec<ExamAnswer>, String)>> {
+    let row: Option<(String, String, String)> = conn
+        .query_row(
+            "SELECT question_ids, answers, saved_at FROM exam_progress WHERE user_id = ?1 AND level = ?2",
+            params![USER_ID, level],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .optional()?;
+    Ok(row.map(|(ids, answers, saved_at)| {
+        (serde_json::from_str(&ids).unwrap_or_default(), serde_json::from_str(&answers).unwrap_or_default(), saved_at)
+    }))
+}
+
+/// The exam of `level` left part-way, its questions made again from their ids. One the bank no
+/// longer has every question of (the data changed since) is dropped rather than half shown.
+pub fn progress(conn: &Connection, level: &str) -> Result<Option<ExamProgress>, String> {
+    let Some((ids, answers, saved_at)) = stored_progress(conn, level).map_err(err)? else {
+        return Ok(None);
+    };
+    let questions: Option<Vec<ExamQuestion>> = ids.iter().map(|id| question(id)).collect();
+    match questions {
+        Some(questions) if !questions.is_empty() && !answers.is_empty() && answers.iter().all(|a| ids.contains(&a.id)) => {
+            Ok(Some(ExamProgress { level: level.to_string(), questions, answers, saved_at }))
+        }
+        _ => discard_progress(conn, level).map(|_| None),
+    }
+}
+
+/// Forgets the exam of `level` left part-way (いいえ, start again).
+pub fn discard_progress(conn: &Connection, level: &str) -> Result<(), String> {
+    conn.execute("DELETE FROM exam_progress WHERE user_id = ?1 AND level = ?2", params![USER_ID, level])
+        .map_err(err)?;
+    Ok(())
 }
 
 /// Up to `count` exam questions waiting in review, those missed longest ago first.
@@ -428,6 +491,8 @@ pub fn overview(conn: &Connection) -> rusqlite::Result<ExamOverview> {
             passed_ever,
             passed_today,
             review_count: review_count(conn, Some(level))?,
+            suspended: stored_progress(conn, level)?
+                .map(|(ids, answers, _)| ExamSuspended { answered: answers.len() as i64, total: ids.len() as i64 }),
         });
     }
     Ok(ExamOverview {
@@ -451,6 +516,29 @@ pub fn start_exam(level: String) -> CmdResult<Vec<ExamQuestion>> {
 pub fn finish_exam(state: State<'_, AppState>, level: String, answers: Vec<ExamAnswer>) -> CmdResult<ExamResult> {
     let mut conn = state.db.lock().map_err(err)?;
     finish(&mut conn, &level, &answers)
+}
+
+#[tauri::command]
+pub fn get_exam_progress(state: State<'_, AppState>, level: String) -> CmdResult<Option<ExamProgress>> {
+    let conn = state.db.lock().map_err(err)?;
+    progress(&conn, &level)
+}
+
+#[tauri::command]
+pub fn save_exam_progress(
+    state: State<'_, AppState>,
+    level: String,
+    question_ids: Vec<String>,
+    answers: Vec<ExamAnswer>,
+) -> CmdResult<()> {
+    let conn = state.db.lock().map_err(err)?;
+    save_progress(&conn, &level, &question_ids, &answers)
+}
+
+#[tauri::command]
+pub fn discard_exam_progress(state: State<'_, AppState>, level: String) -> CmdResult<()> {
+    let conn = state.db.lock().map_err(err)?;
+    discard_progress(&conn, &level)
 }
 
 #[tauri::command]
@@ -625,6 +713,49 @@ mod tests {
             review[1..].iter().map(|q| ExamAnswer { id: q.id.clone(), chosen: q.answer.clone() }).collect();
         finish(&mut c, "toeic800", &redo).unwrap();
         assert_eq!(overview(&c).unwrap().review_count, 0);
+    }
+
+    /// An exam left part-way is kept with its answers until it is handed in or given up, and only
+    /// for its own level.
+    #[test]
+    fn an_exam_left_part_way_is_kept_until_handed_in() {
+        let mut c = conn();
+        let exam = build_exam("toeic600").unwrap();
+        let ids: Vec<String> = exam.iter().map(|q| q.id.clone()).collect();
+        assert_eq!(progress(&c, "toeic600").unwrap().map(|p| p.questions.len()), None);
+
+        let so_far = answers(&exam[..3], 2);
+        save_progress(&c, "toeic600", &ids, &so_far).unwrap();
+        let level = |c: &Connection, l: &str| overview(c).unwrap().levels.into_iter().find(|x| x.level == l).unwrap();
+        assert_eq!(level(&c, "toeic600").suspended, Some(ExamSuspended { answered: 3, total: 30 }));
+        assert_eq!(level(&c, "basic").suspended, None);
+        let kept = progress(&c, "toeic600").unwrap().expect("kept");
+        assert_eq!(kept.questions.iter().map(|q| q.id.clone()).collect::<Vec<_>>(), ids, "the same questions in order");
+        assert_eq!(kept.answers, so_far);
+
+        // Each answer saves again; one more is kept.
+        save_progress(&c, "toeic600", &ids, &answers(&exam[..4], 4)).unwrap();
+        assert_eq!(level(&c, "toeic600").suspended.unwrap().answered, 4);
+
+        // Handed in, it is gone.
+        finish(&mut c, "toeic600", &answers(&exam, 30)).unwrap();
+        assert!(progress(&c, "toeic600").unwrap().is_none());
+        assert_eq!(level(&c, "toeic600").suspended, None);
+
+        // Given up (いいえ), it is gone too; nothing answered keeps nothing.
+        save_progress(&c, "basic", &ids, &so_far).unwrap();
+        discard_progress(&c, "basic").unwrap();
+        assert!(progress(&c, "basic").unwrap().is_none());
+        save_progress(&c, "basic", &ids, &[]).unwrap();
+        assert!(progress(&c, "basic").unwrap().is_none());
+
+        // One whose questions the bank no longer has is dropped.
+        let mut gone = ids.clone();
+        gone[0] = "no-such-set-1".into();
+        save_progress(&c, "toeic800", &gone, &so_far).unwrap();
+        assert!(progress(&c, "toeic800").unwrap().is_none());
+        assert_eq!(level(&c, "toeic800").suspended, None);
+        assert!(save_progress(&c, "toeic999", &ids, &so_far).is_err());
     }
 
     #[test]

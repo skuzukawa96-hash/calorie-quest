@@ -14,6 +14,7 @@ import {
   type ExamLevel,
   type ExamOverview,
   type ExamPart,
+  type ExamProgress,
   type ExamQuestion,
   type ExamResult,
   type PlayMode,
@@ -74,6 +75,22 @@ function say(text: string) {
   if (isTtsSupported()) speak(text).catch(() => undefined);
 }
 
+/** "2026-10-04T21:30:05" as 10/4 21:30. */
+function shortTime(ts: string): string {
+  const m = /^\d{4}-(\d{2})-(\d{2})T(\d{2}:\d{2})/.exec(ts);
+  return m ? `${Number(m[1])}/${Number(m[2])} ${m[3]}` : ts;
+}
+
+/** The answers kept for an exam left part-way, marked again against its questions. */
+function answeredFrom(p: ExamProgress): Record<string, Answered> {
+  const out: Record<string, Answered> = {};
+  for (const a of p.answers) {
+    const q = p.questions.find((x) => x.id === a.id);
+    if (q) out[a.id] = { chosen: a.chosen, correct: q.answer === a.chosen };
+  }
+  return out;
+}
+
 /**
  * 試験: 30 questions laid out like TOEIC (応答問題 → 短文穴埋め → 長文穴埋め → 読解), each marked
  * as soon as it is answered, with its explanation; the score is handed in at the end. The review
@@ -91,7 +108,8 @@ export default function Exam({ kind, level, favorites, overview, playMode, onExi
   const [dict, setDict] = useState<Dictionary | null>(null);
   const [gloss, setGloss] = useState(loadGloss);
   const [busy, setBusy] = useState(false);
-  const [quitting, setQuitting] = useState(false);
+  /** an exam of this level left part-way: asked whether to go on with it before anything else */
+  const [resume, setResume] = useState<ExamProgress | null>(null);
   const fav = useFavorites(toast);
   const levelInfo = overview.levels.find((l) => l.level === level);
 
@@ -103,9 +121,21 @@ export default function Exam({ kind, level, favorites, overview, playMode, onExi
     setResult(null);
     setReviewDone(null);
     setRemaining(null);
+    setResume(null);
     if (kind === "favorites") setQuestions(favorites?.items.map((i) => i.question) ?? []);
+    else if (kind === "exam" && level)
+      // An exam of this level left part-way is offered first (はい: go on / いいえ: start again).
+      api
+        .getExamProgress(level)
+        .then((p) => {
+          if (!alive) return;
+          if (p) setResume(p);
+          else return api.startExam(level).then((qs) => alive && setQuestions(qs));
+        })
+        .catch((e) => toast(String(e)));
     else
-      (kind === "exam" && level ? api.startExam(level) : api.getExamReview())
+      api
+        .getExamReview()
         .then((qs) => alive && setQuestions(qs))
         .catch((e) => toast(String(e)));
     loadDictionary().then((d) => alive && setDict(d));
@@ -137,7 +167,14 @@ export default function Exam({ kind, level, favorites, overview, playMode, onExi
           setBusy(false);
         }
       } else {
-        setAnswered((a) => ({ ...a, [current.id]: { chosen: choice, correct } }));
+        const now = { ...answered, [current.id]: { chosen: choice, correct } };
+        setAnswered(now);
+        // Every answer keeps the exam, so leaving it any way (中断, another tab, closing the app)
+        // lets it go on next time.
+        if (kind === "exam" && level && questions) {
+          const kept = questions.filter((q) => now[q.id]).map((q) => ({ id: q.id, chosen: now[q.id].chosen }));
+          api.saveExamProgress(level, questions.map((q) => q.id), kept).catch((e) => toast(String(e)));
+        }
         // お気に入りの復習 keeps only when the favorite was gone over.
         const item = favorites?.items.find((i) => i.question.id === current.id);
         if (kind === "favorites" && item) api.markFavoriteReviewed(item.favoriteId).catch((e) => toast(String(e)));
@@ -147,8 +184,29 @@ export default function Exam({ kind, level, favorites, overview, playMode, onExi
       // The line heard, or the sentence completed, is read once the answer is in.
       if (current.part === "short" || current.part === "listening") window.setTimeout(() => say(current.sentence), 350);
     },
-    [current, answered, busy, kind, favorites, onProgress, toast],
+    [current, answered, busy, kind, level, questions, favorites, onProgress, toast],
   );
+
+  /** はい: the exam left part-way, at its first question not answered. */
+  const goOn = (p: ExamProgress) => {
+    const kept = answeredFrom(p);
+    const first = p.questions.findIndex((q) => !kept[q.id]);
+    setAnswered(kept);
+    setIdx(first >= 0 ? first : p.questions.length - 1);
+    setQuestions(p.questions);
+    setResume(null);
+  };
+
+  /** いいえ: the exam left part-way is given up, and a new one begins. */
+  const startOver = () => {
+    if (!level) return;
+    setResume(null);
+    api
+      .discardExamProgress(level)
+      .then(() => api.startExam(level))
+      .then(setQuestions)
+      .catch((e) => toast(String(e)));
+  };
 
   const finish = useCallback(async () => {
     if (!questions || !level) return;
@@ -276,6 +334,29 @@ export default function Exam({ kind, level, favorites, overview, playMode, onExi
       </div>
     );
   }
+  if (resume) {
+    return (
+      <div className="screen exam">
+        <section className="card exam-resume">
+          <h2>{title}</h2>
+          <p>
+            前回中断した試験があります（{resume.answers.length} / {resume.questions.length} 問回答済み・{shortTime(resume.savedAt)}）。
+            <br />
+            続きから再開しますか？
+          </p>
+          <div className="row">
+            <button className="btn btn-primary" onClick={() => goOn(resume)} autoFocus>
+              はい（続きから）
+            </button>
+            <button className="btn" onClick={startOver}>
+              いいえ（最初から）
+            </button>
+          </div>
+          <p className="muted small">「いいえ」を選ぶと、中断した試験の回答は破棄され、新しい問題で始まります。</p>
+        </section>
+      </div>
+    );
+  }
   if (!questions) {
     return (
       <div className="screen">
@@ -309,18 +390,19 @@ export default function Exam({ kind, level, favorites, overview, playMode, onExi
   return (
     <div className="screen study exam">
       <div className="study-head">
-        {quitting ? (
-          <span className="exam-quit">
-            やめると{kind === "exam" ? "この試験の結果は記録されません" : "ここまでの復習は記録済みです"}。
-            <button className="btn-link danger" onClick={onExit}>
-              やめる
-            </button>
-            <button className="btn-link" onClick={() => setQuitting(false)}>
-              続ける
-            </button>
-          </span>
+        {kind === "exam" ? (
+          <button
+            className="btn-link"
+            title="ここまでの回答を残して中断します。次にこの試験を始めるとき、続きから再開できます"
+            onClick={() => {
+              if (Object.keys(answered).length) toast("試験を中断しました。次にこの試験を始めるとき、続きから再開できます");
+              onExit();
+            }}
+          >
+            ← 中断する
+          </button>
         ) : (
-          <button className="btn-link" onClick={() => (kind === "exam" ? setQuitting(true) : onExit())}>
+          <button className="btn-link" onClick={onExit}>
             ← やめる
           </button>
         )}

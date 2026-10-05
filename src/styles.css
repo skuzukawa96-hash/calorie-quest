@@ -467,6 +467,10 @@ main {
   background: #fdf0d5;
   color: var(--caramel-dark);
 }
+.pill.suspended {
+  background: #eef2fb;
+  color: #3f5b9a;
+}
 .pill.level {
   background: #fff;
   border: 1px solid var(--line);
@@ -3301,12 +3305,21 @@ button.wp-link.open {
   font-weight: 700;
   color: var(--berry);
 }
-.exam-quit {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 13px;
-  color: var(--choco);
+/* 試験の中断: asked first, whether to go on with the exam left part-way */
+.exam-resume {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 560px;
+  margin: 0 auto;
+}
+.exam-resume h2 {
+  margin: 0;
+  font-size: 20px;
+}
+.exam-resume p {
+  margin: 0;
+  line-height: 1.7;
 }
 /* The passage of 長文穴埋め / 読解, like the sheet of a test. */
 .exam-passage {

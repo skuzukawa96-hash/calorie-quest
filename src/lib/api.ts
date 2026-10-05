@@ -7,6 +7,7 @@ import type {
   Dashboard,
   ExamAnswer,
   ExamLevel,
+  ExamProgress,
   ExamQuestion,
   ExamResult,
   ExamReviewResult,
@@ -82,6 +83,10 @@ export const api = {
   // 試験
   startExam: (level: ExamLevel) => call<ExamQuestion[]>("start_exam", { level }),
   finishExam: (level: ExamLevel, answers: ExamAnswer[]) => call<ExamResult>("finish_exam", { level, answers }),
+  getExamProgress: (level: ExamLevel) => call<ExamProgress | null>("get_exam_progress", { level }),
+  saveExamProgress: (level: ExamLevel, questionIds: string[], answers: ExamAnswer[]) =>
+    call<void>("save_exam_progress", { level, questionIds, answers }),
+  discardExamProgress: (level: ExamLevel) => call<void>("discard_exam_progress", { level }),
   getExamReview: () => call<ExamQuestion[]>("get_exam_review"),
   answerExamReview: (id: string, chosen: string) => call<ExamReviewResult>("answer_exam_review", { id, chosen }),
 

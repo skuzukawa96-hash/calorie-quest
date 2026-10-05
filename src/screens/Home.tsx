@@ -359,6 +359,11 @@ export default function Home({
                   <span className="mode-title">{l.label}</span>
                   {/* Today's pass only: the mark is gone the next day. */}
                   {l.passedToday && <span className="pill mastered">✓ 合格</span>}
+                  {l.suspended && (
+                    <span className="pill suspended" title="中断した試験があります。押すと続きから再開するか聞かれます">
+                      ⏸ 中断中 {l.suspended.answered}/{l.suspended.total}
+                    </span>
+                  )}
                 </div>
                 <div className="mode-desc">
                   <span>{EXAM_DESC[l.level][0]}</span>

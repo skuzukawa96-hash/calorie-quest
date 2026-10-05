@@ -332,6 +332,23 @@ export interface ExamLevelInfo {
   /** passed today: the 合格 mark on the level, gone the next day */
   passedToday: boolean;
   reviewCount: number;
+  /** an exam of this level left part-way (中断中), to go on with */
+  suspended: ExamSuspended | null;
+}
+
+/** How far the exam of a level left part-way got. */
+export interface ExamSuspended {
+  answered: number;
+  total: number;
+}
+
+/** 試験の中断: an exam left before it was handed in, its questions in order and the answers so far. */
+export interface ExamProgress {
+  level: ExamLevel;
+  questions: ExamQuestion[];
+  answers: ExamAnswer[];
+  /** when the last answer was kept, "2026-10-04T21:30:05" */
+  savedAt: string;
 }
 
 export interface ExamOverview {

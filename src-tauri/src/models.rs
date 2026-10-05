@@ -303,9 +303,10 @@ pub struct ExamLevelInfo {
     pub passed_ever: bool,
     /// passed today: the 合格 mark on the level, gone the next day
     pub passed_today: bool,
-    /// today's pass or try at this level has been paid already
     /// questions of this level waiting in the exam review
     pub review_count: i64,
+    /// an exam of this level left part-way (中断中), to go on with
+    pub suspended: Option<ExamSuspended>,
 }
 
 #[derive(Debug, Serialize)]
@@ -394,11 +395,29 @@ pub struct ExamQuestion {
     pub notes: Option<WordNotes>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct ExamAnswer {
     pub id: String,
     pub chosen: String,
+}
+
+/// 試験の中断: an exam left before it was handed in, its questions in order and the answers so far.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExamProgress {
+    pub level: String,
+    pub questions: Vec<ExamQuestion>,
+    pub answers: Vec<ExamAnswer>,
+    pub saved_at: String,
+}
+
+/// How far the exam of a level left part-way got, for its card on the home.
+#[derive(Debug, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ExamSuspended {
+    pub answered: i64,
+    pub total: i64,
 }
 
 #[derive(Debug, Serialize)]

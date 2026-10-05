@@ -33,6 +33,7 @@ import type {
   ExamLevel,
   ExamLevelInfo,
   ExamOverview,
+  ExamProgress,
   ExamPart,
   ExamQuestion,
   ExamResult,
@@ -134,6 +135,8 @@ interface MockState {
   examAttempts: ExamAttempt[];
   /** exam question id → missed and not yet put right in the exam review (mirrors exam_mistakes) */
   examMistakes: Record<string, { level: ExamLevel; addedAt: string; misses: number }>;
+  /** the exam of a level left part-way (mirrors exam_progress) */
+  examProgress: Partial<Record<ExamLevel, { questionIds: string[]; answers: ExamAnswer[]; savedAt: string }>>;
   /** お気に入り (mirrors favorites); a study question by its `key`, as `history` is */
   favorites: StoredFavorite[];
   nextId: number;
@@ -320,6 +323,7 @@ function freshState(): MockState {
     recipePaid: {},
     examAttempts: [],
     examMistakes: {},
+    examProgress: {},
     favorites: [],
     nextId: 100,
   };
@@ -342,7 +346,18 @@ function load(): MockState {
       const stored = JSON.parse(raw) as Partial<MockState> &
         Omit<
           MockState,
-          "recipe" | "savings" | "saved" | "snackTickets" | "goals" | "kcalEighths" | "answerTotals" | "recipePaid" | "examAttempts" | "examMistakes" | "favorites"
+          | "recipe"
+          | "savings"
+          | "saved"
+          | "snackTickets"
+          | "goals"
+          | "kcalEighths"
+          | "answerTotals"
+          | "recipePaid"
+          | "examAttempts"
+          | "examMistakes"
+          | "examProgress"
+          | "favorites"
         > & {
           /** the day's recipe pay in halves, then in quarters, before eighths of any reward */
           recipeHalves?: Record<string, number>;
@@ -369,6 +384,7 @@ function load(): MockState {
         recipePaid: stored.recipePaid ?? {},
         examAttempts: stored.examAttempts ?? [],
         examMistakes: stored.examMistakes ?? {},
+        examProgress: stored.examProgress ?? {},
         favorites: stored.favorites ?? [],
       };
     }
@@ -1641,6 +1657,8 @@ function finishExam(level: ExamLevel, answers: ExamAnswer[]): ExamResult {
   const now = nowTs();
   // Every exam handed in pays (mirrors exam::finish).
   const kcal = passed ? EXAM_REWARD[level] : EXAM.effortKcal;
+  // Handed in: nothing of this level is left part-way any more.
+  delete state.examProgress[level];
   state.examAttempts.push({ level, date: t, total, correct, passed, kcal, finishedAt: now });
   let reviewAdded = 0;
   for (const g of graded) {
@@ -1758,6 +1776,32 @@ function answerExamReview(id: string, chosen: string): ExamReviewResult {
   };
 }
 
+/** Mirrors exam::save_progress: every answer keeps the exam left part-way. */
+function saveExamProgress(level: ExamLevel, questionIds: string[], answers: ExamAnswer[]) {
+  if (!EXAM_LEVELS.includes(level)) throw new Error(`unknown exam level ${level}`);
+  if (answers.length) state.examProgress[level] = { questionIds, answers, savedAt: nowTs() };
+  else delete state.examProgress[level];
+  save();
+}
+
+/** Mirrors exam::progress: the exam left part-way, dropped if the bank lost one of its questions. */
+function examProgress(level: ExamLevel): ExamProgress | null {
+  const kept = state.examProgress[level];
+  if (!kept) return null;
+  const questions = kept.questionIds.map(examQuestion);
+  if (
+    !questions.length ||
+    !kept.answers.length ||
+    questions.some((q) => !q) ||
+    kept.answers.some((a) => !kept.questionIds.includes(a.id))
+  ) {
+    delete state.examProgress[level];
+    save();
+    return null;
+  }
+  return { level, questions: questions as ExamQuestion[], answers: kept.answers, savedAt: kept.savedAt };
+}
+
 /** Mirrors exam::overview. */
 function examOverview(): ExamOverview {
   const mistakes = Object.values(state.examMistakes);
@@ -1776,6 +1820,9 @@ function examOverview(): ExamOverview {
       passedEver: mine.some((a) => a.passed),
       passedToday: mine.some((a) => a.passed && a.date === today()),
       reviewCount: mistakes.filter((m) => m.level === level).length,
+      suspended: state.examProgress[level]
+        ? { answered: state.examProgress[level].answers.length, total: state.examProgress[level].questionIds.length }
+        : null,
     };
   });
   return {
@@ -2094,6 +2141,14 @@ export async function mockInvoke<T>(cmd: string, args: Record<string, unknown>):
       return buildExam(args.level as ExamLevel) as T;
     case "finish_exam":
       return finishExam(args.level as ExamLevel, args.answers as ExamAnswer[]) as T;
+    case "get_exam_progress":
+      return examProgress(args.level as ExamLevel) as T;
+    case "save_exam_progress":
+      return saveExamProgress(args.level as ExamLevel, args.questionIds as string[], args.answers as ExamAnswer[]) as T;
+    case "discard_exam_progress":
+      delete state.examProgress[args.level as ExamLevel];
+      save();
+      return undefined as T;
     case "get_exam_review":
       return examReview() as T;
     case "answer_exam_review":

@@ -283,6 +283,16 @@ CREATE TABLE IF NOT EXISTS exam_mistakes (
   misses INTEGER NOT NULL DEFAULT 1,
   PRIMARY KEY (user_id, question_id)
 );
+-- 試験の中断: the exam of a level left before it was handed in, to go on with (JSON: the question
+-- ids in order, and the answers so far as [{id, chosen}]).
+CREATE TABLE IF NOT EXISTS exam_progress (
+  user_id INTEGER NOT NULL,
+  level TEXT NOT NULL,
+  question_ids TEXT NOT NULL,
+  answers TEXT NOT NULL,
+  saved_at TEXT NOT NULL,
+  PRIMARY KEY (user_id, level)
+);
 -- お気に入り: a study question starred in the mode it was asked in, or an exam question (`exam_id`).
 CREATE TABLE IF NOT EXISTS favorites (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
