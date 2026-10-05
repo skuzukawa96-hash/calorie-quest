@@ -133,7 +133,6 @@ export function gradeTyping(accepted: string | string[], input: string): TypingG
 export interface PronunciationScore {
   score: number;
   similarity: number;
-  fluency: number;
   best: string;
 }
 
@@ -147,25 +146,18 @@ export interface NativeJudgement {
 }
 
 /**
- * Score = 80% text match + 20% fluency. Nothing is judged by the pitch of the voice.
- * - Web Speech API: match = similarity between the target and the best transcript; fluency
- *   compares time-to-result with a natural pace.
- * - Native (Windows) recognizer: match is whether the engine took the target out of the list of
- *   phrases. Its confidence moves the score only a little (0.9 to 1.0 of the match), since the
- *   engine is surer of some voices than others (a low voice and a high one score alike). A result
- *   too unsure to give, whose closest guess was the target, counts as unclear (0.6 to 0.8); another
- *   phrase heard counts by how alike it is. Fluency uses the measured phrase duration.
+ * Score = how well the words matched, out of 100: neither how fast or slow they were said nor the
+ * pitch of the voice counts.
+ * - Web Speech API: the similarity between the target and the best transcript.
+ * - Native (Windows) recognizer: whether the engine took the target out of the list of phrases.
+ *   Its confidence moves the score only a little (90 to 100), since the engine is surer of some
+ *   voices than others (a low voice and a high one score alike). A result too unsure to give,
+ *   whose closest guess was the target, counts as unclear (60 to 80); another phrase heard counts
+ *   by how alike it is (50 at most); nothing made out is 20.
  */
-export function scorePronunciation(
-  target: string,
-  transcripts: string[],
-  durationMs: number,
-  native?: NativeJudgement,
-): PronunciationScore {
+export function scorePronunciation(target: string, transcripts: string[], native?: NativeJudgement): PronunciationScore {
   let best = "";
   let bestSim = 0;
-  const words = normalizeText(target).split(" ").filter(Boolean).length;
-  let expectedMs = words * 450 + 1200;
 
   if (native) {
     best = native.text;
@@ -181,8 +173,6 @@ export function scorePronunciation(
     } else {
       bestSim = 0.2;
     }
-    // PhraseDuration excludes leading/trailing silence, so allow less slack.
-    expectedMs = words * 450 + 400;
   } else {
     for (const t of transcripts) {
       const s = similarity(target, t);
@@ -194,9 +184,7 @@ export function scorePronunciation(
     if (!best && transcripts.length) best = transcripts[0];
   }
 
-  const fluency = durationMs <= 0 ? 1 : Math.max(0, Math.min(1, expectedMs / durationMs));
-  const score = Math.round(100 * (0.8 * bestSim + 0.2 * fluency));
-  return { score, similarity: bestSim, fluency, best };
+  return { score: Math.round(100 * bestSim), similarity: bestSim, best };
 }
 
 export type TipKey = "r" | "l" | "th" | "fv" | "w";

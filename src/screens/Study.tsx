@@ -571,7 +571,6 @@ export default function Study({ mode, tier, category, rates, playMode, favorites
                     スコア <b>{feedback.score.score}</b>
                   </span>
                   <span>一致度 {Math.round(feedback.score.similarity * 100)}%</span>
-                  <span>流暢さ {Math.round(feedback.score.fluency * 100)}%</span>
                   {feedback.score.best && <span className="muted">認識: “{feedback.score.best}”</span>}
                 </div>
               )}
@@ -960,7 +959,7 @@ function SpeakingCard({
     try {
       const out = await h.result;
       setState("processing");
-      const ps = scorePronunciation(q.question.en, out.transcripts, out.durationMs, out.native);
+      const ps = scorePronunciation(q.question.en, out.transcripts, out.native);
       setAttempts((a) => [...a, ps]);
       void api.logDebug(`speech ok (${backend}): "${ps.best}" score=${ps.score}`);
     } catch (e) {
@@ -1025,7 +1024,7 @@ function SpeakingCard({
               <span className="attempt-score">{a.score}</span>
               <span className="attempt-text">“{a.best || "（認識できず）"}”</span>
               <span className="muted small">
-                一致 {Math.round(a.similarity * 100)}% / 流暢 {Math.round(a.fluency * 100)}%
+                一致 {Math.round(a.similarity * 100)}%
               </span>
             </div>
           ))}

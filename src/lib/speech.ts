@@ -286,7 +286,7 @@ const LISTENING_EVENT = "speech-listening";
 export interface RecognitionOutcome {
   /** candidate transcripts, best first */
   transcripts: string[];
-  /** ms of actual speech (native) or from speech start to result (web); used for fluency */
+  /** ms of actual speech (native) or from speech start to result (web); kept for the log, not scored */
   durationMs: number;
   /** present when the native recognizer judged the phrase */
   native?: NativeRecognition;
