@@ -111,6 +111,8 @@ export const api = {
   // Native speech (Tauri only; the mock backend reports "unavailable").
   speechCapabilities: () => call<SpeechCapabilities>("speech_capabilities"),
   nativeSynthesize: (text: string, rate = -2) => invoke<ArrayBuffer>("native_synthesize", { text, rate }),
+  /** A WAV for each text, made one after another by one voice: each is a u32 (LE) length, then the WAV. */
+  nativeSynthesizeAll: (texts: string[], rate = -2) => invoke<ArrayBuffer>("native_synthesize_all", { texts, rate }),
   nativeRecognize: (target: string, alternatives: string[], timeoutSecs = 6, lang = "en-US") =>
     call<NativeRecognition>("native_recognize", { target, alternatives, timeoutSecs, lang }),
 };

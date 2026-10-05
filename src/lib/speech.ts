@@ -193,13 +193,26 @@ function wavBlob(samples: Int16Array, rate: number): Blob {
   return new Blob([header.buffer, samples.buffer as ArrayBuffer], { type: "audio/wav" });
 }
 
+/** The WAVs native_synthesize_all sends back, each after its byte length (u32, little-endian). */
+function splitWavs(buf: ArrayBuffer): ArrayBuffer[] {
+  const view = new DataView(buf);
+  const out: ArrayBuffer[] = [];
+  for (let at = 0; at + 4 <= buf.byteLength; ) {
+    const size = view.getUint32(at, true);
+    out.push(buf.slice(at + 4, at + 4 + size));
+    at += 4 + size;
+  }
+  return out;
+}
+
 /**
- * The native voice makes each word apart; their silence is cut and they are joined with `gapMs`
- * of silence between them into one sound, so the pause is the same every time and nothing waits
- * for the synthesizer in between.
+ * The native voice makes each word apart (one after another: the engine crashes the app when
+ * it makes several at once); their silence is cut and they are joined with `gapMs` of silence
+ * between them into one sound, so the pause is the same every time and nothing waits for the
+ * synthesizer in between.
  */
 async function speakJoinedNative(words: string[], gapMs: number, onStep: (i: number) => void): Promise<void> {
-  const clips = (await Promise.all(words.map((w) => api.nativeSynthesize(w, -2)))).map(wavSamples);
+  const clips = splitWavs(await api.nativeSynthesizeAll(words, -2)).map(wavSamples);
   const rate = clips[0]?.rate ?? 22050;
   const parts = clips.map((c) => trimSilence(c.samples, c.rate));
   // The edges kept on either side count towards the pause, so the words are gapMs apart.

@@ -151,8 +151,52 @@ mod platform {
         .unwrap_or_default()
     }
 
-    pub fn synthesize(text: &str, rate: i32) -> Result<Vec<u8>, String> {
-        let text = text.to_string();
+    /// One synthesis at a time in the whole process. The OneCore voice engine is not safe to run
+    /// on several threads at once: a few words made side by side (a verb's three forms read twice
+    /// in a row) end the process with a fail-fast (0xc0000409) inside MSTTSEngine_OneCore.dll.
+    static SYNTHESIS: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    /// `text` read by `voice` into a WAV.
+    unsafe fn speak_to_wav(voice: &ISpVoice, text: &str) -> Result<Vec<u8>, String> {
+        let mem: IStream = CreateStreamOnHGlobal(HGLOBAL::default(), true).map_err(e)?;
+        let stream: ISpStream = CoCreateInstance(&SpStream, None, CLSCTX_ALL).map_err(e)?;
+        let wfx = WAVEFORMATEX {
+            wFormatTag: 1,
+            nChannels: 1,
+            nSamplesPerSec: SAMPLE_RATE,
+            nAvgBytesPerSec: SAMPLE_RATE * 2,
+            nBlockAlign: 2,
+            wBitsPerSample: 16,
+            cbSize: 0,
+        };
+        stream.SetBaseStream(&mem, &SPDFID_WAVEFORMATEX, &wfx).map_err(e)?;
+        voice.SetOutput(&stream, false).map_err(e)?;
+
+        let w = wide(text);
+        voice.Speak(PCWSTR(w.as_ptr()), SPF_DEFAULT.0 as u32, None).map_err(e)?;
+
+        let mut stat = STATSTG::default();
+        mem.Stat(&mut stat, STATFLAG_NONAME).map_err(e)?;
+        let size = stat.cbSize as usize;
+        mem.Seek(0, STREAM_SEEK_SET, None).map_err(e)?;
+        let mut pcm = vec![0u8; size];
+        let mut total = 0usize;
+        while total < size {
+            let mut read = 0u32;
+            let hr = mem.Read(pcm.as_mut_ptr().add(total) as *mut c_void, (size - total) as u32, Some(&mut read));
+            if hr.is_err() || read == 0 {
+                break;
+            }
+            total += read as usize;
+        }
+        pcm.truncate(total);
+        Ok(wav_wrap(&pcm, SAMPLE_RATE, 1, 16))
+    }
+
+    /// Each of `texts` read into its own WAV by one voice, set up once (a verb's forms in a row).
+    pub fn synthesize_all(texts: &[String], rate: i32) -> Result<Vec<Vec<u8>>, String> {
+        let texts = texts.to_vec();
+        let _one_at_a_time = SYNTHESIS.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         std::thread::spawn(move || unsafe {
             let _com = ComGuard::new();
             let voice: ISpVoice = CoCreateInstance(&SpVoice, None, CLSCTX_ALL).map_err(e)?;
@@ -162,43 +206,14 @@ mod platform {
             };
             voice.SetVoice(&token).map_err(e)?;
             voice.SetRate(rate.clamp(-10, 10)).map_err(e)?;
-
-            let mem: IStream = CreateStreamOnHGlobal(HGLOBAL::default(), true).map_err(e)?;
-            let stream: ISpStream = CoCreateInstance(&SpStream, None, CLSCTX_ALL).map_err(e)?;
-            let wfx = WAVEFORMATEX {
-                wFormatTag: 1,
-                nChannels: 1,
-                nSamplesPerSec: SAMPLE_RATE,
-                nAvgBytesPerSec: SAMPLE_RATE * 2,
-                nBlockAlign: 2,
-                wBitsPerSample: 16,
-                cbSize: 0,
-            };
-            stream.SetBaseStream(&mem, &SPDFID_WAVEFORMATEX, &wfx).map_err(e)?;
-            voice.SetOutput(&stream, false).map_err(e)?;
-
-            let w = wide(&text);
-            voice.Speak(PCWSTR(w.as_ptr()), SPF_DEFAULT.0 as u32, None).map_err(e)?;
-
-            let mut stat = STATSTG::default();
-            mem.Stat(&mut stat, STATFLAG_NONAME).map_err(e)?;
-            let size = stat.cbSize as usize;
-            mem.Seek(0, STREAM_SEEK_SET, None).map_err(e)?;
-            let mut pcm = vec![0u8; size];
-            let mut total = 0usize;
-            while total < size {
-                let mut read = 0u32;
-                let hr = mem.Read(pcm.as_mut_ptr().add(total) as *mut c_void, (size - total) as u32, Some(&mut read));
-                if hr.is_err() || read == 0 {
-                    break;
-                }
-                total += read as usize;
-            }
-            pcm.truncate(total);
-            Ok(wav_wrap(&pcm, SAMPLE_RATE, 1, 16))
+            texts.iter().map(|t| speak_to_wav(&voice, t)).collect()
         })
         .join()
         .map_err(|_| "speech thread panicked".to_string())?
+    }
+
+    pub fn synthesize(text: &str, rate: i32) -> Result<Vec<u8>, String> {
+        synthesize_all(&[text.to_string()], rate)?.pop().ok_or_else(|| "no sound was made".to_string())
     }
 
     fn status_name(s: SpeechRecognitionResultStatus) -> String {
@@ -344,6 +359,10 @@ mod platform {
         Err("native speech is only implemented on Windows".to_string())
     }
 
+    pub fn synthesize_all(_texts: &[String], _rate: i32) -> Result<Vec<Vec<u8>>, String> {
+        Err("native speech is only implemented on Windows".to_string())
+    }
+
     pub fn recognize(_lang: &str, _target: &str, _alternatives: Vec<String>, _timeout_secs: u32) -> Result<NativeRecognition, String> {
         Err("native speech is only implemented on Windows".to_string())
     }
@@ -370,6 +389,26 @@ mod tests {
         let r = result.expect("recognizer should run even when nobody speaks");
         assert!(["success", "timeout", "audio-quality-failure"].contains(&r.status.as_str()), "unexpected status {}", r.status);
     }
+
+    /// Needs an English voice; run with `cargo test -- --ignored`. Without the lock in
+    /// `synthesize_all`, eight words made at once crash the process within a few rounds.
+    #[test]
+    #[ignore]
+    fn words_asked_for_at_once_are_made_one_at_a_time() {
+        for _ in 0..20 {
+            let made: Vec<_> = ["throw", "threw", "thrown", "throw", "threw", "thrown", "throw", "threw"]
+                .into_iter()
+                .map(|w| std::thread::spawn(move || platform::synthesize(w, -2)))
+                .collect();
+            for m in made {
+                assert!(m.join().unwrap().expect("a WAV").len() > 44);
+            }
+        }
+        let forms: Vec<String> = ["throw", "threw", "thrown"].map(String::from).to_vec();
+        let wavs = platform::synthesize_all(&forms, -2).expect("three WAVs");
+        assert_eq!(wavs.len(), 3);
+        assert!(wavs.iter().all(|w| w.starts_with(b"RIFF") && w.len() > 44));
+    }
 }
 
 /// Returns a 16 kHz mono WAV file for the frontend to play.
@@ -377,6 +416,18 @@ mod tests {
 pub fn native_synthesize(text: String, rate: Option<i32>) -> Result<tauri::ipc::Response, String> {
     let bytes = platform::synthesize(&text, rate.unwrap_or(-2))?;
     Ok(tauri::ipc::Response::new(bytes))
+}
+
+/// A WAV for each of `texts`, made by one voice in one go (a verb's forms read in turn): each
+/// is its byte length as a little-endian u32, then the WAV.
+#[tauri::command(async)]
+pub fn native_synthesize_all(texts: Vec<String>, rate: Option<i32>) -> Result<tauri::ipc::Response, String> {
+    let mut out = Vec::new();
+    for wav in platform::synthesize_all(&texts, rate.unwrap_or(-2))? {
+        out.extend_from_slice(&(wav.len() as u32).to_le_bytes());
+        out.extend_from_slice(&wav);
+    }
+    Ok(tauri::ipc::Response::new(out))
 }
 
 #[tauri::command(async)]

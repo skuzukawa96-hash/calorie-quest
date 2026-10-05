@@ -64,6 +64,7 @@ pub fn run() {
             recipe::get_usage_meanings,
             speech::speech_capabilities,
             speech::native_synthesize,
+            speech::native_synthesize_all,
             speech::native_recognize,
         ])
         .run(tauri::generate_context!())
