@@ -46,6 +46,28 @@ const REPEAT_KCAL: Record<RecipeReviewMode, string> = { choice: "0.25", typing: 
 
 
 const REVIEW_TITLE: Record<RecipeReviewMode, string> = { choice: "選択式", typing: "記入式" };
+
+/** The bulk button at the end of the review row of 復習中, 習得済み and 除外中, asked before it acts. */
+const BULK: Partial<Record<RecipeTab, { label: string; ask: (n: number) => string; yes: string; done: (n: number) => string }>> = {
+  learning: {
+    label: "すべて習得済みへ",
+    ask: (n) => `復習中の${n}語をすべて習得済みに移しますか？`,
+    yes: "移す",
+    done: (n) => `${n}語を習得済みに移しました`,
+  },
+  mastered: {
+    label: "すべて復習中へ",
+    ask: (n) => `習得済みの${n}語をすべて復習中に戻しますか？`,
+    yes: "戻す",
+    done: (n) => `${n}語を復習中に戻しました`,
+  },
+  excluded: {
+    label: "一括削除",
+    ask: (n) => `除外中の${n}語を完全に削除しますか？（元に戻せません）`,
+    yes: "削除する",
+    done: (n) => `${n}語を削除しました`,
+  },
+};
 const REVIEW_ICON: Record<RecipeReviewMode, ReactNode> = { choice: "👆", typing: <PencilIcon /> };
 
 function say(text: string) {
@@ -286,14 +308,40 @@ function patternCore(text: string): string {
   return normalizeAnswer(bare).replace(/^be /, "");
 }
 
+/** Every way of writing one word a / b / c: "in/about" is "in" or "about", and so is a pair. */
+function eachOf<T>(lists: T[][]): T[][] {
+  return lists.reduce<T[][]>((ways, list) => ways.flatMap((way) => list.map((x) => [...way, x])), [[]]);
+}
+
+/**
+ * The ways an entry may be written, as it is and with each choice made: "be confident in/about ～"
+ * is "be confident in ～" or "be confident about ～", the two sides of " / " ("～ / -ing", "bring
+ * ～ to 人 / bring 人 ～") each stand alone, and an English part in ( ) may be written or left out
+ * ("I'm afraid (that) ～").
+ */
+function spellings(text: string): string[] {
+  const out = new Set([text]);
+  for (const side of text.split(/\s+\/\s+/)) {
+    // The optional parts: half-width brackets around English (a note in （ ） is no part of it).
+    const optional = [...side.matchAll(/\(([^()]*[A-Za-z][^()]*)\)/g)].map((m) => m[0]);
+    for (const keep of eachOf(optional.map(() => [true, false]))) {
+      let written = side;
+      optional.forEach((part, i) => (written = written.replace(part, keep[i] ? part.slice(1, -1) : " ")));
+      const choices = written.split(/\s+/).map((token) => (/^[A-Za-z'-]+(\/[A-Za-z'-]+)+$/.test(token) ? token.split("/") : [token]));
+      for (const way of eachOf(choices)) out.add(way.join(" "));
+    }
+  }
+  return [...out];
+}
+
 function typedRight(word: RecipeWord, typed: string, dict: Dictionary | null): boolean {
   const t = normalizeAnswer(typed);
   if (!t) return false;
   if (word.kind === "usage") {
     const core = patternCore(typed);
-    return t === normalizeAnswer(word.word) || (core !== "" && core === patternCore(word.word));
+    return spellings(word.word).some((s) => t === normalizeAnswer(s) || (core !== "" && core === patternCore(s)));
   }
-  if ([word.word, word.form].some((w) => w && normalizeAnswer(w) === t)) return true;
+  if ([...spellings(word.word), word.form].some((w) => w && normalizeAnswer(w) === t)) return true;
   return !!dict && !!word.meaning && (dict[t] ?? lookup(dict, t)) === word.meaning;
 }
 
@@ -338,6 +386,8 @@ export default function Recipe({ playMode, onProgress, toast }: Props) {
   /** each round of review starts from a fresh component */
   const [round, setRound] = useState(0);
   const [confirmClear, setConfirmClear] = useState(false);
+  /** the tab whose bulk button (すべて習得済みへ / すべて復習中へ / 一括削除) waits for a yes */
+  const [confirmBulk, setConfirmBulk] = useState<RecipeTab | null>(null);
   const [busy, setBusy] = useState(false);
   const [query, setQuery] = useState("");
   const [order, setOrder] = useState<Order>(() => loadListView().order);
@@ -347,6 +397,11 @@ export default function Recipe({ playMode, onProgress, toast }: Props) {
   const [open, setOpen] = useState<ReadonlySet<number>>(() => new Set());
 
   useEffect(() => saveListView(order, posView !== "off"), [order, posView]);
+  // A question left open belongs to the tab it was asked in.
+  useEffect(() => {
+    setConfirmBulk(null);
+    setConfirmClear(false);
+  }, [filter]);
   useEffect(() => savePriority(missedFirst), [missedFirst]);
 
   // The part-of-speech menu closes on a click elsewhere or Escape.
@@ -488,6 +543,18 @@ export default function Recipe({ playMode, onProgress, toast }: Props) {
       toast(`📖 習得済みの${n}語を除外中に移しました`);
     });
 
+  // The bulk button of the tab on show: every word of it, whatever the list is narrowed to.
+  const bulk = BULK[filter];
+  const bulkWords = inTab[filter];
+  const runBulk = () =>
+    run(async () => {
+      const ids = bulkWords.map((w) => w.id);
+      const n =
+        filter === "excluded" ? await api.deleteRecipeWords(ids) : await api.setRecipeWordsMastered(ids, filter === "learning");
+      setConfirmBulk(null);
+      toast(`📖 ${bulk?.done(n)}`);
+    });
+
   return (
     <div className="screen recipe">
       <section className="card">
@@ -552,6 +619,23 @@ export default function Recipe({ playMode, onProgress, toast }: Props) {
             ) : (
               <button className="btn-link" disabled={busy} onClick={() => setConfirmClear(true)}>
                 習得済みを片付ける
+              </button>
+            ))}
+          {bulk &&
+            bulkWords.length > 0 &&
+            (confirmBulk === filter ? (
+              <span className="recipe-bulk asking">
+                <span>{bulk.ask(bulkWords.length)}</span>
+                <button className={"btn btn-small" + (filter === "excluded" ? " btn-danger" : "")} disabled={busy} onClick={() => void runBulk()}>
+                  {bulk.yes}
+                </button>
+                <button className="btn-link" onClick={() => setConfirmBulk(null)}>
+                  やめる
+                </button>
+              </span>
+            ) : (
+              <button className="recipe-bulk" disabled={busy} onClick={() => setConfirmBulk(filter)}>
+                {bulk.label}
               </button>
             ))}
         </div>

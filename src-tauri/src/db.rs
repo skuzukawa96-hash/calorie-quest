@@ -866,9 +866,30 @@ pub fn related_words(key: &str) -> Vec<String> {
 /// The groups `key` (lowercase) belongs to, each member with the patterns or the sentence that
 /// shows how it is used. The member that is `key` itself carries only its nuance.
 pub fn related_groups(key: &str) -> Vec<crate::models::RelatedGroup> {
+    related_groups_where(key, |_| true)
+}
+
+/// The 類似表現 of the word a 用法 belongs to ("split A into B" → split), where they are about that
+/// pattern: a group that shows the word with other patterns only, or with a sentence in their
+/// place (another sense of it), is left out. For a pattern saved to the recipe.
+pub fn related_groups_of_pattern(pattern: &str) -> Vec<crate::models::RelatedGroup> {
+    let pattern = pattern.trim();
+    let mut owners: Vec<&String> =
+        word_usages().iter().filter(|(_, list)| list.iter().any(|u| u.pattern == pattern)).map(|(w, _)| w).collect();
+    owners.sort();
+    owners
+        .into_iter()
+        .flat_map(|owner| {
+            related_groups_where(owner, |m| !m.hide_usages && (m.patterns.is_empty() || m.patterns.iter().any(|p| p == pattern)))
+        })
+        .collect()
+}
+
+/// The groups `key` is in, those whose entry for `key` passes `keep`.
+fn related_groups_where(key: &str, keep: impl Fn(&RelatedMemberSeed) -> bool) -> Vec<crate::models::RelatedGroup> {
     related_seeds()
         .iter()
-        .filter(|g| g.members.iter().any(|m| m.word.to_lowercase() == key))
+        .filter(|g| g.members.iter().any(|m| m.word.to_lowercase() == key && keep(m)))
         .map(|g| crate::models::RelatedGroup {
             title: g.title.clone(),
             members: g
@@ -1076,17 +1097,17 @@ fn irregular_forms(v: &IrregularSeed) -> crate::models::IrregularVerb {
     }
 }
 
-/// The forms of a word that is an irregular verb, or of the verb a phrase starts with: "come
-/// back" has come-came-come (back does not change with it). A pattern with places to fill
-/// (compare A with B, be afraid of ～) has none.
+/// The forms of a word that is an irregular verb, or of the verb a phrase or a pattern starts
+/// with: "come back" has come-came-come and "split A into B" split-split-split (back, A and B do
+/// not change with it). A phrase or pattern of be (be afraid of ～, be fond of) has none: the forms
+/// of be are not what it teaches.
 pub fn irregular_of(word: &str) -> Option<crate::models::IrregularVerb> {
-    let word = word.trim();
-    if !word.is_ascii() || word.split_whitespace().any(|t| t == "A" || t == "B") {
+    let mut tokens = word.split_whitespace();
+    let head = tokens.next()?.to_lowercase();
+    if head == "be" && tokens.next().is_some() {
         return None;
     }
-    let lower = word.to_lowercase();
-    let head = lower.split_whitespace().next()?;
-    let i = *irregular_index().by_base.get(head)?;
+    let i = *irregular_index().by_base.get(head.as_str())?;
     Some(irregular_forms(&irregular_verbs()[i]))
 }
 
@@ -2767,8 +2788,14 @@ mod tests {
         assert_eq!(get_up.say, vec!["get", "got", "got"]);
         assert_eq!(irregular_of("read").unwrap().say, vec!["read", "red", "red"], "the past is read red");
         assert!(irregular_of("compare").is_none());
-        assert!(irregular_of("compare A with B").is_none(), "a pattern is no verb");
-        assert!(irregular_of("be afraid of ～").is_none());
+        assert!(irregular_of("compare A with B").is_none(), "compare is regular");
+        let split = irregular_of("split A into B").expect("a pattern takes the forms of its verb");
+        assert_eq!((split.base.as_str(), split.past.as_str()), ("split", "split"));
+        assert!(irregular_of("be afraid of ～").is_none(), "the forms of be are not what a pattern of be teaches");
+        assert!(irregular_of("be confident in/about ～").is_none());
+        assert!(irregular_of("be fond of").is_none());
+        assert_eq!(irregular_of("be").expect("be itself").past, "was / were");
+        assert_eq!(irregular_of("break the ice").expect("an idiom of a verb").participle, "broken");
     }
 
     #[test]
@@ -2790,6 +2817,18 @@ mod tests {
         assert_eq!(bases("Can you lend me your pen?"), vec!["lend"]);
         assert!(bases("She's worried about scope creep.").is_empty());
         assert!(bases("run of the mill").is_empty(), "a run");
+    }
+
+    /// A 用法 saved to the recipe brings the 類似表現 of its word where they are about that pattern.
+    #[test]
+    fn a_pattern_brings_the_words_alike_in_its_sense() {
+        let split = related_groups_of_pattern("split A into B");
+        assert_eq!(split.iter().map(|g| g.title.as_str()).collect::<Vec<_>>(), vec!["分ける"]);
+        assert!(split[0].members.iter().any(|m| m.is_self && m.word == "split"));
+        // divide is in 分ける with "divide A into B" only: "divide A by B" (a sum) is another sense.
+        assert_eq!(related_groups_of_pattern("divide A into B").len(), 1);
+        assert!(related_groups_of_pattern("divide A by B").is_empty());
+        assert!(related_groups_of_pattern("no such pattern").is_empty());
     }
 
     #[test]

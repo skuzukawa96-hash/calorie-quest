@@ -1194,6 +1194,11 @@ pub fn get_pronunciations() -> HashMap<String, String> {
 pub fn get_word_notes(word: String) -> Option<WordNotes> {
     let mut notes = db::word_notes(&word).unwrap_or_default();
     notes.irregular = db::irregular_of(&word).into_iter().collect();
+    // A 用法 saved to the recipe ("split A into B") has no notes of its own: the 類似表現 of the word
+    // it belongs to come with it, where they are about it.
+    if notes.related.is_empty() {
+        notes.related = db::related_groups_of_pattern(&word);
+    }
     (!notes.is_empty()).then_some(notes)
 }
 

@@ -924,6 +924,30 @@ main {
   font-weight: 600;
   color: var(--choco);
 }
+/* すべて習得済みへ / すべて復習中へ / 一括削除: small and grey, at the end of the review row */
+.recipe-bulk {
+  margin-left: auto;
+  border: none;
+  background: none;
+  padding: 2px 4px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--muted);
+  opacity: 0.75;
+  cursor: pointer;
+}
+button.recipe-bulk:hover:not(:disabled) {
+  opacity: 1;
+  text-decoration: underline;
+}
+.recipe-bulk.asking {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  opacity: 1;
+  cursor: default;
+  color: var(--choco);
+}
 .recipe-review h2 .pill {
   font-family: var(--font);
   vertical-align: middle;

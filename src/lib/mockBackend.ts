@@ -905,8 +905,24 @@ interface RelatedSeed {
 
 /** Mirrors db::related_groups: the groups `key` belongs to, each member with how it is used. */
 function relatedGroups(key: string): RelatedGroup[] {
+  return relatedGroupsWhere(key, () => true);
+}
+
+/** Mirrors db::related_groups_of_pattern: the 類似表現 of a 用法's word that are about that pattern. */
+function relatedGroupsOfPattern(pattern: string): RelatedGroup[] {
+  const p = pattern.trim();
+  const owners = [...usagesByWord.entries()]
+    .filter(([, list]) => (list as WordUsage[]).some((u) => u.pattern === p))
+    .map(([w]) => w)
+    .sort();
+  return owners.flatMap((owner) =>
+    relatedGroupsWhere(owner, (m) => !m.hideUsages && (!m.patterns?.length || m.patterns.includes(p))),
+  );
+}
+
+function relatedGroupsWhere(key: string, keep: (m: RelatedSeed["members"][number]) => boolean): RelatedGroup[] {
   return (relatedSeeds as RelatedSeed[])
-    .filter((g) => g.members.some((m) => m.word.toLowerCase() === key))
+    .filter((g) => g.members.some((m) => m.word.toLowerCase() === key && keep(m)))
     .map((g) => ({
       title: g.title,
       members: g.members.map((m) => {
@@ -992,11 +1008,15 @@ function irregularForms(v: IrregularSeed): IrregularVerb {
   return { base: v.base, past: written(v.past), participle: written(v.participle), say };
 }
 
-/** Mirrors db::irregular_of: a word that is an irregular verb, or the verb a phrase starts with (come back: come). */
+/**
+ * Mirrors db::irregular_of: a word that is an irregular verb, or the verb a phrase or a pattern
+ * starts with (come back: come, split A into B: split); none for a phrase of be (be afraid of ～).
+ */
 function irregularOf(word: string): IrregularVerb | null {
-  const w = word.trim();
-  if (/[^\x00-\x7f]/.test(w) || w.split(/\s+/).some((t) => t === "A" || t === "B")) return null;
-  const head = w.toLowerCase().split(/\s+/)[0];
+  const tokens = word.trim().split(/\s+/).filter(Boolean);
+  if (!tokens.length) return null;
+  const head = tokens[0].toLowerCase();
+  if (head === "be" && tokens.length > 1) return null;
   const i = irregularByBase.get(head);
   return i === undefined ? null : irregularForms(IRREGULAR_SEEDS[i]);
 }
@@ -2335,6 +2355,8 @@ export async function mockInvoke<T>(cmd: string, args: Record<string, unknown>):
       const notes = wordNotes(word) ?? { parts: [], examples: [], usages: [], origin: null, related: [], used: [], irregular: [] };
       const forms = irregularOf(word);
       notes.irregular = forms ? [forms] : [];
+      // A 用法 saved to the recipe brings the 類似表現 of its word that are about it.
+      if (!notes.related.length) notes.related = relatedGroupsOfPattern(word);
       return (notesAreEmpty(notes) ? null : notes) as T;
     }
     case "get_pronunciations":
@@ -2393,6 +2415,20 @@ export async function mockInvoke<T>(cmd: string, args: Record<string, unknown>):
       w.excludedAt = null;
       save();
       return withPos(w) as T;
+    }
+    case "set_recipe_words_mastered": {
+      // Mirrors recipe::set_mastered_all.
+      const ids = new Set((args.ids as number[]).map(Number));
+      const now = nowTs();
+      let changed = 0;
+      for (const w of state.recipe) {
+        if (!ids.has(w.id)) continue;
+        w.masteredAt = args.mastered ? (w.masteredAt ?? now) : null;
+        w.excludedAt = null;
+        changed += 1;
+      }
+      save();
+      return changed as T;
     }
     case "exclude_recipe_words": {
       // Mirrors recipe::exclude.

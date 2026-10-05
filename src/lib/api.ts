@@ -105,6 +105,8 @@ export const api = {
     call<RecipeReviewResult>("review_recipe_word", { id, remembered, mode, target }),
   /** ✓ 覚えた (true) or 復習に戻す (false); either way the word leaves 除外中 */
   setRecipeMastered: (id: number, mastered: boolean) => call<RecipeWord>("set_recipe_mastered", { id, mastered }),
+  setRecipeWordsMastered: (ids: number[], mastered: boolean) =>
+    call<number>("set_recipe_words_mastered", { ids, mastered }),
   /** × outside 除外中: the words wait in 除外中 */
   excludeRecipeWords: (ids: number[]) => call<number>("exclude_recipe_words", { ids }),
   /** × in 除外中: deleted for good */

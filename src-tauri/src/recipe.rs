@@ -201,6 +201,23 @@ pub fn set_mastered(conn: &Connection, id: i64, mastered: bool) -> CmdResult<Rec
     load(conn, id)
 }
 
+/// Marks every word of `ids` learned, or puts them all back into review (すべて習得済みへ in 復習中,
+/// すべて復習中へ in 習得済み), as ✓ 覚えた / 復習に戻す does for one word. Returns how many there were.
+pub fn set_mastered_all(conn: &Connection, ids: &[i64], mastered: bool) -> CmdResult<usize> {
+    let now = now_ts();
+    let mut stmt = conn
+        .prepare(
+            "UPDATE recipe_words SET mastered_at = CASE WHEN ?2 THEN COALESCE(mastered_at, ?3) ELSE NULL END,
+             excluded_at = NULL WHERE id = ?1",
+        )
+        .map_err(err)?;
+    let mut changed = 0;
+    for id in ids {
+        changed += stmt.execute(params![id, mastered, now]).map_err(err)?;
+    }
+    Ok(changed)
+}
+
 /// Takes words off the list (× outside 除外中): they wait in 除外中 and leave すべて.
 pub fn exclude(conn: &Connection, ids: &[i64]) -> CmdResult<usize> {
     let now = now_ts();
@@ -253,6 +270,12 @@ pub fn review_recipe_word(
 pub fn set_recipe_mastered(state: State<'_, AppState>, id: i64, mastered: bool) -> CmdResult<RecipeWord> {
     let conn = state.db.lock().map_err(err)?;
     set_mastered(&conn, id, mastered)
+}
+
+#[tauri::command]
+pub fn set_recipe_words_mastered(state: State<'_, AppState>, ids: Vec<i64>, mastered: bool) -> CmdResult<usize> {
+    let conn = state.db.lock().map_err(err)?;
+    set_mastered_all(&conn, &ids, mastered)
 }
 
 #[tauri::command]
@@ -392,6 +415,20 @@ mod tests {
 
     /// × takes a word off the list into 除外中; 復習に戻す (or saving it again) brings it back into
     /// review, and × in 除外中 deletes it for good.
+    /// The tabs' bulk buttons: every word of 復習中 learned, every word of 習得済み back in review.
+    #[test]
+    fn a_whole_tab_is_learned_or_put_back_at_once() {
+        let c = db::init_in_memory().unwrap();
+        let ids: Vec<i64> = ["apple", "banana", "cherry"].iter().map(|w| add(&c, &input(w, "")).unwrap().entry.id).collect();
+        assert_eq!(set_mastered_all(&c, &ids, true).unwrap(), 3);
+        assert!(list(&c).unwrap().iter().all(|w| w.mastered_at.is_some()));
+        assert_eq!(set_mastered_all(&c, &ids[..2], false).unwrap(), 2);
+        let learning: Vec<String> = list(&c).unwrap().into_iter().filter(|w| w.mastered_at.is_none()).map(|w| w.word).collect();
+        assert_eq!(learning.len(), 2);
+        assert!(!learning.contains(&"cherry".to_string()));
+        assert_eq!(set_mastered_all(&c, &[9999], true).unwrap(), 0, "a word no longer there is skipped");
+    }
+
     #[test]
     fn a_word_taken_off_waits_in_its_own_tab_until_put_back_or_deleted() {
         let mut c = db::init_in_memory().unwrap();
