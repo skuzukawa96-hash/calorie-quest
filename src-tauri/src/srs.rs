@@ -15,6 +15,10 @@ pub const SAVINGS_PER_TICKET: i64 = 2000;
 /// Pronunciation score below which the question is scheduled for review even if it "passed".
 pub const SPEAKING_REVIEW_THRESHOLD: f64 = 70.0;
 
+/// A review left undone for more than this many days after it was due goes back to the ordinary
+/// questions (`commands::release_stale_reviews`), so the reviews do not pile up.
+pub const STALE_REVIEW_DAYS: i64 = 7;
+
 /// What a question counts as for its reward: 英単語, 複合語 (a word question in the 複合語 tab:
 /// several words, a phrasal verb being a 英単語), 慣用句, or a sentence (文法・フレーズ・例文・会話).
 /// The level a question is marked with does not count.
@@ -170,10 +174,18 @@ pub fn add_to_savings(balance: i64, saved: i64) -> (i64, i64) {
     (total % SAVINGS_PER_TICKET, total / SAVINGS_PER_TICKET)
 }
 
-/// Returns (new_level, needs_review, next_due_date).
-pub fn next_state(level: i64, in_review: bool, correct: bool, low_score: bool) -> (i64, bool, Option<String>) {
+/// Returns (new_level, needs_review, next_due_date). `due_on` is the day a review answered as one
+/// (due today or before) was due.
+/// - A miss (or a low pronunciation score) of any other question goes to tomorrow's review.
+/// - A miss of a due review keeps the day it was due: it stays in today's review until it is
+///   answered right, and only what is left carries over to the next day. Its level goes back to 0,
+///   so once answered right it comes back 3 days later.
+/// - A review answered right is done for now (消化): back in 3 / 7 / 14 / 30 days by its level, then
+///   never again.
+pub fn next_state(level: i64, in_review: bool, due_on: Option<&str>, correct: bool, low_score: bool) -> (i64, bool, Option<String>) {
     if !correct || low_score {
-        return (0, true, Some(date_plus(INTERVALS[0])));
+        let due = due_on.map(str::to_string).unwrap_or_else(|| date_plus(INTERVALS[0]));
+        return (0, true, Some(due));
     }
     if in_review {
         let next = level + 1;
@@ -322,14 +334,15 @@ mod tests {
 
     #[test]
     fn srs_progression() {
-        let (l, r, d) = next_state(3, false, false, false);
-        assert_eq!((l, r), (0, true));
-        assert!(d.is_some());
-        let (l, r, _) = next_state(0, true, true, false);
-        assert_eq!((l, r), (1, true));
-        let (l, r, d) = next_state(4, true, true, false);
-        assert_eq!((l, r, d), (5, false, None));
-        let (l, r, _) = next_state(2, false, true, false);
-        assert_eq!((l, r), (2, false));
+        let tomorrow = date_plus(1);
+        assert_eq!(next_state(3, false, None, false, false), (0, true, Some(tomorrow.clone())), "a miss: tomorrow's review");
+        assert_eq!(next_state(0, false, None, true, true), (0, true, Some(tomorrow)), "a low score too");
+        let (l, r, d) = next_state(0, true, Some("2026-01-01"), true, false);
+        assert_eq!((l, r, d), (1, true, Some(date_plus(3))), "a review answered right: 3 days later");
+        assert_eq!(next_state(4, true, Some("2026-01-01"), true, false), (5, false, None), "the last one: done");
+        assert_eq!(next_state(2, false, None, true, false), (2, false, None));
+        // A missed review stays on the day it was due, so it is still due today and carries over.
+        assert_eq!(next_state(2, true, Some("2026-01-01"), false, false), (0, true, Some("2026-01-01".to_string())));
+        assert_eq!(next_state(2, true, Some("2026-01-01"), true, true), (0, true, Some("2026-01-01".to_string())));
     }
 }

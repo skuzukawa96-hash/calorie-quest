@@ -140,6 +140,8 @@ export default function Study({ mode, tier, category, rates, playMode, favorites
   const [idx, setIdx] = useState(0);
   const [feedback, setFeedback] = useState<Feedback | null>(null);
   const [tally, setTally] = useState<Tally>({ correct: 0, kcal: 0, reviews: 0 });
+  // The round's reviews not done: they stay in today's review, and the summary offers them again.
+  const [missedReviews, setMissedReviews] = useState<SessionQuestion[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [runId, setRunId] = useState(0);
   const [autoSpeak, setAutoSpeak] = useState<boolean>(() => loadFlag(AUTO_SPEAK_KEY, true));
@@ -180,6 +182,7 @@ export default function Study({ mode, tier, category, rates, playMode, favorites
     setIdx(0);
     setFeedback(null);
     setTally({ correct: 0, kcal: 0, reviews: 0 });
+    setMissedReviews([]);
     if (favorites) setQuestions(favorites.items.map((i) => i.question));
     else
       api
@@ -225,8 +228,12 @@ export default function Study({ mode, tier, category, rates, playMode, favorites
         setTally((t) => ({
           correct: t.correct + (correct ? 1 : 0),
           kcal: t.kcal + (result?.points ?? 0),
-          reviews: t.reviews + (result?.isReview && correct ? 1 : 0),
+          reviews: t.reviews + (result?.isReview && !result.staysToday ? 1 : 0),
         }));
+        if (result?.staysToday) {
+          const missed = current;
+          setMissedReviews((m) => (m.some((q) => q.question.id === missed.question.id) ? m : [...m, missed]));
+        }
         if (correct) playCrunch();
         else playWrong();
         if (result?.newTicket) {
@@ -318,6 +325,14 @@ export default function Study({ mode, tier, category, rates, playMode, favorites
         onExit={onExit}
         onAgain={favorites ? favorites.onAgain : () => setRunId((r) => r + 1)}
         favorites={!!favorites}
+        missedReviews={missedReviews.length}
+        onRetryMissed={() => {
+          setQuestions(shuffle(missedReviews.map(reshuffled)));
+          setIdx(0);
+          setFeedback(null);
+          setTally({ correct: 0, kcal: 0, reviews: 0 });
+          setMissedReviews([]);
+        }}
       />
     );
   }
@@ -447,7 +462,9 @@ export default function Study({ mode, tier, category, rates, playMode, favorites
                 <div className="feedback-kcal">
                   +{formatKcal(feedback.result.points)} kcal
                   {feedback.result.points > 0 && <PlayModeTag mode={playMode} />}
-                  {feedback.result.isReview && feedback.correct && <span className="bonus"> 復習ボーナス ×{rates.reviewMultiplier}</span>}
+                  {feedback.result.isReview && !feedback.result.staysToday && (
+                    <span className="bonus"> 復習ボーナス ×{rates.reviewMultiplier}</span>
+                  )}
                 </div>
               ) : (
                 <div className="feedback-kcal fav-review-note" title="お気に入りの復習はカロリーがつかず、学習の復習や記録も変わりません">
@@ -557,12 +574,7 @@ export default function Study({ mode, tier, category, rates, playMode, favorites
                   {feedback.score.best && <span className="muted">認識: “{feedback.score.best}”</span>}
                 </div>
               )}
-              {!feedback.correct && feedback.result && (
-                <div className="muted">この問題は明日、復習として再出題されます（正解すればカロリー ×{rates.reviewMultiplier}）。</div>
-              )}
-              {feedback.correct && feedback.result?.needsReview && feedback.result.nextDue && (
-                <div className="muted">次の復習: {feedback.result.nextDue}</div>
-              )}
+              {feedback.result && <ReviewNote result={feedback.result} correct={feedback.correct} rate={rates.reviewMultiplier} />}
             </div>
             <button className="btn btn-primary" onClick={next} autoFocus>
               {idx + 1 >= questions.length ? "結果を見る" : "次へ（Enter）"}
@@ -1067,6 +1079,46 @@ function SpeakingCard({
 
 /* ---------- Summary ---------- */
 
+/** What an answer did to the question's review: tomorrow's, today's until right, or done. */
+function ReviewNote({ result, correct, rate }: { result: AnswerResult; correct: boolean; rate: number }) {
+  if (result.staysToday) {
+    return (
+      <div className="muted">
+        {correct ? "発音が70点未満なので、" : ""}この復習は正解するまで今日の復習に残ります（この回の最後にもう一度解けます）。正解すると消化され、カロリー ×{rate}。
+      </div>
+    );
+  }
+  if (result.isReview) {
+    return (
+      <div className="muted">
+        復習を消化しました。{result.needsReview && result.nextDue ? `次の確認は ${result.nextDue} です。` : "この問題の復習はおしまいです。"}
+      </div>
+    );
+  }
+  if (!correct) return <div className="muted">この問題は明日、復習として再出題されます（正解すればカロリー ×{rate}）。</div>;
+  if (result.needsReview && result.nextDue) return <div className="muted">次の復習: {result.nextDue}</div>;
+  return null;
+}
+
+/** The same question with its options in another order, to be asked again in the same sitting. */
+function reshuffled(q: SessionQuestion): SessionQuestion {
+  const order = shuffle(q.options.map((_, i) => i));
+  return {
+    ...q,
+    options: order.map((i) => q.options[i]),
+    optionEn: q.optionEn.length === q.options.length ? order.map((i) => q.optionEn[i]) : q.optionEn,
+  };
+}
+
+function shuffle<T>(items: T[]): T[] {
+  const out = [...items];
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [out[i], out[j]] = [out[j], out[i]];
+  }
+  return out;
+}
+
 function Summary({
   total,
   tally,
@@ -1074,6 +1126,8 @@ function Summary({
   onExit,
   onAgain,
   favorites,
+  missedReviews,
+  onRetryMissed,
 }: {
   total: number;
   tally: Tally;
@@ -1083,17 +1137,22 @@ function Summary({
   onAgain: (() => void) | null;
   /** お気に入りの復習: no kcal, no review bonus, and back to the favorites */
   favorites: boolean;
+  /** reviews of the round not done, which stay in today's review until answered right */
+  missedReviews: number;
+  onRetryMissed: () => void;
 }) {
   const rate = total ? Math.round((tally.correct / total) * 100) : 0;
   const cheer = favorites
     ? rate === 100
       ? "パーフェクト！しっかり身についています⭐"
       : "お気に入りの問題は何度でも見返せます⭐"
-    : rate === 100
-      ? "パーフェクト！ご褒美タイムです🍰"
-      : rate >= 70
-        ? "いい調子！サクサク進んでます🍪"
-        : "復習で取り返そう。明日また出題されます🍫";
+    : missedReviews > 0
+      ? "間違えた復習は、正解するまで今日の復習に残ります🍫"
+      : rate === 100
+        ? "パーフェクト！ご褒美タイムです🍰"
+        : rate >= 70
+          ? "いい調子！サクサク進んでます🍪"
+          : "復習で取り返そう。明日また出題されます🍫";
   return (
     <div className="screen">
       <div className="card summary">
@@ -1120,8 +1179,13 @@ function Summary({
         </div>
         <p className="cheer">{cheer}</p>
         <div className="row">
+          {missedReviews > 0 && (
+            <button className="btn btn-primary" onClick={onRetryMissed}>
+              間違えた復習 {missedReviews} 問をもう一度
+            </button>
+          )}
           {onAgain && (
-            <button className="btn btn-primary" onClick={onAgain}>
+            <button className={"btn" + (missedReviews > 0 ? "" : " btn-primary")} onClick={onAgain}>
               {againLabel}
             </button>
           )}

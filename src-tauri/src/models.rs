@@ -241,6 +241,8 @@ pub struct KcalRates {
     pub choice: i64,
     pub review_multiplier: f64,
     pub cheat_day_bonus: i64,
+    /// days a review may be carried over before it goes back to the ordinary questions
+    pub stale_review_days: i64,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -475,6 +477,8 @@ pub struct AnswerResult {
     pub new_ticket: bool,
     pub first_study_today: bool,
     pub is_review: bool,
+    /// a due review not done (missed, or spoken under 70): it stays in today's review
+    pub stays_today: bool,
     pub needs_review: bool,
     pub next_due: Option<String>,
 }

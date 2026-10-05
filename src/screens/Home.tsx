@@ -323,6 +323,10 @@ export default function Home({
               <span>
                 今日の復習が <b>{dash.dueReviewCount} 問</b> あります。間違えたときと同じ形式で出題され、正解でカロリー{" "}
                 <b>×{kcalRates.reviewMultiplier}</b>！
+                <span className="muted small review-rule">
+                  {" "}
+                  間違えた復習は正解するまで今日の復習に残り、残った分だけ明日に繰り越します（{kcalRates.staleReviewDays}日を過ぎると通常の出題に戻ります）。
+                </span>
               </span>
             ) : (
               <span className="muted">今日の復習はありません。間違えた問題は忘れる前に自動で再出題されます。</span>

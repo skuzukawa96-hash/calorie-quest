@@ -165,7 +165,7 @@ interface SnackTicket {
   consumptionId: number | null;
 }
 
-const RATES = { wordChoice: 1, choice: 2, reviewMultiplier: 1.5, cheatDayBonus: 300 };
+const RATES = { wordChoice: 1, choice: 2, reviewMultiplier: 1.5, cheatDayBonus: 300, staleReviewDays: 7 };
 
 /**
  * Mirrors db::tier_of: the hand-sorted example sentences, else the kind decides the tab. A word of
@@ -180,6 +180,8 @@ function tierOf(kind: string, key: string, en: string): Tier {
   return "example";
 }
 const INTERVALS = [1, 3, 7, 14, 30];
+/** Mirrors srs::STALE_REVIEW_DAYS. */
+const STALE_REVIEW_DAYS = RATES.staleReviewDays;
 
 /** Mirrors db::word_pos: a one-word word question's part of speech, by key. */
 const posOf = wordPos as Record<string, PartOfSpeech>;
@@ -449,6 +451,18 @@ function credit(date: string, eighths: number): { points: number; whole: number;
   state.kcalEighths[date] = total % 8;
   daily(date).kcalEarned += whole;
   return { points: scaled / 8, whole, pending: total % 8 > 0 };
+}
+/** Mirrors release_stale_reviews: reviews undone for more than a week after they were due go back. */
+function releaseStaleReviews() {
+  const oldest = datePlus(-STALE_REVIEW_DAYS);
+  for (const h of Object.values(state.history)) {
+    if (h.needsReview && h.nextDue !== null && h.nextDue < oldest) {
+      h.needsReview = false;
+      h.level = 0;
+      h.nextDue = null;
+      h.reviewMode = null;
+    }
+  }
 }
 function dueCount(): number {
   const t = today();
@@ -1418,6 +1432,7 @@ function reviewModeFor(q: Question, missedIn: Mode | null | undefined): Mode {
 
 function getSessionQuestions(mode: SessionMode, tier: string, category: string, count: number): SessionQuestion[] {
   const t = today();
+  releaseStaleReviews();
   const isDue = (q: Question) => !!state.history[q.key]?.needsReview && (state.history[q.key].nextDue ?? "9999") <= t;
   const byDue = (a: Question, b: Question) =>
     (state.history[a.key].nextDue ?? "").localeCompare(state.history[b.key].nextDue ?? "");
@@ -1780,6 +1795,8 @@ function submitAnswer(p: AnswerPayload): AnswerResult {
   const h = state.history[q.key] ?? { level: 0, needsReview: false, nextDue: null, correct: 0, wrong: 0, lastScore: null, lastStudiedAt: "" };
   const isDueReview = h.needsReview && h.nextDue !== null && h.nextDue <= t;
   const lowScore = p.mode === "speaking" && (p.score ?? 100) < 70;
+  // Mirrors record_answer: a due review is done when answered right (70 or more if spoken).
+  const done = p.correct && !lowScore;
   const hints = Math.max(0, p.hintsUsed ?? 0);
   // srs.rs と同じ: 文の記入問題は1語 1 kcal、開示1語ごとに −1。ほかは scored の配点。
   const perWord = scoresPerWord(q.kind, p.mode);
@@ -1788,19 +1805,21 @@ function submitAnswer(p: AnswerPayload): AnswerResult {
   if (p.correct) {
     if (perWord) kcal = Math.max(0, answerWordCount(q.en) - hints);
     else kcal = kcalFor(s, p.mode, p.score ?? null);
-    if (isDueReview) kcal = Math.round(kcal * RATES.reviewMultiplier);
   } else if (perWord && p.mistakes !== undefined) {
     // srs::per_word_kcal: a slip costs the word it was in, not the whole answer.
     kcal = Math.max(0, answerWordCount(q.en) - hints - Math.max(1, p.mistakes));
   }
+  // A review pays ×1.5 when done and nothing until then: it stays in today's review.
+  if (isDueReview) kcal = done ? Math.round(kcal * RATES.reviewMultiplier) : 0;
   if (!perWord) kcal = hintPenalty(s, kcal, hints);
   let level = h.level;
   let needsReview = false;
   let nextDue: string | null = null;
   if (!p.correct || lowScore) {
+    // Mirrors srs::next_state: a missed due review keeps the day it was due (still due today).
     level = 0;
     needsReview = true;
-    nextDue = datePlus(INTERVALS[0]);
+    nextDue = isDueReview ? h.nextDue : datePlus(INTERVALS[0]);
   } else if (h.needsReview) {
     level = h.level + 1;
     if (level < INTERVALS.length) {
@@ -1843,6 +1862,7 @@ function submitAnswer(p: AnswerPayload): AnswerResult {
     newTicket,
     firstStudyToday,
     isReview: isDueReview,
+    staysToday: isDueReview && !done,
     needsReview,
     nextDue,
   };
@@ -2033,6 +2053,7 @@ export async function mockInvoke<T>(cmd: string, args: Record<string, unknown>):
   switch (cmd) {
     case "get_dashboard": {
       const settled = settleSavings();
+      releaseStaleReviews();
       const categories: CategoryInfo[] = [];
       for (const q of questions) {
         if (!q.category) continue;

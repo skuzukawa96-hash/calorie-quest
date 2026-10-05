@@ -217,6 +217,8 @@ export interface KcalRates {
   choice: number;
   reviewMultiplier: number;
   cheatDayBonus: number;
+  /** days a review may be carried over before it goes back to the ordinary questions */
+  staleReviewDays: number;
 }
 
 export interface CategoryInfo {
@@ -450,6 +452,8 @@ export interface AnswerResult {
   newTicket: boolean;
   firstStudyToday: boolean;
   isReview: boolean;
+  /** a due review not done (missed, or spoken under 70): it stays in today's review */
+  staysToday: boolean;
   needsReview: boolean;
   nextDue?: string | null;
 }

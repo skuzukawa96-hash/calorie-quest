@@ -161,6 +161,17 @@ pub fn set_goal(conn: &Connection, snack_id: i64, goal: bool) -> CmdResult<Vec<S
     goal_snacks_inner(conn).map_err(err)
 }
 
+/// Reviews left undone for more than [`srs::STALE_REVIEW_DAYS`] days after they were due go back to
+/// the ordinary questions, where a miss puts them in review again. Runs whenever the home or a
+/// session is loaded, like `settle_savings`. Returns how many went back.
+pub fn release_stale_reviews(conn: &Connection) -> rusqlite::Result<usize> {
+    conn.execute(
+        "UPDATE learning_history SET needs_review = 0, srs_level = 0, next_due_at = NULL, review_mode = NULL
+         WHERE user_id = ?1 AND needs_review = 1 AND next_due_at IS NOT NULL AND next_due_at < ?2",
+        params![USER_ID, date_plus(-srs::STALE_REVIEW_DAYS)],
+    )
+}
+
 fn due_review_count(conn: &Connection) -> rusqlite::Result<i64> {
     conn.query_row(
         "SELECT COUNT(*) FROM learning_history WHERE user_id = ?1 AND needs_review = 1 AND next_due_at IS NOT NULL AND next_due_at <= ?2",
@@ -360,6 +371,7 @@ fn kcal_rates() -> KcalRates {
         choice: srs::KCAL_CHOICE,
         review_multiplier: srs::REVIEW_MULTIPLIER,
         cheat_day_bonus: srs::CHEAT_DAY_BONUS,
+        stale_review_days: srs::STALE_REVIEW_DAYS,
     }
 }
 
@@ -827,6 +839,7 @@ pub fn session_questions(
     count: u32,
 ) -> rusqlite::Result<Vec<SessionQuestion>> {
     let count = count.clamp(1, 50) as i64;
+    release_stale_reviews(conn)?;
     if mode == REVIEW_SESSION {
         return review_session(conn, tier, category, count);
     }
@@ -957,6 +970,8 @@ pub fn record_answer(conn: &mut Connection, payload: &AnswerPayload) -> Result<A
             .score
             .map(|s| s < srs::SPEAKING_REVIEW_THRESHOLD)
             .unwrap_or(false);
+    // A due review is done for now (消化) when answered right (70 or more if spoken).
+    let done = payload.correct && !low_score;
     let hints_used = payload.hints_used.unwrap_or(0);
     let per_word = srs::scores_per_word(&kind, &payload.mode);
     let mut kcal = if per_word {
@@ -965,14 +980,17 @@ pub fn record_answer(conn: &mut Connection, payload: &AnswerPayload) -> Result<A
     } else {
         srs::kcal_for(scored, &payload.mode, payload.correct, payload.score)
     };
-    if is_due_review && payload.correct {
-        kcal = srs::apply_review_bonus(kcal);
+    if is_due_review {
+        // A review pays ×1.5 when it is done, and nothing until then, not even a sentence's words:
+        // it stays in today's review to be tried again as often as it takes.
+        kcal = if done { srs::apply_review_bonus(kcal) } else { 0 };
     }
     if !per_word {
         kcal = srs::apply_hint_penalty(scored, kcal, hints_used);
     }
+    let due_on = if is_due_review { next_due.as_deref() } else { None };
     let (new_level, new_needs_review, new_next_due) =
-        srs::next_state(level, in_review, payload.correct, low_score);
+        srs::next_state(level, in_review, due_on, payload.correct, low_score);
     // A miss is reviewed in the mode it happened in; a correct answer leaves that as it was.
     let missed_in = (!payload.correct || low_score).then(|| payload.mode.clone());
 
@@ -1043,6 +1061,7 @@ pub fn record_answer(conn: &mut Connection, payload: &AnswerPayload) -> Result<A
         new_ticket,
         first_study_today,
         is_review: is_due_review,
+        stays_today: is_due_review && !done,
         needs_review: new_needs_review,
         next_due: new_next_due,
     })
@@ -1122,6 +1141,7 @@ pub fn get_dashboard(state: State<'_, AppState>) -> CmdResult<Dashboard> {
 
 pub fn load_dashboard(conn: &Connection) -> CmdResult<Dashboard> {
     let (just_saved, just_issued) = settle_savings(conn).map_err(err)?;
+    release_stale_reviews(conn).map_err(err)?;
     let user = load_user(conn).map_err(err)?;
     let today_stats = load_daily(conn, &today()).map_err(err)?;
     Ok(Dashboard {
@@ -1667,6 +1687,88 @@ mod tests {
             let s = session_questions(&c, "typing", "word", "all", 50).unwrap();
             assert!(s.iter().all(|q| q.question.id != qid));
         }
+    }
+
+    /// The day's review: a miss pays nothing and stays until answered right; what is left carries
+    /// over; a review answered right is done and not back tomorrow, whatever it took.
+    #[test]
+    fn a_missed_review_stays_in_the_days_review_until_answered_right() {
+        let mut c = conn();
+        let qid = question_id(&c, "w003");
+        answer(&mut c, qid, "choice", false, None);
+        let yesterday = date_plus(-1);
+        c.execute("UPDATE learning_history SET next_due_at = ?1 WHERE question_id = ?2", params![yesterday, qid]).unwrap();
+
+        // Missed twice today: no kcal, still due today (carried over from yesterday).
+        for _ in 0..2 {
+            let r = answer(&mut c, qid, "choice", false, None);
+            assert!(r.is_review && r.stays_today && r.needs_review);
+            assert_eq!(r.kcal_earned, 0);
+            assert_eq!(history(&c, qid), (0, 1, Some(yesterday.clone())));
+            assert_eq!(due_review_count(&c).unwrap(), 1);
+            let review = session_questions(&c, REVIEW_SESSION, "mixed", "all", 10).unwrap();
+            assert!(review.iter().any(|q| q.question.id == qid), "still in today's review");
+        }
+
+        // Then right: done, ×1.5, and next seen 3 days later, not tomorrow.
+        let r = answer(&mut c, qid, "choice", true, None);
+        assert!(r.is_review && !r.stays_today);
+        assert_eq!(r.kcal_earned, 2, "1 kcal × 1.5 rounded");
+        assert_eq!(history(&c, qid), (1, 1, Some(date_plus(3))));
+        assert_eq!(due_review_count(&c).unwrap(), 0);
+
+        // A sentence typed wrong in review earns none of its words.
+        let sentence = question_id(&c, "p003");
+        answer(&mut c, sentence, "typing", false, None);
+        c.execute("UPDATE learning_history SET next_due_at = ?1 WHERE question_id = ?2", params![today(), sentence]).unwrap();
+        let r = record_answer(
+            &mut c,
+            &AnswerPayload { question_id: sentence, mode: "typing".into(), correct: false, score: None, hints_used: None, mistakes: Some(1) },
+        )
+        .unwrap();
+        assert!(r.stays_today);
+        assert_eq!(r.kcal_earned, 0);
+
+        // A review spoken under 70 is not done: nothing paid, still due today.
+        let spoken: i64 = c
+            .query_row("SELECT id FROM questions WHERE modes LIKE '%\"speaking\"%' LIMIT 1", [], |r| r.get(0))
+            .unwrap();
+        answer(&mut c, spoken, "speaking", false, Some(20.0));
+        c.execute("UPDATE learning_history SET next_due_at = ?1 WHERE question_id = ?2", params![today(), spoken]).unwrap();
+        let r = answer(&mut c, spoken, "speaking", true, Some(65.0));
+        assert!(r.stays_today);
+        assert_eq!(r.kcal_earned, 0);
+        assert_eq!(history(&c, spoken).2, Some(today()));
+
+        // A review mixed into an ordinary session counts the same way.
+        let mixed = question_id(&c, "w004");
+        answer(&mut c, mixed, "choice", false, None);
+        c.execute("UPDATE learning_history SET next_due_at = ?1 WHERE question_id = ?2", params![today(), mixed]).unwrap();
+        let session = session_questions(&c, "choice", "word", "all", 10).unwrap();
+        assert!(session.iter().any(|q| q.question.id == mixed && q.is_review));
+        assert!(!answer(&mut c, mixed, "choice", true, None).stays_today);
+        assert_eq!(history(&c, mixed).2, Some(date_plus(3)));
+    }
+
+    #[test]
+    fn reviews_left_for_more_than_a_week_go_back_to_the_ordinary_questions() {
+        let mut c = conn();
+        let stale = question_id(&c, "w003");
+        let kept = question_id(&c, "w004");
+        for (qid, days) in [(stale, -(srs::STALE_REVIEW_DAYS + 1)), (kept, -srs::STALE_REVIEW_DAYS)] {
+            answer(&mut c, qid, "choice", false, None);
+            c.execute("UPDATE learning_history SET next_due_at = ?1 WHERE question_id = ?2", params![date_plus(days), qid]).unwrap();
+        }
+        let dash = load_dashboard(&c).unwrap();
+        assert_eq!(dash.due_review_count, 1, "seven days carried over is still a review, eight is not");
+        assert_eq!(history(&c, stale), (0, 0, None));
+        assert_eq!(history(&c, kept).1, 1);
+        let review = session_questions(&c, REVIEW_SESSION, "mixed", "all", 10).unwrap();
+        assert_eq!(review.iter().map(|q| q.question.id).collect::<Vec<_>>(), vec![kept]);
+        // Back among the ordinary questions, a miss puts it in tomorrow's review again.
+        let r = answer(&mut c, stale, "choice", false, None);
+        assert!(!r.is_review);
+        assert_eq!(r.next_due.as_deref(), Some(date_plus(1).as_str()));
     }
 
     #[test]
