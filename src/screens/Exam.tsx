@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import FavoriteStar, { useFavorites } from "../components/FavoriteStar";
 import GlossedText from "../components/GlossedText";
 import { PlayModeTag } from "../components/PlayModeSwitch";
@@ -7,6 +7,7 @@ import { api } from "../lib/api";
 import { loadDictionary, type Dictionary } from "../lib/dictionary";
 import { formatKcal } from "../lib/scoring";
 import { playCrunch, playFanfare, playWrong } from "../lib/sfx";
+import { sentences } from "../lib/sentences";
 import { isTtsSupported, speak, stopSpeaking } from "../lib/speech";
 import {
   EXAM_PART_LABEL,
@@ -527,29 +528,43 @@ function ExamPassage({
   revealJa: boolean;
 }) {
   const lines = (q.passage ?? "").split("\n");
-  const complete = (s: string) => s.replace(/\[(\d+)\]/g, (_, n) => setAnswers[Number(n)] ?? "…");
+  // The sentence a word right-clicked here is saved with: its own sentence, not the whole notice,
+  // with each blank's word put in. A sentence that goes into a blank stands apart, and the [n] of a
+  // reading passage (where a sentence would go) is no part of any sentence.
+  const complete = (s: string) =>
+    s
+      .replace(/\[(\d+)\]/g, (_, n) => {
+        const answer = setAnswers[Number(n)];
+        if (q.part !== "text") return "";
+        return answer === undefined ? "…" : /[.?!]$/.test(answer) ? "" : answer;
+      })
+      .replace(/\s+/g, " ")
+      .trim();
   return (
     <div className="exam-passage">
       {q.title && <div className="exam-passage-title">📄 {q.title}</div>}
       <div className="exam-passage-body">
         {lines.map((line, li) => (
           <p key={li}>
-            {line.split(/(\[\d+\])/).map((seg, si) => {
-              const m = /^\[(\d+)\]$/.exec(seg);
-              if (m && q.part === "text") {
-                const n = Number(m[1]);
-                const done = filled[n];
-                return (
-                  <span key={si} className={"exam-blank" + (n === q.blank ? " current" : "") + (done ? " done" : "")}>
-                    ({n}){done ? ` ${done}` : ""}
-                  </span>
-                );
-              }
-              if (!seg) return null;
-              return (
-                <GlossedText key={si} text={seg} dict={dict} enabled={gloss} context={complete(line)} />
-              );
-            })}
+            {sentences(line).map((sentence, ni) => (
+              <Fragment key={ni}>
+                {ni > 0 && " "}
+                {sentence.split(/(\[\d+\])/).map((seg, si) => {
+                  const m = /^\[(\d+)\]$/.exec(seg);
+                  if (m && q.part === "text") {
+                    const n = Number(m[1]);
+                    const done = filled[n];
+                    return (
+                      <span key={si} className={"exam-blank" + (n === q.blank ? " current" : "") + (done ? " done" : "")}>
+                        ({n}){done ? ` ${done}` : ""}
+                      </span>
+                    );
+                  }
+                  if (!seg) return null;
+                  return <GlossedText key={si} text={seg} dict={dict} enabled={gloss} context={complete(sentence)} />;
+                })}
+              </Fragment>
+            ))}
           </p>
         ))}
       </div>

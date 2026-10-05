@@ -19,6 +19,7 @@ import exam600 from "../../src-tauri/data/exam-600.json";
 import exam800 from "../../src-tauri/data/exam-800.json";
 import { expandDictionary, lemmas, tokenize, type Dictionary } from "./dictionary";
 import { answerWordCount, hintPenalty, kcalFor, scoredKind, scoresPerWord } from "./scoring";
+import { exampleSentence, sentences } from "./sentences";
 import type {
   AnswerPayload,
   AnswerResult,
@@ -375,7 +376,8 @@ function load(): MockState {
         ...stored,
         // Mirrors users.play_mode's default for state saved before modes existed.
         user: { ...stored.user, playMode: stored.user.playMode ?? "normal" },
-        recipe: stored.recipe ?? [],
+        // Mirrors recipe::trim_passage_examples: a word once saved with a whole exam passage keeps its sentence.
+        recipe: (stored.recipe ?? []).map((w) => ({ ...w, example: exampleSentence(w.example, w.exampleJa, w.form, w.word) })),
         savings: stored.savings ?? 0,
         saved: stored.saved ?? closed,
         snackTickets: stored.snackTickets ?? [],
@@ -1544,34 +1546,8 @@ const EXAM_LABEL: Record<ExamLevel, string> = { basic: "中学～高校基礎", 
 
 const examPasses = (correct: number, total: number) => total > 0 && correct * 100 >= total * EXAM.passPercent;
 
-/** Mirrors exam::ends_sentence: not after Ms. / Mr. …, nor after a.m. / p.m. unless a capital follows. */
-function endsSentence(before: string, rest: string): boolean {
-  const word = before.toLowerCase().split(" ").pop() ?? "";
-  if (["mr.", "ms.", "mrs.", "dr.", "co.", "inc.", "st."].includes(word)) return false;
-  if (word.endsWith("a.m.") || word.endsWith("p.m.")) return /^\s*[A-Z]/.test(rest);
-  return true;
-}
-
-/** Mirrors exam::sentences: split after . ? ! and at line breaks. */
-function examSentences(passage: string): string[] {
-  const out: string[] = [];
-  for (const line of passage.split("\n")) {
-    let cur = "";
-    for (let i = 0; i < line.length; i++) {
-      cur += line[i];
-      if (
-        ".?!".includes(line[i]) &&
-        (i + 1 >= line.length || line[i + 1] === " ") &&
-        (line[i] !== "." || endsSentence(cur, line.slice(i + 1)))
-      ) {
-        out.push(cur.trim());
-        cur = "";
-      }
-    }
-    if (cur.trim()) out.push(cur.trim());
-  }
-  return out;
-}
+/** Mirrors exam::sentences (in lib/sentences.ts, shared with the exam screen). */
+const examSentences = sentences;
 
 /** Mirrors exam::notes_for. */
 function examNotes(answer: string, texts: string[]): WordNotes | null {
@@ -2115,7 +2091,8 @@ function addRecipeWord(input: RecipeWordInput): RecipeAddResult {
   const word = input.word.trim();
   if (!/\p{L}/u.test(word)) throw new Error("レシピに入れる英単語がありません");
   if ([...word].length > 60) throw new Error("長すぎてレシピに入れられません");
-  const example = input.example.trim();
+  // Mirrors recipe::example_sentence: a passage without its Japanese keeps the word's sentence only.
+  const example = exampleSentence(input.example.trim(), input.exampleJa.trim(), input.form.trim(), word);
   const found = state.recipe.find((w) => w.word.toLowerCase() === word.toLowerCase());
   if (found) {
     // Mirrors recipe::add: a learned or taken-off word goes back into review.

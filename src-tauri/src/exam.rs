@@ -121,21 +121,36 @@ fn ends_sentence(before: &str, rest: &[char]) -> bool {
     true
 }
 
-/// The passage's sentences, split after . ? ! and at line breaks.
-fn sentences(passage: &str) -> Vec<String> {
+/// The passage's sentences, split after . ? ! (and a closing quote right after one: theme is
+/// "Supply Chains.") and at line breaks.
+pub(crate) fn sentences(passage: &str) -> Vec<String> {
     let mut out = Vec::new();
     for line in passage.lines() {
         let mut cur = String::new();
         let chars: Vec<char> = line.chars().collect();
-        for (i, &c) in chars.iter().enumerate() {
+        let mut i = 0;
+        while i < chars.len() {
+            let c = chars[i];
             cur.push(c);
-            if matches!(c, '.' | '?' | '!')
-                && chars.get(i + 1).is_none_or(|n| *n == ' ')
-                && (c != '.' || ends_sentence(&cur, &chars[i + 1..]))
-            {
-                out.push(cur.trim().to_string());
-                cur.clear();
+            if matches!(c, '.' | '?' | '!') {
+                let quote = matches!(chars.get(i + 1), Some('"' | '”'));
+                let next = i + 1 + quote as usize;
+                // After a closing quote the sentence goes on into a small letter ("Is it new?" she asked).
+                let goes_on = quote && chars[next..].iter().find(|n| **n != ' ').is_some_and(|n| n.is_lowercase());
+                if chars.get(next).is_none_or(|n| *n == ' ')
+                    && !goes_on
+                    && (c != '.' || ends_sentence(&cur, &chars[next..]))
+                {
+                    if quote {
+                        cur.push(chars[i + 1]);
+                    }
+                    out.push(cur.trim().to_string());
+                    cur.clear();
+                    i = next;
+                    continue;
+                }
             }
+            i += 1;
         }
         if !cur.trim().is_empty() {
             out.push(cur.trim().to_string());
@@ -860,6 +875,14 @@ mod tests {
         assert!(progress(&c, "toeic800").unwrap().is_none());
         assert_eq!(level(&c, "toeic800").suspended, None);
         assert!(save_progress(&c, "toeic999", &ids, &so_far).is_err());
+    }
+
+    #[test]
+    fn a_closing_quote_ends_its_sentence() {
+        assert_eq!(
+            sentences("The theme is \"Supply Chains.\" Ms. Lee will speak. \"Is it new?\" she asked."),
+            vec!["The theme is \"Supply Chains.\"", "Ms. Lee will speak.", "\"Is it new?\" she asked."]
+        );
     }
 
     #[test]

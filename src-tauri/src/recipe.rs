@@ -83,7 +83,8 @@ pub fn add(conn: &Connection, input: &RecipeWordInput) -> CmdResult<RecipeAddRes
         .query_row(&format!("SELECT {COLS} FROM recipe_words WHERE word = ?1"), params![word], row_to_word)
         .optional()
         .map_err(err)?;
-    let example = input.example.trim();
+    let example = example_sentence(input.example.trim(), input.example_ja.trim(), input.form.trim(), word);
+    let example = example.as_str();
 
     if let Some(found) = existing {
         let status = if found.excluded_at.is_some() || found.mastered_at.is_some() {
@@ -118,6 +119,56 @@ pub fn add(conn: &Connection, input: &RecipeWordInput) -> CmdResult<RecipeAddRes
     )
     .map_err(err)?;
     Ok(RecipeAddResult { status: RecipeAddStatus::Added, entry: load(conn, conn.last_insert_rowid())? })
+}
+
+/// `text` has `word` (any case) with no letter right before or after it.
+fn has_word(text: &str, word: &str) -> bool {
+    let (text, word) = (text.to_lowercase(), word.to_lowercase());
+    if word.is_empty() {
+        return false;
+    }
+    text.match_indices(&word).any(|(at, _)| {
+        let before = text[..at].chars().next_back();
+        let after = text[at + word.len()..].chars().next();
+        !before.is_some_and(char::is_alphabetic) && !after.is_some_and(char::is_alphabetic)
+    })
+}
+
+/// The sentence of `example` a word is saved with: a passage with no Japanese of its own (an
+/// exam's notice or email) is cut down to the sentence the word is in, by the form it was found in
+/// or else the word. A sentence with its Japanese is kept whole, as the two go together.
+pub(crate) fn example_sentence(example: &str, example_ja: &str, form: &str, word: &str) -> String {
+    if !example_ja.is_empty() {
+        return example.to_string();
+    }
+    let sentences = crate::exam::sentences(example);
+    if sentences.len() < 2 {
+        return example.to_string();
+    }
+    [form, word]
+        .iter()
+        .find_map(|w| sentences.iter().find(|s| has_word(s, w)))
+        .cloned()
+        .unwrap_or_else(|| example.to_string())
+}
+
+/// Words saved from a passage before they were cut down to their sentence (see `example_sentence`).
+pub(crate) fn trim_passage_examples(conn: &Connection) -> rusqlite::Result<usize> {
+    let rows: Vec<(i64, String, String, String)> = {
+        let mut stmt = conn.prepare(
+            "SELECT id, example, form, word FROM recipe_words WHERE COALESCE(example_ja, '') = '' AND example <> ''",
+        )?;
+        let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?;
+        rows.collect::<Result<_, _>>()?
+    };
+    let mut changed = 0;
+    for (id, example, form, word) in rows {
+        let one = example_sentence(&example, "", &form, &word);
+        if one != example {
+            changed += conn.execute("UPDATE recipe_words SET example = ?2 WHERE id = ?1", params![id, one])?;
+        }
+    }
+    Ok(changed)
 }
 
 /// The meanings of every pattern of 用法, for the wrong options when a pattern saved to the recipe
@@ -415,6 +466,37 @@ mod tests {
 
     /// × takes a word off the list into 除外中; 復習に戻す (or saving it again) brings it back into
     /// review, and × in 除外中 deletes it for good.
+    /// A word right-clicked in an exam's passage keeps the sentence it is in, not the whole notice;
+    /// words saved so before are cut down the same way, and a sentence with its Japanese stays whole.
+    #[test]
+    fn a_word_from_a_passage_keeps_only_its_sentence() {
+        let c = db::init_in_memory().unwrap();
+        let passage = "The 12th Annual Logistics Conference will take place at the Harbor Convention Center from October 8 to 10. This year's theme is \"Building Resilient Supply Chains.\" Ms. Lee will speak at 10 a.m. on the first day.";
+        let mut entry = input("logistics", passage);
+        entry.form = "Logistics".into();
+        entry.example_ja = String::new();
+        let saved = add(&c, &entry).unwrap().entry;
+        assert_eq!(saved.example, "The 12th Annual Logistics Conference will take place at the Harbor Convention Center from October 8 to 10.");
+        assert_eq!(
+            example_sentence(passage, "", "speak", "speak"),
+            "Ms. Lee will speak at 10 a.m. on the first day.",
+            "Ms. is no end of a sentence"
+        );
+        assert_eq!(example_sentence(passage, "訳", "theme", "theme"), passage, "with its Japanese it stays whole");
+        assert_eq!(example_sentence(passage, "", "logistic", "logistic"), passage, "a word not in it leaves it as it was");
+
+        // Saved whole before: cut down once, at start.
+        c.execute(
+            "INSERT INTO recipe_words (word, meaning, form, example, example_ja, added_at) VALUES ('theme', 'テーマ', 'theme', ?1, '', '2026-10-01T00:00:00')",
+            params![passage],
+        )
+        .unwrap();
+        assert_eq!(trim_passage_examples(&c).unwrap(), 1);
+        let theme = list(&c).unwrap().into_iter().find(|w| w.word == "theme").unwrap();
+        assert_eq!(theme.example, "This year's theme is \"Building Resilient Supply Chains.\"");
+        assert_eq!(trim_passage_examples(&c).unwrap(), 0, "nothing left to cut");
+    }
+
     /// The tabs' bulk buttons: every word of 復習中 learned, every word of 習得済み back in review.
     #[test]
     fn a_whole_tab_is_learned_or_put_back_at_once() {

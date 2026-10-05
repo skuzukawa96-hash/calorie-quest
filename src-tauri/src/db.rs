@@ -438,6 +438,8 @@ fn setup(conn: Connection) -> rusqlite::Result<Connection> {
     // 復習で間違えた回数と、除外中（×で外した）になった日時。
     ensure_column(&conn, "recipe_words", "misses", "INTEGER NOT NULL DEFAULT 0")?;
     ensure_column(&conn, "recipe_words", "excluded_at", "TEXT")?;
+    // Words right-clicked in an exam passage once kept the whole passage as their example.
+    crate::recipe::trim_passage_examples(&conn)?;
     // A missed question comes back for review in the mode it was missed in (a phrase got wrong by
     // typing is reviewed by typing, not picked from four). Questions already waiting take the mode
     // of their latest miss from the answer log.
