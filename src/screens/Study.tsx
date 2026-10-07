@@ -5,6 +5,7 @@ import IpaLine from "../components/IpaLine";
 import PronunciationTips, { HighlightedText } from "../components/PronunciationTips";
 import { PlayModeTag } from "../components/PlayModeSwitch";
 import WordNotesPanel from "../components/WordNotes";
+import { MeaningWithTags } from "../components/PosTags";
 import { PHONEMES } from "../lib/phonemes";
 import { loadPronunciations, type Pronunciations } from "../lib/pronunciation";
 import { api, runningInTauri } from "../lib/api";
@@ -507,10 +508,19 @@ export default function Study({ mode, tier, category, rates, playMode, favorites
                 <strong>
                   {/^[\x20-\x7e]+$/.test(current.answer) ? (
                     <GlossedText text={current.answer} dict={dict} enabled={showGloss} {...recipeContext(current, current.answer)} />
+                  ) : current.question.kind === "word" ? (
+                    // [名] 腕時計, [他] 承認する, [自] 走る ／ [他] 経営する
+                    <MeaningWithTags word={current.question.en} meaning={current.answer} dict={dict} />
                   ) : (
                     current.answer
                   )}
                 </strong>
+                {current.question.kind === "word" && current.answer === current.question.en && (
+                  // An English answer has its meaning after it, for the tags.
+                  <span className="answer-meaning">
+                    <MeaningWithTags word={current.question.en} meaning={current.question.ja} dict={dict} />
+                  </span>
+                )}
                 {qMode === "choice" && current.subDisplay && <span className="muted">　{current.subDisplay}</span>}
                 {qMode !== "speaking" && (
                   <button className="btn-link" onClick={() => speak(current.audioText).catch(() => undefined)} disabled={!isTtsSupported()}>

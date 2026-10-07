@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useRef, useState } from "react";
 import GlossedText from "./GlossedText";
+import { MeaningWithTags, SlotText, WordTagsOnly } from "./PosTags";
 import type { Dictionary } from "../lib/dictionary";
 import { useAddToRecipe } from "../lib/recipe";
 import { isTtsSupported, speak, speakInTurn } from "../lib/speech";
@@ -66,7 +67,10 @@ function IrregularRow({ v }: { v: IrregularVerb }) {
   );
 }
 
-/** One pattern: [compare A with B：AとBを比較する], then a sentence using it with its Japanese. */
+/**
+ * One pattern: [compare A with B：AとBを比較する], then a sentence using it with its Japanese. What
+ * fills it is A / B (a noun), 人, -ing, or boxed: [原] a verb's base form, [形] an adjective, [節] a clause.
+ */
 function UsageItem({ u, word, dict, gloss }: { u: WordUsage; word: string; dict: Dictionary | null; gloss: boolean }) {
   // Right-clicking the pattern saves it whole to the recipe, like a phrase: "compare A with B" is
   // what is worth learning, not "compare" alone. It is not read aloud (人, 原形, ～ have no sound).
@@ -94,10 +98,10 @@ function UsageItem({ u, word, dict, gloss }: { u: WordUsage; word: string; dict:
                 : undefined
             }
           >
-            {u.pattern}
+            <SlotText text={u.pattern} />
           </b>
           <span className="usage-sep">：</span>
-          {u.ja}
+          <SlotText text={u.ja} />
         </span>
       </div>
       <div className="example-en">
@@ -124,6 +128,7 @@ function RelatedWords({ groups, dict, gloss }: { groups: RelatedGroup[]; dict: D
             <div key={m.word} className={"related-word" + (m.isSelf ? " self" : "")}>
               <div className="related-head">
                 <b>{m.word}</b>
+                <WordTagsOnly word={m.word} about={m.nuance} dict={dict} />
                 <span className="related-nuance">{m.nuance}</span>
                 {m.isSelf && <span className="related-self">この語</span>}
               </div>
@@ -226,7 +231,9 @@ function PartFamilyList({ piece, family, dict }: { piece: WordPart; family: Part
             <b className="pf-word">
               <GlossedText text={m.word} dict={dict} enabled={false} context="" />
             </b>
-            <span className="pf-ja">{m.ja}</span>
+            <span className="pf-ja">
+              <MeaningWithTags word={m.word} meaning={m.ja} dict={dict} />
+            </span>
           </span>
           <span className="pf-how">
             {m.parts.length > 0 && (
@@ -354,6 +361,7 @@ function UsedWordItem({ w, dict, gloss }: { w: UsedWord; dict: Dictionary | null
     <div className="used-word">
       <div className="usage-title">
         <b className="used-word-name">{w.word}</b>
+        <WordTagsOnly word={w.word} about={w.nuance} dict={dict} />
         {w.nuance && <span className="related-nuance">{w.nuance}</span>}
         {w.related.length > 0 && (
           <button type="button" className="related-toggle" aria-expanded={open} onClick={() => setOpen(!open)}>

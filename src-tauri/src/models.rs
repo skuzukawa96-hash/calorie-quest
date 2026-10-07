@@ -672,3 +672,21 @@ pub struct StatCell {
     pub answered: i64,
     pub correct: i64,
 }
+
+/// 自動詞・他動詞 of a verb (data/verb-types.json): "自", "他" or "自他" when it means the same
+/// either way, or each sense with its own tag when the two differ (run: 自 走る, 他 経営する).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum VerbType {
+    Whole(String),
+    BySense(Vec<(String, String)>),
+}
+
+/// What the tags before a meaning ([名] [形] [副] [自] [他]) are worked out from.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WordTags {
+    /// English (lowercase) → (part of speech, Japanese) of each word question with it
+    pub words: std::collections::HashMap<String, Vec<(String, String)>>,
+    pub verb_types: std::collections::HashMap<String, VerbType>,
+}

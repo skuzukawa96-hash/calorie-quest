@@ -30,6 +30,7 @@ import type {
   Stats,
   TierChoice,
   WordNotes,
+  WordTags,
 } from "../types";
 
 /** True when the page runs inside the Tauri WebView; false in a plain browser (`npm run dev`). */
@@ -78,6 +79,8 @@ export const api = {
   getPronunciations: () => call<Record<string, string>>("get_pronunciations"),
   /** how a word is built, sentences and patterns using it, an idiom's origin; null when none */
   getWordNotes: (word: string) => call<WordNotes | null>("get_word_notes", { word }),
+  /** the word questions' parts of speech and the verbs' 自・他, for the tags before a meaning */
+  getWordTags: () => call<WordTags>("get_word_tags"),
   resetProgress: () => call<void>("reset_progress"),
 
   // 試験

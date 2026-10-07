@@ -152,6 +152,77 @@ pub(crate) fn example_sentence(example: &str, example_ja: &str, form: &str, word
         .unwrap_or_else(|| example.to_string())
 }
 
+/// 用法 renamed when the slots came to be written A／B, 節, 形容詞 and the like, whose old way does not
+/// tell the new one apart by its words (the ～ of become ～ is now A／形容詞).
+const RENAMED_USAGES: &[(&str, &str)] = &[
+    ("not ～ anymore", "not 原形 anymore"),
+    ("become ～（名詞・形容詞）", "become A／形容詞"),
+    ("be capable of ～", "be capable of A／-ing"),
+    ("not ～ either", "not 原形 either"),
+    ("Have you ever ～?", "Have you ever 過去分詞?"),
+    ("look forward to ～", "look forward to A／-ing"),
+    ("prove (to be) ～", "prove (to be) A／形容詞"),
+    ("seem (to be) ～", "seem (to be) A／形容詞"),
+    ("～, though.", "節, though."),
+    ("turn out to be ～", "turn out to be A／形容詞"),
+    ("What's wrong with ～?", "What's wrong with A?"),
+];
+
+/// A pattern with every slot as "_", the asides in （ ） left out and ways apart as "|": the old
+/// "be confident in/about ～" and the new "be confident in/about A" are the same.
+fn loose_pattern(pattern: &str) -> String {
+    let mut plain = String::new();
+    let mut aside = 0;
+    for c in pattern.chars() {
+        match c {
+            '（' => aside += 1,
+            '）' => aside -= 1,
+            _ if aside == 0 => plain.push(c),
+            _ => {}
+        }
+    }
+    plain
+        .replace('／', " | ")
+        .replace(" / ", " | ")
+        .split_whitespace()
+        .map(|t| if ["～", "…", "A", "B", "節", "形容詞", "過去分詞"].contains(&t) { "_".to_string() } else { t.to_lowercase() })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// 用法 saved in the recipe in the old notation (be afraid of ～) move to the pattern they are now
+/// (be afraid of A), with its Japanese. Runs at every start; one already moved is left alone.
+pub(crate) fn migrate_usage_notation(conn: &Connection) -> rusqlite::Result<usize> {
+    let saved: Vec<(i64, String)> = {
+        let mut stmt = conn.prepare("SELECT id, word FROM recipe_words WHERE kind = 'usage'")?;
+        let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?;
+        rows.collect::<Result<_, _>>()?
+    };
+    let all: Vec<&crate::models::WordUsage> = crate::db::word_usages().values().flatten().collect();
+    let mut moved = 0;
+    for (id, word) in saved {
+        if all.iter().any(|u| u.pattern == word) {
+            continue;
+        }
+        let target = match RENAMED_USAGES.iter().find(|(old, _)| *old == word) {
+            Some((_, new)) => all.iter().find(|u| u.pattern == *new).copied(),
+            None => {
+                let key = loose_pattern(&word);
+                let mut hits: Vec<&&crate::models::WordUsage> = all.iter().filter(|u| loose_pattern(&u.pattern) == key).collect();
+                hits.dedup_by(|a, b| a.pattern == b.pattern);
+                (hits.len() == 1).then(|| *hits[0])
+            }
+        };
+        let Some(u) = target else { continue };
+        let taken: bool =
+            conn.query_row("SELECT EXISTS (SELECT 1 FROM recipe_words WHERE word = ?1)", params![u.pattern], |r| r.get(0))?;
+        if !taken {
+            moved += conn.execute("UPDATE recipe_words SET word = ?2, meaning = ?3 WHERE id = ?1", params![id, u.pattern, u.ja])?;
+        }
+    }
+    Ok(moved)
+}
+
 /// Words saved from a passage before they were cut down to their sentence (see `example_sentence`).
 pub(crate) fn trim_passage_examples(conn: &Connection) -> rusqlite::Result<usize> {
     let rows: Vec<(i64, String, String, String)> = {
@@ -383,7 +454,7 @@ mod tests {
         assert_eq!(r.entry.word, "compare A with B");
         let word = add(&c, &input("compare", "")).unwrap().entry;
         assert_eq!((word.kind.as_str(), word.pos.as_str()), ("word", "verb"));
-        assert!(usage_meanings().contains(&"～を訪れる（to は付けない）".to_string()));
+        assert!(usage_meanings().contains(&"Aを訪れる（to は付けない）".to_string()));
     }
 
     #[test]
@@ -495,6 +566,26 @@ mod tests {
         let theme = list(&c).unwrap().into_iter().find(|w| w.word == "theme").unwrap();
         assert_eq!(theme.example, "This year's theme is \"Building Resilient Supply Chains.\"");
         assert_eq!(trim_passage_examples(&c).unwrap(), 0, "nothing left to cut");
+    }
+
+    /// 用法 saved in the old notation move to the new one with its Japanese; one the bank no longer
+    /// has stays as it was.
+    #[test]
+    fn usages_saved_in_the_old_notation_move_to_the_new() {
+        let c = db::init_in_memory().unwrap();
+        for (word, meaning) in [("be confident in/about ～", "～に自信がある"), ("look forward to ～", "～を楽しみに待つ"), ("no such ～", "なし")] {
+            c.execute(
+                "INSERT INTO recipe_words (word, meaning, form, example, example_ja, added_at, kind) VALUES (?1, ?2, '', '', '', '2026-10-01T00:00:00', 'usage')",
+                params![word, meaning],
+            )
+            .unwrap();
+        }
+        assert_eq!(migrate_usage_notation(&c).unwrap(), 2);
+        let saved: Vec<(String, String)> = list(&c).unwrap().into_iter().map(|w| (w.word, w.meaning)).collect();
+        assert!(saved.contains(&("be confident in/about A".to_string(), "Aに自信がある".to_string())), "{saved:?}");
+        assert!(saved.contains(&("look forward to A／-ing".to_string(), "A／-ingを楽しみに待つ".to_string())), "{saved:?}");
+        assert!(saved.iter().any(|(w, _)| w == "no such ～"));
+        assert_eq!(migrate_usage_notation(&c).unwrap(), 0, "nothing left to move");
     }
 
     /// The tabs' bulk buttons: every word of 復習中 learned, every word of 習得済み back in review.

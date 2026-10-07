@@ -46,6 +46,9 @@ const WORD_PARTS_JSON: &str = include_str!("../data/word-parts.json");
 /// piece is clicked in 成り立ち.
 const WORD_FAMILIES_JSON: &str = include_str!("../data/word-families.json");
 const IRREGULAR_VERBS_JSON: &str = include_str!("../data/irregular-verbs.json");
+/// 自動詞・他動詞 of every verb of the word questions, for the tags before a meaning: "自", "他",
+/// "自他", or each sense with its own when the two mean different things (run: 自 走る, 他 経営する).
+const VERB_TYPES_JSON: &str = include_str!("../data/verb-types.json");
 /// A sentence for every word of the bank, shown under its answer: a sentence of the bank that uses
 /// the word in the question's sense where there is one, a sentence written for it otherwise.
 const WORD_EXAMPLES_JSON: &str = include_str!("../data/word-examples.json");
@@ -440,6 +443,8 @@ fn setup(conn: Connection) -> rusqlite::Result<Connection> {
     ensure_column(&conn, "recipe_words", "excluded_at", "TEXT")?;
     // Words right-clicked in an exam passage once kept the whole passage as their example.
     crate::recipe::trim_passage_examples(&conn)?;
+    // 用法 saved before the slots were written A／B, 節, 形容詞 (be afraid of ～ → be afraid of A).
+    crate::recipe::migrate_usage_notation(&conn)?;
     // A missed question comes back for review in the mode it was missed in (a phrase got wrong by
     // typing is reviewed by typing, not picked from four). Questions already waiting take the mode
     // of their latest miss from the answer log.
@@ -832,11 +837,11 @@ struct RelatedSeed {
 struct RelatedMemberSeed {
     word: String,
     nuance: String,
-    /// which of the word's patterns to show here ("look for ～" of look), all when empty
+    /// which of the word's patterns to show here ("look for A" of look), all when empty
     #[serde(default)]
     patterns: Vec<String>,
     /// show the sentence instead of the word's patterns, none of which is about this sense
-    /// (lose as なくす has only "lose to ～", a match lost)
+    /// (lose as なくす has only "lose to A", a match lost)
     #[serde(default)]
     hide_usages: bool,
     example: Option<String>,
@@ -929,8 +934,9 @@ fn related_groups_where(key: &str, keep: impl Fn(&RelatedMemberSeed) -> bool) ->
 }
 
 /// A part of speech read from a Japanese gloss (走る a verb, 美しい an adjective, ゆっくりと an
-/// adverb, else a noun), for a word the bank has no part of speech for.
-pub fn pos_from_gloss(ja: &str) -> &'static str {
+/// adverb, else a noun), for a word the bank has no part of speech for. An English -ly glossed
+/// 〜く is an adverb (quickly すばやく), not a verb like 書く.
+pub fn pos_from_gloss(ja: &str, en: &str) -> &'static str {
     let first = ja.split(['、', '，', ',']).next().unwrap_or("");
     let mut plain = String::new();
     let mut depth = 0;
@@ -946,7 +952,11 @@ pub fn pos_from_gloss(ja: &str) -> &'static str {
     if plain.ends_with(['に', 'と']) {
         "adverb"
     } else if plain.ends_with(['う', 'く', 'ぐ', 'す', 'つ', 'ぬ', 'ぶ', 'む', 'る']) {
-        "verb"
+        if plain.ends_with('く') && en.trim().to_lowercase().ends_with("ly") {
+            "adverb"
+        } else {
+            "verb"
+        }
     } else if plain.ends_with(['い', 'な', 'の', '的', 'た', 'だ', 'て', 'で']) {
         "adjective"
     } else {
@@ -964,7 +974,7 @@ fn words_by_english() -> &'static (HashMap<String, Vec<(String, String)>>, std::
         for q in load_seed().questions {
             match q.kind.as_str() {
                 "word" => {
-                    let pos = word_pos().get(&q.key).cloned().unwrap_or_else(|| pos_from_gloss(&q.ja).to_string());
+                    let pos = word_pos().get(&q.key).cloned().unwrap_or_else(|| pos_from_gloss(&q.ja, &q.en).to_string());
                     words.entry(q.en.to_lowercase()).or_default().push((q.ja, pos));
                 }
                 "idiom" => {
@@ -975,6 +985,26 @@ fn words_by_english() -> &'static (HashMap<String, Vec<(String, String)>>, std::
         }
         (words, idioms)
     })
+}
+
+/// 自動詞・他動詞 by the verb's English (lowercase).
+pub fn verb_types() -> &'static HashMap<String, crate::models::VerbType> {
+    static TABLE: std::sync::OnceLock<HashMap<String, crate::models::VerbType>> = std::sync::OnceLock::new();
+    TABLE.get_or_init(|| serde_json::from_str(VERB_TYPES_JSON).expect("data/verb-types.json must be a valid JSON object"))
+}
+
+/// What the tags before a meaning ([名] [形] [副] [自] [他]) are worked out from: the part of
+/// speech of each word question by its English, and the verbs' 自・他. A word only the glossary
+/// has is tagged by its gloss on screen (`pos_from_gloss`).
+pub fn word_tags() -> crate::models::WordTags {
+    let (words, _) = words_by_english();
+    crate::models::WordTags {
+        words: words
+            .iter()
+            .map(|(en, senses)| (en.clone(), senses.iter().map(|(ja, pos)| (pos.clone(), ja.clone())).collect()))
+            .collect(),
+        verb_types: verb_types().clone(),
+    }
 }
 
 /// The part of speech of a word saved to the recipe: an idiom is "idiom"; a word of the bank takes
@@ -989,13 +1019,13 @@ pub fn recipe_pos(word: &str, meaning: &str) -> String {
     if idioms.contains(&key) {
         return "idiom".to_string();
     }
-    pos_from_gloss(meaning).to_string()
+    pos_from_gloss(meaning, word).to_string()
 }
 
 /// Everything the data says about a word or an idiom beyond its meaning, or None when it says
 /// nothing. Looked up by the English alone, so a word saved to the recipe gets the same notes as
 /// the word question it may have come from.
-/// The patterns of `key` (lowercase). A phrasal verb has its own only rarely: "look forward to ～"
+/// The patterns of `key` (lowercase). A phrasal verb has its own only rarely: "look forward to A／-ing"
 /// is written under look, so it takes those of its verb that begin with it.
 fn usages_of(key: &str) -> Vec<crate::models::WordUsage> {
     if let Some(own) = word_usages().get(key) {
@@ -1252,13 +1282,13 @@ enum PatternPiece {
     Gap,
 }
 
-/// Pattern words that a sentence need not have: "be afraid of ～" is found in "I'm afraid of",
+/// Pattern words that a sentence need not have: "be afraid of A" is found in "I'm afraid of",
 /// "can afford to" in "We can't afford to".
 const OPTIONAL_PATTERN_WORDS: &[&str] = &["be", "is", "am", "are", "feel", "can", "would", "could", "will", "don't"];
 const REFLEXIVES: &[&str] =
     &["oneself", "myself", "yourself", "himself", "herself", "itself", "ourselves", "yourselves", "themselves"];
 /// Particles that may come before the object as well as after it ("dust A off" / "dusted off
-/// the old books", "pick up ～" / "pick you up").
+/// the old books", "pick up A" / "pick you up").
 const PARTICLES: &[&str] = &["off", "up", "out", "away", "down", "back"];
 /// Words too common to list for their similar words alone ("big" in every other sentence);
 /// they are listed when the sentence uses one of their patterns.
@@ -1304,7 +1334,7 @@ fn pattern_piece(el: &str) -> Option<PatternPiece> {
     let el = el.trim_matches(|c: char| c == '?' || c == '.' || c == ',' || c == '!');
     match el {
         "" => None,
-        "～" | "…" | "A" | "B" | "人" | "形容詞" | "節" => Some(PatternPiece::Slot),
+        "～" | "…" | "A" | "B" | "人" | "形容詞" | "節" | "過去分詞" => Some(PatternPiece::Slot),
         "(…)" => Some(PatternPiece::Optional),
         "原形" => Some(PatternPiece::Base),
         "-ing" => Some(PatternPiece::Ing),
@@ -1327,10 +1357,10 @@ fn names(piece: &PatternPiece, headword: &str) -> bool {
     matches!(piece, PatternPiece::Word(ws) if ws.iter().any(|w| w == headword))
 }
 
-/// The ways a pattern can appear, as pieces. "lend 人 ～ / lend ～ to 人" is two ways. A way that
+/// The ways a pattern can appear, as pieces. "lend 人 A／lend A to 人" is two ways. A way that
 /// does not name the word continues the one before it in place of its last piece: "hate -ing /
 /// to 原形" is hate -ing and hate to 原形, "begin to 原形 / -ing" begin to 原形 and begin -ing,
-/// "get used to ～ / -ing" get used to ～ and get used to -ing. Japanese asides （音楽） go;
+/// "get used to A／-ing" get used to A and get used to -ing. Japanese asides （音楽） go;
 /// a part in ( ) may or may not be there.
 fn pattern_ways(pattern: &str, headword: &str) -> Vec<Vec<PatternPiece>> {
     let mut plain = String::new();
@@ -1351,7 +1381,7 @@ fn pattern_ways(pattern: &str, headword: &str) -> Vec<Vec<PatternPiece>> {
         }
     }
     let mut ways: Vec<Vec<PatternPiece>> = Vec::new();
-    for way in plain.split(" / ") {
+    for way in plain.replace('／', " / ").split(" / ") {
         let pieces: Vec<PatternPiece> = way.split_whitespace().filter_map(pattern_piece).collect();
         if pieces.iter().any(|p| names(p, headword)) {
             ways.push(pieces);
@@ -1403,7 +1433,7 @@ fn pattern_ways(pattern: &str, headword: &str) -> Vec<Vec<PatternPiece>> {
     ways
 }
 
-/// Words that make the next word a noun: "the results in a chart" is no result in ～, "a rise in
+/// Words that make the next word a noun: "the results in a chart" is no result in A, "a rise in
 /// prices" no rise. (this / that stand alone too: "This tastes like chicken.")
 const DETERMINERS: &[&str] = &["the", "a", "an", "my", "your", "his", "its", "our", "their", "every", "each"];
 
@@ -1454,7 +1484,7 @@ fn base_verbs() -> &'static std::collections::HashSet<String> {
 
 /// Whether finding `pieces` says anything: a pattern that is the word and what fills it
 /// ("have 人 原形") would be found wherever the word is. Kept all the same when it warns about a
-/// preposition ("discuss ～" about は付けない), which is worth knowing wherever the word is; a
+/// preposition ("discuss A" about は付けない), which is worth knowing wherever the word is; a
 /// note on "the" (play ～ the は付けない) is not about the word's company and is not.
 fn pattern_is_telling(pieces: &[PatternPiece], headword: &str, ja: &str) -> bool {
     (ja.contains("付けない") && !ja.contains("the は"))
@@ -1675,7 +1705,7 @@ pub fn used_words(texts: &[String]) -> Vec<crate::models::UsedWord> {
                 let related = related_groups(word);
                 // Easily confused with other words (lend / borrow / rent) and no pattern of it found:
                 // it is shown all the same, with how it differs, its 類似表現, and the patterns it may
-                // well be using but no sentence could tell (lend 人 ～ in "Could you lend me your
+                // well be using but no sentence could tell (lend 人 A in "Could you lend me your
                 // textbook?").
                 let confusable = usages.is_empty()
                     && as_word
@@ -1704,7 +1734,7 @@ pub fn used_words(texts: &[String]) -> Vec<crate::models::UsedWord> {
     order.into_iter().take(MAX_USED_WORDS).filter_map(|i| slots[i].take()).collect()
 }
 
-/// The patterns of `word` that are the word and what fills it ("lend 人 ～"): found wherever the
+/// The patterns of `word` that are the word and what fills it ("lend 人 A"): found wherever the
 /// word is, so never looked for, but what a sentence may well be using.
 fn untold_usages(word: &str) -> Vec<crate::models::WordUsage> {
     word_usages()
@@ -1958,6 +1988,7 @@ mod tests {
                     && n != "word-confusables.json"
                     && n != "word-families.json"
                     && n != "irregular-verbs.json"
+                    && n != "verb-types.json"
                     && !n.starts_with("exam-")
             })
             .count();
@@ -2629,12 +2660,16 @@ mod tests {
             let mut patterns = HashSet::new();
             for u in list {
                 assert!(patterns.insert(u.pattern.as_str()), "{w}: {} is written twice", u.pattern);
-                // One notation throughout: a gerund is -ing, a bare verb 原形, a slot ～ or 人.
+                // One notation throughout: a noun is A (and B), a person 人, a gerund -ing, a bare
+                // verb 原形, an adjective 形容詞, a clause 節, a past participle 過去分詞, and ways
+                // of writing it apart by ／ ("get used to A／-ing").
                 let words: Vec<&str> =
                     u.pattern.split(|c: char| !c.is_ascii_alphabetic()).filter(|s| !s.is_empty()).collect();
                 assert!(
-                    !u.pattern.contains('~') && !words.iter().any(|t| ["do", "doing", "someone", "something", "sth", "sb"].contains(t)),
-                    "{w}: write {} with -ing / 原形 / ～ / 人",
+                    !u.pattern.contains(['~', '～', '…'])
+                        && !u.pattern.contains(" / ")
+                        && !words.iter().any(|t| ["do", "doing", "someone", "something", "sth", "sb"].contains(t)),
+                    "{w}: write {} with A / B / 人 / -ing / 原形 / 形容詞 / 節 / 過去分詞, ways apart by ／",
                     u.pattern
                 );
                 assert!(uses_word(&u.pattern, w), "{w}: the pattern {} does not name it", u.pattern);
@@ -2683,7 +2718,7 @@ mod tests {
         // A pattern list narrows what is shown: look is here for look for ～ only.
         let search = related_groups("search");
         let look = search.iter().flat_map(|g| &g.members).find(|m| m.word == "look").unwrap();
-        assert_eq!(look.usages.iter().map(|u| u.pattern.as_str()).collect::<Vec<_>>(), vec!["look for ～"]);
+        assert_eq!(look.usages.iter().map(|u| u.pattern.as_str()).collect::<Vec<_>>(), vec!["look for A"]);
     }
 
     fn found(sentence: &str) -> Vec<(String, Vec<String>)> {
@@ -2703,7 +2738,7 @@ mod tests {
         let f = found("The rain stopped us from going out.");
         assert!(f.contains(&("stop".to_string(), vec!["stop 人 from -ing".to_string()])), "{f:?}");
         let f = found("I'm afraid of spiders.");
-        assert!(f.contains(&("afraid".to_string(), vec!["be afraid of ～".to_string()])), "{f:?}");
+        assert!(f.contains(&("afraid".to_string(), vec!["be afraid of A".to_string()])), "{f:?}");
         let f = found("It is dangerous to swim here.");
         assert!(f.iter().any(|(w, p)| w == "dangerous" && p.len() == 1), "{f:?}");
         // A warning about a preposition is shown wherever the word is.
@@ -2712,9 +2747,9 @@ mod tests {
         let f = found("We get along well with our neighbors.");
         assert!(f.contains(&("get".to_string(), vec!["get along with 人".to_string()])), "{f:?}");
         let f = found("Please listen carefully to the teacher.");
-        assert!(f.contains(&("listen".to_string(), vec!["listen to ～".to_string()])), "{f:?}");
+        assert!(f.contains(&("listen".to_string(), vec!["listen to A".to_string()])), "{f:?}");
         let f = found("She is really good at math.");
-        assert!(f.contains(&("good".to_string(), vec!["be good at ～".to_string()])), "{f:?}");
+        assert!(f.contains(&("good".to_string(), vec!["be good at A".to_string()])), "{f:?}");
         let f = found("He left Tokyo for Osaka.");
         assert!(f.contains(&("leave".to_string(), vec!["leave A for B".to_string()])), "{f:?}");
         // "have 人 原形" would be found wherever have is: have alone says nothing.
@@ -2753,7 +2788,7 @@ mod tests {
     #[test]
     fn phrasal_verbs_take_their_verbs_patterns() {
         let notes = word_notes("look forward to").expect("notes for look forward to");
-        assert!(notes.usages.iter().any(|u| u.pattern == "look forward to ～"), "{:?}", notes.usages);
+        assert!(notes.usages.iter().any(|u| u.pattern == "look forward to A／-ing"), "{:?}", notes.usages);
         assert!(notes.usages.iter().all(|u| u.pattern.starts_with("look forward to")));
         assert!(!notes.examples.is_empty());
     }
@@ -2805,8 +2840,10 @@ mod tests {
         assert_eq!(recipe_pos("watch", "じっと見る、見守る"), "verb");
         assert_eq!(recipe_pos("keep your fingers crossed", "幸運を祈る"), "idiom");
         assert_eq!(recipe_pos("hear", "聞く"), "verb");
-        assert_eq!(pos_from_gloss("美しい"), "adjective");
-        assert_eq!(pos_from_gloss("会議"), "noun");
+        assert_eq!(recipe_pos("quickly", "すばやく"), "adverb");
+        assert_eq!(pos_from_gloss("美しい", "beautiful"), "adjective");
+        assert_eq!(pos_from_gloss("会議", "meeting"), "noun");
+        assert_eq!(pos_from_gloss("書く", "write"), "verb");
     }
 
     /// An origin is written for an idiom of the bank, as a finished sentence.
@@ -2819,6 +2856,35 @@ mod tests {
         for (k, text) in idiom_origins() {
             assert!(idioms.contains(k), "idiom-origins.json has {k}, which is no idiom question");
             assert!(text.ends_with('。'), "the origin of {k} is not a finished sentence");
+        }
+    }
+
+    /// Every verb of the word questions says whether it is 自, 他 or both, and only they do; a
+    /// verb whose 自 and 他 mean different things has one sense apiece.
+    #[test]
+    fn every_verb_of_the_word_questions_has_its_type() {
+        use crate::models::VerbType;
+        let (words, _) = words_by_english();
+        let verbs: std::collections::HashSet<&String> =
+            words.iter().filter(|(_, senses)| senses.iter().any(|(_, pos)| pos == "verb")).map(|(en, _)| en).collect();
+        let types = verb_types();
+        let mut missing: Vec<&&String> = verbs.iter().filter(|v| !types.contains_key(**v)).collect();
+        missing.sort();
+        assert!(missing.is_empty(), "verbs with no 自・他 in verb-types.json: {missing:?}");
+        let extra: Vec<&String> = types.keys().filter(|k| !verbs.contains(k)).collect();
+        assert!(extra.is_empty(), "verb-types.json has words that are not verbs of the word questions: {extra:?}");
+        for (word, t) in types {
+            match t {
+                VerbType::Whole(t) => assert!(["自", "他", "自他"].contains(&t.as_str()), "{word}: {t} is not 自, 他 or 自他"),
+                VerbType::BySense(senses) => {
+                    assert!(
+                        senses.len() == 2 && senses.iter().any(|(t, _)| t == "自") && senses.iter().any(|(t, _)| t == "他"),
+                        "{word}: one sense for 自 and one for 他"
+                    );
+                    assert!(senses.iter().all(|(_, ja)| !ja.trim().is_empty()), "{word}: a sense with no meaning");
+                    assert_ne!(senses[0].1, senses[1].1, "{word}: the two senses mean the same; write 自他");
+                }
+            }
         }
     }
 
@@ -2855,8 +2921,8 @@ mod tests {
         assert!(irregular_of("compare A with B").is_none(), "compare is regular");
         let split = irregular_of("split A into B").expect("a pattern takes the forms of its verb");
         assert_eq!((split.base.as_str(), split.past.as_str()), ("split", "split"));
-        assert!(irregular_of("be afraid of ～").is_none(), "the forms of be are not what a pattern of be teaches");
-        assert!(irregular_of("be confident in/about ～").is_none());
+        assert!(irregular_of("be afraid of A").is_none(), "the forms of be are not what a pattern of be teaches");
+        assert!(irregular_of("be confident in/about A").is_none());
         assert!(irregular_of("be fond of").is_none());
         assert_eq!(irregular_of("be").expect("be itself").past, "was / were");
         assert_eq!(irregular_of("break the ice").expect("an idiom of a verb").participle, "broken");

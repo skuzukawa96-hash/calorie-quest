@@ -4,6 +4,7 @@ import { DeleteButton } from "../components/IconButtons";
 import PencilIcon from "../components/PencilIcon";
 import { PlayModeTag } from "../components/PlayModeSwitch";
 import WordNotesPanel from "../components/WordNotes";
+import { MeaningWithTags, SlotText } from "../components/PosTags";
 import { api } from "../lib/api";
 import { loadDictionary, lookup, type Dictionary } from "../lib/dictionary";
 import { onRecipeChanged } from "../lib/recipe";
@@ -298,12 +299,13 @@ function normalizeAnswer(text: string): string {
  */
 /**
  * A pattern with what fills it taken out, for typing it back: "compare A with B" → "compare with",
- * "be afraid of ～" → "afraid of". Written in full or without the fillers, it is the same.
+ * "be afraid of A" → "afraid of", "look forward to A／-ing" → "look forward to". Written in full or
+ * without the fillers, it is the same.
  */
 function patternCore(text: string): string {
   const bare = text
     .replace(/[（(][^）)]*[）)]/g, " ")
-    .replace(/～|~|…|人|原形|形容詞|節|-ing/g, " ")
+    .replace(/～|~|…|人|原形|過去分詞|形容詞|節|-ing|／/g, " ")
     .replace(/\b[ABab]\b/g, " ");
   return normalizeAnswer(bare).replace(/^be /, "");
 }
@@ -314,14 +316,14 @@ function eachOf<T>(lists: T[][]): T[][] {
 }
 
 /**
- * The ways an entry may be written, as it is and with each choice made: "be confident in/about ～"
- * is "be confident in ～" or "be confident about ～", the two sides of " / " ("～ / -ing", "bring
- * ～ to 人 / bring 人 ～") each stand alone, and an English part in ( ) may be written or left out
- * ("I'm afraid (that) ～").
+ * The ways an entry may be written, as it is and with each choice made: "be confident in/about A"
+ * is "be confident in A" or "be confident about A", the two sides of ／ ("A／-ing", "bring A to
+ * 人／bring 人 A") each stand alone, and an English part in ( ) may be written or left out ("I'm
+ * afraid (that) 節").
  */
 function spellings(text: string): string[] {
   const out = new Set([text]);
-  for (const side of text.split(/\s+\/\s+/)) {
+  for (const side of text.split(/\s*／\s*|\s+\/\s+/)) {
     // The optional parts: half-width brackets around English (a note in （ ） is no part of it).
     const optional = [...side.matchAll(/\(([^()]*[A-Za-z][^()]*)\)/g)].map((m) => m[0]);
     for (const keep of eachOf(optional.map(() => [true, false]))) {
@@ -332,6 +334,21 @@ function spellings(text: string): string[] {
     }
   }
   return [...out];
+}
+
+/** An entry as written: a pattern with [原] [形] [節] boxed, a word as it is. */
+function EntryText({ w, text }: { w: RecipeWord; text: string }) {
+  return w.kind === "usage" ? <SlotText text={text} /> : <>{text}</>;
+}
+
+/**
+ * An entry's meaning: a word's with its tags in front ([名] 腕時計, [他] 承認する, [自] 走る ／ [他]
+ * 経営する), a pattern's with [原] [形] [節] boxed, an idiom's as it is.
+ */
+function EntryMeaning({ w, dict }: { w: RecipeWord; dict: Dictionary | null }) {
+  if (w.kind === "usage") return <SlotText text={w.meaning} />;
+  if (w.pos === "idiom") return <>{w.meaning}</>;
+  return <MeaningWithTags word={w.word} meaning={w.meaning} dict={dict} />;
 }
 
 function typedRight(word: RecipeWord, typed: string, dict: Dictionary | null): boolean {
@@ -778,7 +795,9 @@ export default function Recipe({ playMode, onProgress, toast }: Props) {
                           }
                         }}
                       >
-                        <span className="recipe-word">{w.word}</span>
+                        <span className="recipe-word">
+                          <EntryText w={w} text={w.word} />
+                        </span>
                         {/* A pattern (人 / 原形 / ～) has no voice to read it with. */}
                         {w.kind !== "usage" && (
                           <button
@@ -794,7 +813,9 @@ export default function Recipe({ playMode, onProgress, toast }: Props) {
                             🔊
                           </button>
                         )}
-                        <span className={"recipe-meaning" + (w.meaning ? "" : " muted")}>{w.meaning || NO_MEANING}</span>
+                        <span className={"recipe-meaning" + (w.meaning ? "" : " muted")}>
+                          {w.meaning ? <EntryMeaning w={w} dict={dict} /> : NO_MEANING}
+                        </span>
                         {/* Sorted by 間違い順, the count the order goes by. */}
                         {order.key === "misses" && w.misses > 0 && (
                           <span className="recipe-misses" title="復習で間違えた回数">
@@ -1182,7 +1203,7 @@ function RecipeReview({
             onClick={() => current.kind !== "usage" && say(current.word)}
             title={current.kind === "usage" ? undefined : "クリックで発音"}
           >
-            {current.word}
+            <EntryText w={current} text={current.word} />
           </button>
           {example}
           <div className="options recipe-options">
@@ -1200,7 +1221,9 @@ function RecipeReview({
                   onClick={() => void answer(opt === current.meaning, opt)}
                 >
                   <span className="option-num">{i + 1}</span>
-                  <span>{opt}</span>
+                  <span>
+                    <EntryText w={current} text={opt} />
+                  </span>
                 </button>
               );
             })}
@@ -1217,9 +1240,13 @@ function RecipeReview({
           }}
         >
           <div className="prompt-label">この意味の英語は？</div>
-          <div className="flash-meaning">{current.meaning}</div>
+          <div className="flash-meaning">
+            <EntryText w={current} text={current.meaning} />
+          </div>
           {current.kind === "usage" && (
-            <div className="muted small">用法の「～・人・A・B・原形・-ing」などの部分は書かなくてもかまいません</div>
+            <div className="muted small">
+              <SlotText text="用法の A・B・人・-ing・原形・形容詞・節 の部分は書かなくてもかまいません" />
+            </div>
           )}
           {answered ? example : gapped && <div className="flash-example">{gapped}</div>}
           {current.exampleJa && <div className="muted">{current.exampleJa}</div>}
@@ -1264,8 +1291,11 @@ function RecipeReview({
               </div>
             )}
             <div>
-              <span className="label">正解</span> <strong>{current.word}</strong>
-              {shownForm(current) && <span className="muted">（{shownForm(current)}）</span>}　{current.meaning}
+              <span className="label">正解</span>{" "}
+              <strong>
+                <EntryText w={current} text={current.word} />
+              </strong>
+              {shownForm(current) && <span className="muted">（{shownForm(current)}）</span>}　<EntryMeaning w={current} dict={dict} />
               {current.kind !== "usage" && (
                 <button className="btn-link" onClick={() => say(current.word)} disabled={!isTtsSupported()}>
                   🔊 もう一度聞く

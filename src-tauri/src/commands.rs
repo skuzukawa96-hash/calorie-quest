@@ -1202,6 +1202,13 @@ pub fn get_word_notes(word: String) -> Option<WordNotes> {
     (!notes.is_empty()).then_some(notes)
 }
 
+/// The parts of speech of the word questions and the verbs' 自・他, for the tags before a meaning
+/// (see `db::word_tags`).
+#[tauri::command]
+pub fn get_word_tags() -> WordTags {
+    db::word_tags()
+}
+
 /// The dictionary keys that are idioms (see `db::idiom_keys`).
 #[tauri::command]
 pub fn get_idioms(state: State<'_, AppState>) -> CmdResult<Vec<String>> {

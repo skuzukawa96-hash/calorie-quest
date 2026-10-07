@@ -282,6 +282,28 @@ export interface PartOfSpeechInfo {
 /** The category a session asks for to get the words of one part of speech. */
 export const posCategory = (pos: PartOfSpeech) => `pos:${pos}`;
 
+/** The boxed tags before a meaning: 自動詞・他動詞, 名詞, 形容詞, 副詞. */
+export type PosTag = "自" | "他" | "名" | "形" | "副";
+
+/**
+ * 自動詞・他動詞 of a verb (data/verb-types.json): the same meaning either way, or each sense with
+ * its own tag when the two differ (run: [["自", "走る"], ["他", "経営する"]]).
+ */
+export type VerbType = "自" | "他" | "自他" | Array<["自" | "他", string]>;
+
+/** What the tags are worked out from (commands::get_word_tags). */
+export interface WordTags {
+  /** English (lowercase) → [part of speech, Japanese] of each word question with it */
+  words: Record<string, Array<[PartOfSpeech, string]>>;
+  verbTypes: Record<string, VerbType>;
+}
+
+/** Tags with the sense they are for (none when they are for the whole word). */
+export interface TagSense {
+  tags: PosTag[];
+  ja?: string;
+}
+
 /** How a session's category reads: 名詞 for a part of speech, the icon and name for a genre. */
 export function categoryLabel(category: string): string {
   const pos = category.startsWith("pos:") ? POS_LABEL[category.slice(4) as PartOfSpeech] : undefined;

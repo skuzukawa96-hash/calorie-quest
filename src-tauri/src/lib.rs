@@ -44,6 +44,7 @@ pub fn run() {
             commands::get_idioms,
             commands::get_pronunciations,
             commands::get_word_notes,
+            commands::get_word_tags,
             commands::reset_progress,
             commands::log_debug,
             exam::start_exam,

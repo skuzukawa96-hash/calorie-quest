@@ -14,10 +14,12 @@ import idiomOrigins from "../../src-tauri/data/idiom-origins.json";
 import wordPos from "../../src-tauri/data/word-pos.json";
 import relatedSeeds from "../../src-tauri/data/word-related.json";
 import confusableSets from "../../src-tauri/data/word-confusables.json";
+import verbTypes from "../../src-tauri/data/verb-types.json";
 import examBasic from "../../src-tauri/data/exam-basic.json";
 import exam600 from "../../src-tauri/data/exam-600.json";
 import exam800 from "../../src-tauri/data/exam-800.json";
 import { expandDictionary, lemmas, tokenize, type Dictionary } from "./dictionary";
+import { posFromGloss } from "./pos";
 import { answerWordCount, CLEAR_SCORE, hintPenalty, kcalFor, scoredKind, scoresPerWord } from "./scoring";
 import { exampleSentence, sentences } from "./sentences";
 import type {
@@ -64,6 +66,7 @@ import type {
   UserInfo,
   WeakQuestion,
   WordNotes,
+  WordTags,
   WordPart,
   WordUsage,
 } from "../types";
@@ -226,7 +229,7 @@ const seedQuestions: SeedQuestion[] = [
   ...Object.entries(packModules)
     .filter(
       ([path]) =>
-        !/\/(questions|glossary|grammar-notes|pronunciations|word-parts|tiers|word-examples|word-usage|idiom-origins|word-related|word-pos|word-confusables|word-families|irregular-verbs|exam-[^/]*)\.json$/.test(
+        !/\/(questions|glossary|grammar-notes|pronunciations|word-parts|tiers|word-examples|word-usage|idiom-origins|word-related|word-pos|word-confusables|word-families|irregular-verbs|verb-types|exam-[^/]*)\.json$/.test(
           path,
         ),
     )
@@ -376,8 +379,11 @@ function load(): MockState {
         ...stored,
         // Mirrors users.play_mode's default for state saved before modes existed.
         user: { ...stored.user, playMode: stored.user.playMode ?? "normal" },
-        // Mirrors recipe::trim_passage_examples: a word once saved with a whole exam passage keeps its sentence.
-        recipe: (stored.recipe ?? []).map((w) => ({ ...w, example: exampleSentence(w.example, w.exampleJa, w.form, w.word) })),
+        // Mirrors recipe::trim_passage_examples: a word once saved with a whole exam passage keeps its
+        // sentence; and recipe::migrate_usage_notation: a 用法 saved as "be afraid of ～" is "be afraid of A".
+        recipe: migrateUsageNotation(
+          (stored.recipe ?? []).map((w) => ({ ...w, example: exampleSentence(w.example, w.exampleJa, w.form, w.word) })),
+        ),
         savings: stored.savings ?? 0,
         saved: stored.saved ?? closed,
         snackTickets: stored.snackTickets ?? [],
@@ -400,6 +406,50 @@ function load(): MockState {
   }
   return freshState();
 }
+/** Mirrors recipe::loose_pattern: every slot as "_", asides left out, ways apart as "|". */
+function loosePattern(pattern: string): string {
+  return pattern
+    .replace(/（[^）]*）/g, " ")
+    .replace(/／| \/ /g, " | ")
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((t) => (["～", "…", "A", "B", "節", "形容詞", "過去分詞"].includes(t) ? "_" : t.toLowerCase()))
+    .join(" ");
+}
+
+/** Mirrors recipe::migrate_usage_notation: a 用法 saved in the old notation moves to the new, with its Japanese. */
+function migrateUsageNotation(recipe: StoredRecipeWord[]): StoredRecipeWord[] {
+  // Runs while the state loads, before the tables further down exist: so the raw data and a list
+  // of its own (mirrors recipe::RENAMED_USAGES).
+  const RENAMED_USAGES: [string, string][] = [
+  ["not ～ anymore", "not 原形 anymore"],
+  ["become ～（名詞・形容詞）", "become A／形容詞"],
+  ["be capable of ～", "be capable of A／-ing"],
+  ["not ～ either", "not 原形 either"],
+  ["Have you ever ～?", "Have you ever 過去分詞?"],
+  ["look forward to ～", "look forward to A／-ing"],
+  ["prove (to be) ～", "prove (to be) A／形容詞"],
+  ["seem (to be) ～", "seem (to be) A／形容詞"],
+  ["～, though.", "節, though."],
+  ["turn out to be ～", "turn out to be A／形容詞"],
+  ["What's wrong with ～?", "What's wrong with A?"],
+  ];
+  const all = wordUsages as WordUsage[];
+  return recipe.map((w) => {
+    if (w.kind !== "usage" || all.some((u) => u.pattern === w.word)) return w;
+    const renamed = RENAMED_USAGES.find(([old]) => old === w.word);
+    let target: WordUsage | undefined;
+    if (renamed) target = all.find((u) => u.pattern === renamed[1]);
+    else {
+      const key = loosePattern(w.word);
+      const hits = [...new Set(all.filter((u) => loosePattern(u.pattern) === key).map((u) => u.pattern))];
+      if (hits.length === 1) target = all.find((u) => u.pattern === hits[0]);
+    }
+    if (!target || recipe.some((x) => x.word === target!.pattern)) return w;
+    return { ...w, word: target.pattern, meaning: target.ja };
+  });
+}
+
 function save() {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
@@ -1168,7 +1218,7 @@ const baseVerbs: Set<string> = (() => {
 function patternPiece(raw: string): Piece | null {
   const el = raw.replace(/^[?.,!]+|[?.,!]+$/g, "");
   if (!el) return null;
-  if (["～", "…", "A", "B", "人", "形容詞", "節"].includes(el)) return { kind: "slot" };
+  if (["～", "…", "A", "B", "人", "形容詞", "節", "過去分詞"].includes(el)) return { kind: "slot" };
   if (el === "(…)") return { kind: "optional" };
   if (el === "原形") return { kind: "base" };
   if (el === "-ing") return { kind: "ing" };
@@ -1198,7 +1248,7 @@ function patternWays(pattern: string, headword: string): Piece[][] {
     else if (aside === 0 && optional === 0) plain += c;
   }
   const ways: Piece[][] = [];
-  for (const way of plain.split(" / ")) {
+  for (const way of plain.replace(/／/g, " / ").split(" / ")) {
     const pieces = way.split(/\s+/).map(patternPiece).filter((p): p is Piece => p !== null);
     if (pieces.some((p) => names(p, headword))) {
       ways.push(pieces);
@@ -2084,22 +2134,13 @@ function mockDictionary(): Dictionary {
 /** A recipe word as the mock keeps it; its part of speech is worked out when it is handed out. */
 type StoredRecipeWord = Omit<RecipeWord, "pos" | "kind" | "misses"> & { kind?: RecipeKind; misses?: number };
 
-/** Mirrors db::pos_from_gloss: 走る a verb, 美しい an adjective, ゆっくりと an adverb, else a noun. */
-function posFromGloss(ja: string): PartOfSpeech {
-  const first = (ja.split(/[、，,]/)[0] ?? "").replace(/（[^）]*）|\([^)]*\)/g, "").trim();
-  if (/[にと]$/.test(first)) return "adverb";
-  if (/[うくぐすつぬぶむる]$/.test(first)) return "verb";
-  if (/[いなの的ただてで]$/.test(first)) return "adjective";
-  return "noun";
-}
-
 /** Mirrors db::words_by_english: each word question's meaning and part of speech, and the idioms. */
 const recipeLookup = (() => {
   const words = new Map<string, Array<[string, PartOfSpeech]>>();
   const idioms = new Set<string>();
   for (const q of questions) {
     const en = q.en.toLowerCase();
-    if (q.kind === "word") words.set(en, [...(words.get(en) ?? []), [q.ja, posOf[q.key] ?? posFromGloss(q.ja)]]);
+    if (q.kind === "word") words.set(en, [...(words.get(en) ?? []), [q.ja, posOf[q.key] ?? posFromGloss(q.ja, q.en)]]);
     else if (q.kind === "idiom") idioms.add(en);
   }
   return { words, idioms };
@@ -2111,7 +2152,7 @@ function recipePos(word: string, meaning: string): RecipePos {
   const senses = recipeLookup.words.get(key);
   if (senses) return (senses.find(([ja]) => ja === meaning) ?? senses[0])[1];
   if (recipeLookup.idioms.has(key)) return "idiom";
-  return posFromGloss(meaning);
+  return posFromGloss(meaning, word);
 }
 
 const withPos = (w: StoredRecipeWord): RecipeWord => ({
@@ -2381,6 +2422,12 @@ export async function mockInvoke<T>(cmd: string, args: Record<string, unknown>):
     }
     case "get_pronunciations":
       return pronunciations as T;
+    case "get_word_tags": {
+      // Mirrors db::word_tags: each word question's part of speech by its English, and the verbs' 自・他.
+      const words: WordTags["words"] = {};
+      for (const [en, senses] of recipeLookup.words) words[en] = senses.map(([ja, pos]) => [pos, ja]);
+      return { words, verbTypes: verbTypes as unknown as WordTags["verbTypes"] } as T;
+    }
     case "get_idioms": {
       // Mirrors db::idiom_keys: idioms, minus any English that is also a vocabulary item.
       const words = new Set(questions.filter((q) => q.kind === "word").map((q) => q.en.toLowerCase()));
