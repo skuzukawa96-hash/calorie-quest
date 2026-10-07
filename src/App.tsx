@@ -13,13 +13,13 @@ import Stats from "./screens/Stats";
 import Study from "./screens/Study";
 import type { Dashboard, ExamLevel, PlayMode, SessionMode, TierChoice } from "./types";
 
-type Tab = "home" | "snacks" | "recipe" | "favorites" | "stats";
+type Tab = "home" | "snacks" | "favorites" | "recipe" | "stats";
 
 const TABS: Array<{ id: Tab; label: string }> = [
   { id: "home", label: "🏠 ホーム" },
   { id: "snacks", label: "🍰 お菓子図鑑" },
-  { id: "recipe", label: "📖 レシピ" },
   { id: "favorites", label: "⭐ お気に入り" },
+  { id: "recipe", label: "📖 レシピ" },
   { id: "stats", label: "📈 記録" },
 ];
 
