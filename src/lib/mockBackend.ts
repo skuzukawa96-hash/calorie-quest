@@ -1306,13 +1306,56 @@ function piecesFound(pieces: Piece[], headword: string, tokens: string[], lemmaL
 }
 
 /** Mirrors db::used_words: the words of a sentence whose patterns it uses, or that are easily confused. */
+/** Mirrors PHRASES_OF_MANY_SENSES: phrasal verbs of the 類似表現 not looked for in a sentence. */
+const PHRASES_OF_MANY_SENSES = ["get in", "get off", "get on", "get out", "get over", "pick up", "take off", "give back", "put out", "come across"];
+
+/** Mirrors related_phrases: the 類似表現 members of more than one word, the longest first. */
+const RELATED_PHRASES: string[][] = (() => {
+  const out: string[][] = [];
+  for (const g of relatedSeeds as RelatedSeed[]) {
+    for (const m of g.members) {
+      const w = m.word.toLowerCase();
+      const words = w.split(/\s+/);
+      if (words.length > 1 && !PHRASES_OF_MANY_SENSES.includes(w) && !out.some((o) => o.join(" ") === w)) out.push(words);
+    }
+  }
+  return out.sort((a, b) => b.length - a.length);
+})();
+
+/** Mirrors related_phrase_at: its verb in any form, the words after it as written and right after it. */
+function relatedPhraseAt(i: number, tokens: string[], lemmaList: string[][]): string[] | undefined {
+  return RELATED_PHRASES.find(
+    (words) => lemmaList[i].includes(words[0]) && words.slice(1).every((w, k) => tokens[i + 1 + k] === w),
+  );
+}
+
 function usedWords(texts: string[]): UsedWord[] {
   const out: UsedWord[] = [];
   const foundPattern: boolean[] = [];
   for (const text of texts) {
     const tokens = tokenize(text);
     const lemmaList = tokens.map(lemmas);
+    // Mirrors used_words: the words of a phrasal verb found are its own, not its verb's.
+    let skipTo = 0;
     lemmaList.forEach((candidates, i) => {
+      if (i < skipTo) return;
+      const words = relatedPhraseAt(i, tokens, lemmaList);
+      if (words) {
+        skipTo = i + words.length;
+        const phrase = words.join(" ");
+        if (out.some((u) => u.word === phrase)) return;
+        const head = words[0];
+        const usages = usagesOf(phrase).filter((u) =>
+          patternWays(u.pattern, head)
+            .filter((p) => patternIsTelling(p, head, u.ja))
+            .some((p) => piecesFound(p, head, tokens, lemmaList) !== null),
+        );
+        const related = relatedGroups(phrase);
+        const nuance = related.flatMap((g) => g.members).find((m) => m.isSelf)?.nuance ?? null;
+        foundPattern.push(usages.length > 0);
+        out.push({ word: phrase, nuance, usages, related });
+        return;
+      }
       for (const word of candidates) {
         if (out.some((u) => u.word === word)) continue;
         const asWord = readsAs(tokens[i], word) && !(i > 0 && DETERMINERS.includes(tokens[i - 1]));

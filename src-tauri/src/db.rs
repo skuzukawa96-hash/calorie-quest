@@ -1578,6 +1578,40 @@ fn pieces_found(pieces: &[PatternPiece], headword: &str, tokens: &[String], lemm
 /// others that have no patterns to find (creepy, alike). When a word is followed by the word of
 /// one of its patterns ("afraid of"), a pattern with something else after it ("I'm afraid
 /// (that) ～") is not what the sentence says. In the order they appear, at most MAX_USED_WORDS.
+/// Phrasal verbs of the 類似表現 whose words side by side are as often another sense or an idiom
+/// ("get on someone's nerves", "pick up some milk", the plane took off): not looked for in a sentence.
+const PHRASES_OF_MANY_SENSES: &[&str] =
+    &["get in", "get off", "get on", "get out", "get over", "pick up", "take off", "give back", "put out", "come across"];
+
+/// The 類似表現 members of more than one word (map out, put on, look up to), as their words, the
+/// longest first so "look up to" is found before "look up".
+fn related_phrases() -> &'static Vec<Vec<String>> {
+    static TABLE: std::sync::OnceLock<Vec<Vec<String>>> = std::sync::OnceLock::new();
+    TABLE.get_or_init(|| {
+        let mut out: Vec<Vec<String>> = Vec::new();
+        for g in related_seeds() {
+            for m in &g.members {
+                let w = m.word.to_lowercase();
+                let words: Vec<String> = w.split_whitespace().map(str::to_string).collect();
+                if words.len() > 1 && !PHRASES_OF_MANY_SENSES.contains(&w.as_str()) && !out.contains(&words) {
+                    out.push(words);
+                }
+            }
+        }
+        out.sort_by_key(|w| std::cmp::Reverse(w.len()));
+        out
+    })
+}
+
+/// The phrasal verb of the 類似表現 that starts at `i`: its verb in any form ("mapped"), the words
+/// after it as written and right after it ("mapped out", not "mapped it out").
+fn related_phrase_at<'a>(i: usize, tokens: &[String], lemmas: &[Vec<String>]) -> Option<&'a Vec<String>> {
+    related_phrases().iter().find(|words| {
+        lemmas[i].contains(&words[0])
+            && tokens.get(i + 1..i + words.len()).is_some_and(|rest| rest.iter().zip(&words[1..]).all(|(t, w)| t == w))
+    })
+}
+
 pub fn used_words(texts: &[String]) -> Vec<crate::models::UsedWord> {
     let mut out: Vec<crate::models::UsedWord> = Vec::new();
     // Whether a pattern of each was found in the sentence (else it is there for being confusable).
@@ -1585,7 +1619,35 @@ pub fn used_words(texts: &[String]) -> Vec<crate::models::UsedWord> {
     for text in texts {
         let tokens = crate::util::tokens(text);
         let lemmas: Vec<Vec<String>> = tokens.iter().map(|t| crate::util::lemmas(t)).collect();
+        // The words of a phrasal verb found are its own, not its verb's (mapped out is not map).
+        let mut skip_to = 0;
         for (i, candidates) in lemmas.iter().enumerate() {
+            if i < skip_to {
+                continue;
+            }
+            if let Some(words) = related_phrase_at(i, &tokens, &lemmas) {
+                skip_to = i + words.len();
+                let phrase = words.join(" ");
+                if out.iter().any(|u| u.word == phrase) {
+                    continue;
+                }
+                // Its patterns are its verb's that begin with it (look up ～ of look).
+                let head = &words[0];
+                let usages: Vec<crate::models::WordUsage> = usages_of(&phrase)
+                    .into_iter()
+                    .filter(|u| {
+                        pattern_ways(&u.pattern, head)
+                            .iter()
+                            .filter(|p| pattern_is_telling(p, head, &u.ja))
+                            .any(|p| pieces_found(p, head, &tokens, &lemmas).is_some())
+                    })
+                    .collect();
+                let related = related_groups(&phrase);
+                let nuance = related.iter().flat_map(|g| &g.members).find(|m| m.is_self).map(|m| m.nuance.clone());
+                found_pattern.push(!usages.is_empty());
+                out.push(crate::models::UsedWord { word: phrase, nuance, usages, related });
+                continue;
+            }
             for word in candidates {
                 if out.iter().any(|u| &u.word == word) {
                     continue;
@@ -2819,6 +2881,27 @@ mod tests {
         assert_eq!(bases("Can you lend me your pen?"), vec!["lend"]);
         assert!(bases("She's worried about scope creep.").is_empty());
         assert!(bases("run of the mill").is_empty(), "a run");
+    }
+
+
+    /// A phrasal verb of the 類似表現 is found in a sentence in any form of its verb, right before
+    /// its other words, and shows its own groups, not its verb's; one of many senses is not looked for.
+    #[test]
+    fn a_phrasal_verb_in_a_sentence_shows_its_words_alike() {
+        let words = |s: &str| used_words(&[s.to_string()]);
+        let mapped = words("He mapped out the project timeline on a whiteboard.");
+        let map_out = mapped.iter().find(|u| u.word == "map out").expect("map out is found");
+        let titles: Vec<&str> = map_out.related.iter().map(|g| g.title.as_str()).collect();
+        assert!(titles.contains(&"書く・描く") && titles.contains(&"計画する・作成する"), "{titles:?}");
+        assert!(map_out.nuance.is_some());
+        assert!(mapped.iter().all(|u| u.word != "map"), "mapped is part of map out here");
+        assert!(words("She jotted down a few ideas.").iter().any(|u| u.word == "jot down"));
+        // Apart, it is not looked for; nor is a phrasal verb of many senses.
+        assert!(words("He mapped it out carefully.").iter().all(|u| u.word != "map out"));
+        assert!(words("His loud voice gets on my nerves.").iter().all(|u| u.word != "get on"));
+        // The longer phrase first: look up to is not look up.
+        let up_to = words("I look up to my old friends from college.");
+        assert!(up_to.iter().any(|u| u.word == "look up to") && up_to.iter().all(|u| u.word != "look up"));
     }
 
     /// A 用法 saved to the recipe brings the 類似表現 of its word where they are about that pattern.
