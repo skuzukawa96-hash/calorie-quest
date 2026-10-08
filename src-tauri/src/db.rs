@@ -78,7 +78,7 @@ const WORD_RELATED_JSON: &str = include_str!("../data/word-related.json");
 const TIERS_JSON: &str = include_str!("../data/tiers.json");
 /// The part of speech of every word question (key → noun / verb / adjective / adverb), taken from
 /// the sense its Japanese gives: watch 腕時計 is a noun, watch 見守る a verb, and a compound goes by
-/// what the whole means (average deviation a noun, sign up a verb, duty-free an adjective). The 英単語
+/// what the whole means (traffic light a noun, sign up a verb, duty-free an adjective). The 英単語
 /// tab narrows by it; the recipe sorts and filters its words by it.
 const WORD_POS_JSON: &str = include_str!("../data/word-pos.json");
 /// Sets of words a learner mixes up although they mean different things: opposites (win / lose),
@@ -124,7 +124,7 @@ fn tier_overrides() -> &'static HashMap<String, String> {
 }
 
 /// The home screen's tab for a question: 英単語 / 複合語 / 文法 / 慣用句 / フレーズ / 例文. A word
-/// question of several words, or of words joined by a hyphen, is a compound (average deviation,
+/// question of several words, or of words joined by a hyphen, is a compound (traffic light,
 /// ex-boyfriend).
 pub fn tier_of(kind: &str, key: &str, en: &str) -> String {
     if let Some(t) = tier_overrides().get(key) {
@@ -2368,7 +2368,7 @@ mod tests {
         let conn = init_in_memory().unwrap();
         let blank: i64 = conn.query_row("SELECT COUNT(*) FROM questions WHERE tier = ''", [], |r| r.get(0)).unwrap();
         assert_eq!(blank, 0, "seeding fills every question's tab");
-        assert_eq!(tier_of("word", "w1", "average deviation"), "compound");
+        assert_eq!(tier_of("word", "w1", "traffic light"), "compound");
         assert_eq!(tier_of("word", "w1", "ex-boyfriend"), "compound");
         assert_eq!(tier_of("word", "w1", "apple"), "word");
     }
@@ -2693,7 +2693,7 @@ mod tests {
             .collect::<Result<_, _>>()
             .unwrap();
         // What a word means on its own: the glossary, or a one-word vocabulary item for it or
-        // one of its lemmas ("semester" is 学期 in its own right, not because of "academic semester").
+        // one of its lemmas ("semester" is 学期 in its own right, not because of "spring semester").
         let mut own: HashMap<String, String> = serde_json::from_str(GLOSSARY_JSON).unwrap();
         for (en, ja) in &entries {
             if crate::util::tokens(en).len() == 1 {
@@ -3047,7 +3047,7 @@ mod tests {
     fn recipe_words_have_a_part_of_speech() {
         assert_eq!(recipe_pos("envious", "うらやんで"), "adjective");
         assert_eq!(recipe_pos("barely", "かろうじて"), "adverb");
-        assert_eq!(recipe_pos("average deviation", "平均偏差"), "noun");
+        assert_eq!(recipe_pos("traffic light", "信号"), "noun");
         assert_eq!(recipe_pos("sign up", "登録する"), "verb");
         assert_eq!(recipe_pos("watch", "腕時計"), "noun");
         assert_eq!(recipe_pos("watch", "じっと見る、見守る"), "verb");
@@ -3182,7 +3182,9 @@ mod tests {
     }
 
     /// A retired word's key is never another question's, and the word is no word question again
-    /// (unless it is put back, out of this list); its meaning stays in the glossary.
+    /// (unless it is put back, out of this list); its meaning stays in the glossary. A free
+    /// combination (dog bowl, words of encouragement) means no more than its words, so it may go
+    /// without an entry of its own as long as each of its words is in the dictionary.
     #[test]
     fn retired_words_stay_out_of_the_bank() {
         let retired: HashMap<String, String> = serde_json::from_str(RETIRED_WORDS_JSON).unwrap();
@@ -3192,10 +3194,18 @@ mod tests {
             assert!(!retired.contains_key(&q.key), "{} ({}) uses the key of a retired word", q.key, q.en);
         }
         let (words, _) = words_by_english();
+        let known = |w: &str| crate::util::lemmas(w).iter().any(|l| glossary.contains_key(l) || words.contains_key(l));
+        let mut lost = Vec::new();
         for (key, en) in &retired {
             assert!(!words.contains_key(&en.to_lowercase()), "{key} {en} is retired but a word question again");
-            assert!(glossary.contains_key(&en.to_lowercase()), "{key} {en}: its meaning belongs in the glossary");
+            let parts = crate::util::tokens(en);
+            let free = parts.len() > 1 && parts.iter().all(|w| known(w));
+            if !glossary.contains_key(&en.to_lowercase()) && !free {
+                lost.push(format!("{key} {en}"));
+            }
         }
+        lost.sort();
+        assert!(lost.is_empty(), "their meaning belongs in the glossary: {}", lost.join(", "));
     }
 
     /// A question taken out of the bank leaves the table at the next seed; its history stays.

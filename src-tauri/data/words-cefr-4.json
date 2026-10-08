@@ -418,7 +418,7 @@
   {"key":"w8436","kind":"word","difficulty":"high","category":"芸術・文化","group":"芸術の形容詞","en":"expressive","ja":"表現力豊かな","modes":["choice","typing","speaking"]},
   {"key":"w8437","kind":"word","difficulty":"high","category":"芸術・文化","group":"芸術の形容詞","en":"exquisite","ja":"非常に美しい、精巧な","modes":["choice","typing","speaking"]},
   {"key":"w8438","kind":"word","difficulty":"high","category":"学校・仕事","group":"ビジネスの形容詞（範囲・分野）","en":"external","ja":"外部の","modes":["choice","typing","speaking"]},
-  {"key":"w8439","kind":"word","difficulty":"high","category":"食べ物","group":"製菓材料追加2","en":"extract","ja":"抜粋、エキス","modes":["choice","typing","speaking"]},
+  {"key":"w8439","kind":"word","difficulty":"high","category":"学校・仕事","group":"ことば・文章","en":"extract","ja":"抜粋、エキス","modes":["choice","typing","speaking"]},
   {"key":"w8440","kind":"word","difficulty":"high","category":"からだ・健康","group":"体の部位","en":"eyelash","ja":"まつげ","modes":["choice","typing","speaking"]},
   {"key":"w8441","kind":"word","difficulty":"high","category":"からだ・健康","group":"体の部位","en":"eyelid","ja":"まぶた","modes":["choice","typing","speaking"]},
   {"key":"w8442","kind":"word","difficulty":"high","category":"買い物","group":"素材","en":"fabric","ja":"布地、織物","modes":["choice","typing","speaking"]},
