@@ -233,7 +233,7 @@ cd src-tauri && cargo test
 
 - **検索**: 入力した文字で**始まる**単語だけを残します（「b」なら barely・bare・beer、「bar」なら barely・bare。cab は残りません）
 - **abc順／追加日順／間違い順**: どれか1つ。もう一度押すと逆順（A→Z ⇄ Z→A、新→古 ⇄ 古→新、多→少 ⇄ 少→多）。間違い順は、復習で間違えた回数の多い順で、各行に「間違い ○回」が出ます
-- **品詞順**: 1回目で名詞 → 動詞 → 形容詞 → 副詞 → 慣用句 → 用法の順にまとめます（中の順番は abc順／追加日順に従う）。2回目からはメニューが開き、「名詞のみ」のように1つの品詞（または慣用句・用法）だけに絞れます（中の順番は abc順／追加日順／間違い順に従う）。複合語は全体の意味で分類します（traffic light は名詞、sign up は動詞）。問題集にない単語は登録した意味の形（～する・～い など）で推定します
+- **品詞順**: 1回目で名詞 → 動詞 → 形容詞 → 副詞 → 慣用句 → 用法の順にまとめます（中の順番は abc順／追加日順に従う）。品詞が2つ以上ある語は、より一般的に使う品詞の1か所に並びます（book は名詞、どちらとも言えない figure・watch は 動詞 → 形容詞 → 名詞 → 副詞 の順で動詞）。2回目からはメニューが開き、「名詞のみ」のように1つの品詞（または慣用句・用法）だけに絞れます（中の順番は abc順／追加日順／間違い順に従う）。絞り込みでは、その品詞を持つ語がすべて出ます（figure は「名詞のみ」にも「動詞のみ」にも出ます）。複合語は全体の意味で分類します（traffic light は名詞、sign up は動詞）。問題集にない単語は登録した意味の形（～する・～い など）で推定します
 
 | 復習 | 内容 | 1語正解あたり |
 | --- | --- | --- |
@@ -306,7 +306,7 @@ scripts/
 
 発音記号のデータ（`src-tauri/data/pronunciations.json`）は CMU Pronouncing Dictionary（Copyright (C) 1993-2015 Carnegie Mellon University）から作成しています。同辞書のライセンスは [src-tauri/data/cmudict-LICENSE.txt](src-tauri/data/cmudict-LICENSE.txt) を参照してください。
 
-単語問題にする語は、次の語彙表と照合して選んでいます（表そのものはリポジトリに含みません）。
+単語問題にする語は、次の語彙表と照合して選んでいます（表そのものはリポジトリに含みません。品詞が2つ以上ある語のどちらがより一般的かの順（`src-tauri/data/pos-order.json`）は、CEFR-J Wordlist の品詞別のレベルから作っています）。
 
 - CEFR-J Wordlist Version 1.5（東京外国語大学 投野由紀夫研究室。[openlanguageprofiles/olp-en-cefrj](https://github.com/openlanguageprofiles/olp-en-cefrj)）
 - TOEIC Service List 1.2（Browne, C. & Culligan, B. [newgeneralservicelist.com](https://www.newgeneralservicelist.com/toeic-service-list)、CC BY-SA 4.0）

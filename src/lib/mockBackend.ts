@@ -16,6 +16,7 @@ import relatedSeeds from "../../src-tauri/data/word-related.json";
 import confusableSets from "../../src-tauri/data/word-confusables.json";
 import verbTypes from "../../src-tauri/data/verb-types.json";
 import glossaryPosOverrides from "../../src-tauri/data/glossary-pos.json";
+import posOrder from "../../src-tauri/data/pos-order.json";
 import examBasic from "../../src-tauri/data/exam-basic.json";
 import exam600 from "../../src-tauri/data/exam-600.json";
 import exam800 from "../../src-tauri/data/exam-800.json";
@@ -238,7 +239,7 @@ const seedQuestions: SeedQuestion[] = [
   ...Object.entries(packModules)
     .filter(
       ([path]) =>
-        !/\/(questions|glossary|grammar-notes|pronunciations|word-parts|tiers|word-examples|word-usage|idiom-origins|word-related|word-pos|word-confusables|word-families|irregular-verbs|verb-types|glossary-pos|retired-words|exam-[^/]*)\.json$/.test(
+        !/\/(questions|glossary|grammar-notes|pronunciations|word-parts|tiers|word-examples|word-usage|idiom-origins|word-related|word-pos|word-confusables|word-families|irregular-verbs|verb-types|glossary-pos|retired-words|pos-order|exam-[^/]*)\.json$/.test(
           path,
         ),
     )
@@ -2195,7 +2196,7 @@ function mockDictionary(): Dictionary {
 /* ---------- お菓子作りレシピ (mirrors recipe.rs) ---------- */
 
 /** A recipe word as the mock keeps it; its part of speech is worked out when it is handed out. */
-type StoredRecipeWord = Omit<RecipeWord, "pos" | "kind" | "misses"> & { kind?: RecipeKind; misses?: number };
+type StoredRecipeWord = Omit<RecipeWord, "pos" | "poses" | "kind" | "misses"> & { kind?: RecipeKind; misses?: number };
 
 /** Mirrors db::words_by_english: each word question's meaning and part of speech, and the idioms. */
 const recipeLookup = (() => {
@@ -2234,14 +2235,27 @@ const glossaryPos = (() => {
   return out;
 })();
 
-/** Mirrors db::recipe_pos. */
-function recipePos(word: string, meaning: string): RecipePos {
+/** Mirrors db::POS_PRIORITY. */
+const POS_PRIORITY: PartOfSpeech[] = ["verb", "adjective", "noun", "adverb"];
+
+/** Mirrors db::recipe_poses: every part of speech of a saved word, the one it is sorted under first. */
+function recipePoses(word: string, meaning: string): RecipePos[] {
   const key = word.trim().toLowerCase();
+  const said: string[] = [];
   const senses = recipeLookup.words.get(key);
-  if (senses) return (senses.find(([ja]) => ja === meaning) ?? senses[0])[1];
-  if (recipeLookup.idioms.has(key)) return "idiom";
-  const own = glossaryPos[key]?.[0];
-  return own ? own[0] : posFromGloss(meaning, word);
+  if (senses) said.push(...senses.map(([, pos]) => pos));
+  else if (recipeLookup.idioms.has(key)) return ["idiom"];
+  else if (glossaryPos[key]) said.push(...glossaryPos[key].map(([pos]) => pos));
+  if (key in verbTypes) said.push("verb");
+  let found = [...new Set(said.filter((p): p is PartOfSpeech => POS_PRIORITY.includes(p as PartOfSpeech)))];
+  if (!found.length) found = [...new Set(meaningParts(meaning).map((s) => posFromGloss(s, word)))];
+  if (!found.length) found = [posFromGloss(meaning, word)];
+  const order = (posOrder as Record<string, string[]>)[key] ?? [];
+  const rank = (p: PartOfSpeech) => [order.includes(p) ? order.indexOf(p) : Infinity, POS_PRIORITY.indexOf(p)];
+  return found.sort((a, b) => {
+    const [x, y] = [rank(a), rank(b)];
+    return x[0] - y[0] || x[1] - y[1];
+  });
 }
 
 const withPos = (w: StoredRecipeWord): RecipeWord => ({
@@ -2251,7 +2265,10 @@ const withPos = (w: StoredRecipeWord): RecipeWord => ({
   misses: w.misses ?? 0,
   excludedAt: w.excludedAt ?? null,
   // Mirrors recipe::row_to_word: a pattern is sorted as a pattern.
-  pos: w.kind === "usage" ? "usage" : recipePos(w.word, w.meaning),
+  ...(() => {
+    const poses: RecipePos[] = w.kind === "usage" ? ["usage"] : recipePoses(w.word, w.meaning);
+    return { pos: poses[0], poses };
+  })(),
 });
 
 function recipeWord(id: number): StoredRecipeWord {

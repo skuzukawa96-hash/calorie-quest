@@ -577,9 +577,12 @@ pub struct RecipeWord {
     /// Set when the word was taken off the list (×): it waits in 除外中, apart from すべて, until
     /// it is put back or deleted for good.
     pub excluded_at: Option<String>,
-    /// noun / verb / adjective / adverb / idiom (`db::recipe_pos`), or usage for a pattern, for
-    /// sorting and filtering
+    /// noun / verb / adjective / adverb / idiom (`db::recipe_poses`), or usage for a pattern: the
+    /// part of speech the list sorts it under, its commonest
     pub pos: String,
+    /// every part of speech it has, `pos` first: a word of a noun and a verb (figure) shows under
+    /// either when the list is narrowed to one
+    pub poses: Vec<String>,
     /// word (a word, a phrase or an idiom) / usage (a pattern such as "compare A with B", saved
     /// from 用法; it holds 人 / 原形 / -ing and is not read aloud)
     pub kind: String,

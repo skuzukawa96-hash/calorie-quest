@@ -54,6 +54,7 @@ fn is_pack(name: &str) -> bool {
         && name != "verb-types.json"
         && name != "glossary-pos.json"
         && name != "retired-words.json"
+        && name != "pos-order.json"
         && !name.starts_with("exam-")
 }
 

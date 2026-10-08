@@ -577,8 +577,11 @@ export default function Recipe({ playMode, onProgress, toast }: Props) {
   const shown = inTab[filter];
   const found = startingWith(shown, query);
   const onlyPos = posView !== "off" && posView !== "grouped" ? posView : null;
-  const listed = ordered(onlyPos ? found.filter((w) => w.pos === onlyPos) : found, order, posView === "grouped");
-  const posCount = (pos: RecipePos) => found.filter((w) => w.pos === pos).length;
+  // One part of speech shows every word that has it (figure under 名詞 and 動詞 alike); the grouped
+  // list puts each word once, under its commonest (`pos`).
+  const listed = ordered(onlyPos ? found.filter((w) => w.poses.includes(onlyPos)) : found, order, posView === "grouped");
+  const posCount = (pos: RecipePos) => found.filter((w) => w.poses.includes(pos)).length;
+  const groupCount = (pos: RecipePos) => found.filter((w) => w.pos === pos).length;
 
   const chooseOrder = (key: Order["key"]) =>
     setOrder((o) => (o.key === key ? { key, reverse: !o.reverse } : { key, reverse: false }));
@@ -832,7 +835,7 @@ export default function Recipe({ playMode, onProgress, toast }: Props) {
                   return [
                     heading && (
                       <li key={"pos-" + w.pos} className="recipe-group">
-                        {RECIPE_POS_LABEL[w.pos]} <span>{posCount(w.pos)}</span>
+                        {RECIPE_POS_LABEL[w.pos]} <span>{groupCount(w.pos)}</span>
                       </li>
                     ),
                     <li
@@ -901,7 +904,7 @@ export default function Recipe({ playMode, onProgress, toast }: Props) {
                           {w.exampleJa && <div className="muted small">{w.exampleJa}</div>}
                           <div className="recipe-item-foot">
                             <span className="muted small">
-                              {RECIPE_POS_LABEL[w.pos]}
+                              {w.poses.map((p) => RECIPE_POS_LABEL[p]).join("・")}
                               {shownForm(w) && `・「${shownForm(w)}」から登録`}・{stamp(w.addedAt)} に追加
                               {w.reviews > 0 && `・復習 ${w.reviews}回`}
                               {w.misses > 0 && `・間違い ${w.misses}回`}

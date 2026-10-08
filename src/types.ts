@@ -601,8 +601,10 @@ export interface RecipeWord {
   misses: number;
   /** set when it was taken off the list (×): it waits in 除外中, apart from すべて */
   excludedAt?: string | null;
-  /** its part of speech, or idiom (db::recipe_pos), or usage for a pattern, for sorting and filtering the list */
+  /** the part of speech it is sorted under, its commonest, or idiom, or usage for a pattern (db::recipe_poses) */
   pos: RecipePos;
+  /** every part of speech it has, `pos` first: figure (a noun and a verb) shows under either */
+  poses: RecipePos[];
   /** word (a word, phrase or idiom) / usage (a pattern saved from 用法, never read aloud) */
   kind: RecipeKind;
 }

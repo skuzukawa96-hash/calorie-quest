@@ -59,6 +59,8 @@ const GLOSSARY_POS_JSON: &str = include_str!("../data/glossary-pos.json");
 /// what school and TOEIC ask), key → English. Their meaning stays in the glossary; the keys are
 /// never given to another question.
 const RETIRED_WORDS_JSON: &str = include_str!("../data/retired-words.json");
+/// For words of more than one part of speech, the commoner first where CEFR-J sets them apart.
+const POS_ORDER_JSON: &str = include_str!("../data/pos-order.json");
 /// A sentence for every word of the bank, shown under its answer: a sentence of the bank that uses
 /// the word in the question's sense where there is one, a sentence written for it otherwise.
 const WORD_EXAMPLES_JSON: &str = include_str!("../data/word-examples.json");
@@ -1218,22 +1220,66 @@ pub fn word_tags() -> crate::models::WordTags {
     }
 }
 
-/// The part of speech of a word saved to the recipe: an idiom is "idiom"; a word of the bank takes
-/// its question's (the one whose meaning was saved, when the same English means two things); a
-/// word of the glossary takes its own (`glossary_pos`); any other word goes by its gloss.
-pub fn recipe_pos(word: &str, meaning: &str) -> String {
+/// The parts of speech in the order the recipe prefers when nothing says which is commoner.
+const POS_PRIORITY: [&str; 4] = ["verb", "adjective", "noun", "adverb"];
+
+/// For a word of more than one part of speech, the commoner first (pos-order.json, from the levels
+/// CEFR-J gives each: book is a noun at A1 and a verb at B1). Only the words whose order is not
+/// `POS_PRIORITY`'s are written.
+fn pos_order() -> &'static HashMap<String, Vec<String>> {
+    static TABLE: std::sync::OnceLock<HashMap<String, Vec<String>>> = std::sync::OnceLock::new();
+    TABLE.get_or_init(|| serde_json::from_str(POS_ORDER_JSON).expect("data/pos-order.json must be a valid JSON object"))
+}
+
+/// Every part of speech of a word saved to the recipe, the one it is sorted under first: an idiom
+/// is "idiom"; a word of the bank has its questions' and, when it is used as a verb too
+/// (verb-types.json), verb (figure 数字 is a noun and a verb); a word of the glossary has its senses'
+/// (`glossary_pos`); any other word goes by the senses of its gloss. The commoner comes first
+/// (`pos_order`), else verb → adjective → noun → adverb.
+pub fn recipe_poses(word: &str, meaning: &str) -> Vec<String> {
     let key = word.trim().to_lowercase();
     let (words, idioms) = words_by_english();
+    let mut said: Vec<&str> = Vec::new();
     if let Some(senses) = words.get(&key) {
-        return senses.iter().find(|(ja, _)| ja == meaning).unwrap_or(&senses[0]).1.clone();
+        said.extend(senses.iter().map(|(_, pos)| pos.as_str()));
+    } else if idioms.contains(&key) {
+        return vec!["idiom".to_string()];
+    } else if let Some(senses) = glossary_pos().get(&key) {
+        said.extend(senses.iter().map(|(pos, _)| pos.as_str()));
     }
-    if idioms.contains(&key) {
-        return "idiom".to_string();
+    if verb_types().contains_key(&key) {
+        said.push("verb");
     }
-    match glossary_pos().get(&key).and_then(|senses| senses.first()) {
-        Some((pos, _)) => pos.clone(),
-        None => pos_from_gloss(meaning, word).to_string(),
+    let mut found: Vec<String> = Vec::new();
+    for pos in said {
+        if POS_PRIORITY.contains(&pos) && !found.iter().any(|p| p == pos) {
+            found.push(pos.to_string());
+        }
     }
+    if found.is_empty() {
+        for s in gloss_senses(meaning) {
+            let pos = pos_from_gloss(&s, word);
+            if !found.iter().any(|p| p == pos) {
+                found.push(pos.to_string());
+            }
+        }
+    }
+    if found.is_empty() {
+        found.push(pos_from_gloss(meaning, word).to_string());
+    }
+    let order = pos_order().get(&key);
+    let rank = |pos: &String| {
+        let common = order.and_then(|o| o.iter().position(|p| p == pos)).unwrap_or(usize::MAX);
+        (common, POS_PRIORITY.iter().position(|p| p == pos))
+    };
+    found.sort_by_key(|p| rank(p));
+    found
+}
+
+/// The part of speech the recipe sorts a saved word under (`recipe_poses`' first).
+#[cfg(test)]
+pub fn recipe_pos(word: &str, meaning: &str) -> String {
+    recipe_poses(word, meaning).swap_remove(0)
 }
 
 /// Everything the data says about a word or an idiom beyond its meaning, or None when it says
@@ -2216,6 +2262,7 @@ mod tests {
                     && n != "verb-types.json"
                     && n != "glossary-pos.json"
                     && n != "retired-words.json"
+                    && n != "pos-order.json"
                     && !n.starts_with("exam-")
             })
             .count();
@@ -3066,22 +3113,43 @@ mod tests {
         }
     }
 
-    /// A saved word is sorted by what it is: a bank word by its question (watch by the meaning
-    /// saved), an idiom as one, anything else by its gloss.
+    /// A saved word is sorted by what it is: a bank word by its questions, an idiom as one,
+    /// anything else by its gloss; a word of two is sorted under its commoner.
     #[test]
     fn recipe_words_have_a_part_of_speech() {
         assert_eq!(recipe_pos("envious", "うらやんで"), "adjective");
         assert_eq!(recipe_pos("barely", "かろうじて"), "adverb");
         assert_eq!(recipe_pos("traffic light", "信号"), "noun");
         assert_eq!(recipe_pos("sign up", "登録する"), "verb");
-        assert_eq!(recipe_pos("watch", "腕時計"), "noun");
-        assert_eq!(recipe_pos("watch", "じっと見る、見守る"), "verb");
+        // A noun and a verb at the same level: the verb.
+        assert_eq!(recipe_poses("watch", "腕時計"), ["verb", "noun"]);
+        assert_eq!(recipe_poses("figure", "数字、人の姿"), ["verb", "noun"], "used as a verb too (verb-types.json)");
+        // The commoner first: book is a noun at A1 and a verb at B1.
+        assert_eq!(recipe_poses("book", "本"), ["noun", "verb"]);
+        assert_eq!(recipe_poses("apple", "りんご"), ["noun"]);
         assert_eq!(recipe_pos("keep your fingers crossed", "幸運を祈る"), "idiom");
         assert_eq!(recipe_pos("hear", "聞く"), "verb");
         assert_eq!(recipe_pos("quickly", "すばやく"), "adverb");
         assert_eq!(pos_from_gloss("美しい", "beautiful"), "adjective");
         assert_eq!(pos_from_gloss("会議", "meeting"), "noun");
         assert_eq!(pos_from_gloss("書く", "write"), "verb");
+    }
+
+    /// pos-order.json lists words of the dictionary, each with two parts of speech or more, in an
+    /// order other than the default one (a word in that order needs no line).
+    #[test]
+    fn the_commoner_part_of_speech_is_written_for_words_of_the_dictionary() {
+        let glossary: HashMap<String, String> = serde_json::from_str(GLOSSARY_JSON).unwrap();
+        let (words, _) = words_by_english();
+        for (en, order) in pos_order() {
+            assert!(words.contains_key(en) || glossary.contains_key(en), "{en} is in no dictionary");
+            assert!(order.len() >= 2, "{en}: one part of speech needs no order");
+            assert!(order.iter().all(|p| POS_PRIORITY.contains(&p.as_str())), "{en}: {order:?}");
+            let mut by_default = order.clone();
+            by_default.sort_by_key(|p| POS_PRIORITY.iter().position(|d| d == p));
+            assert_ne!(&by_default, order, "{en}: already the default order");
+            assert_eq!(order.iter().collect::<HashSet<_>>().len(), order.len(), "{en}: twice");
+        }
     }
 
     /// An origin is written for an idiom of the bank, as a finished sentence.

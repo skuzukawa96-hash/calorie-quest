@@ -33,10 +33,12 @@ fn row_to_word(r: &Row) -> rusqlite::Result<RecipeWord> {
     let word: String = r.get(1)?;
     let meaning: String = r.get(2)?;
     let kind: String = r.get(10)?;
+    // A pattern is sorted as a pattern, whatever its verb is.
+    let poses = if kind == "usage" { vec!["usage".to_string()] } else { crate::db::recipe_poses(&word, &meaning) };
     Ok(RecipeWord {
         id: r.get(0)?,
-        // A pattern is sorted as a pattern, whatever its verb is.
-        pos: if kind == "usage" { "usage".to_string() } else { crate::db::recipe_pos(&word, &meaning) },
+        pos: poses[0].clone(),
+        poses,
         kind,
         word,
         meaning,
