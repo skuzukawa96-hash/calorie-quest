@@ -406,11 +406,12 @@ fn share_a_sense(a: &str, b: &str) -> bool {
 /// Whether two glosses may mean nearly the same: a sense in common, a kanji in common (始める /
 /// 開始する, 大きい / 巨大な) or kana senses that begin alike (ぶつかる / ぶつける). Wrong options are
 /// kept away from the answer's meaning this way, so that none is a second right answer or one
-/// only near, like 激怒した for angry (怒った). Suffix-like kanji (～的な, ～性, ～化) do not count.
+/// only near, like 激怒した for angry (怒った). Suffix-like kanji (～的な, ～性, ～化) do not count, nor
+/// those of months and days (1月 / 2月, 月曜日 / 火曜日 are the wrong options they should be).
 fn meanings_close(a: &str, b: &str) -> bool {
     let kanji = |s: &str| -> std::collections::HashSet<char> {
         s.chars()
-            .filter(|c| ('\u{4E00}'..='\u{9FFF}').contains(c) && !['的', '性', '化'].contains(c))
+            .filter(|c| ('\u{4E00}'..='\u{9FFF}').contains(c) && !['的', '性', '化', '月', '曜', '日'].contains(c))
             .collect()
     };
     if !kanji(a).is_disjoint(&kanji(b)) {

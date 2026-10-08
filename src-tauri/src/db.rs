@@ -3161,8 +3161,7 @@ mod tests {
         assert_eq!(senses("reject"), vec![("verb", "却下する")]);
         assert_eq!(senses("about"), vec![]);
         assert_eq!(senses("sincerely"), vec![("adverb", "心から")]);
-        assert_eq!(senses("spot"), vec![("noun", "場所"), ("noun", "地点"), ("verb", "見つける")]);
-        assert_eq!(senses("trick"), vec![("noun", "こつ"), ("noun", "いたずら"), ("verb", "だます")]);
+        assert_eq!(senses("buff"), vec![("noun", "愛好家"), ("verb", "磨く")]);
         assert_eq!(senses("creepy"), vec![("adjective", "不気味な"), ("adjective", "ぞっとする")]);
         assert_eq!(gloss_senses("（傷が）治る、治す"), vec!["（傷が）治る", "治す"]);
     }

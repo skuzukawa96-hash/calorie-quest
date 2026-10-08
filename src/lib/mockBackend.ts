@@ -564,7 +564,7 @@ function shareASense(a: string, b: string): boolean {
 
 /** Mirrors commands::meanings_close: a sense, a kanji or the first two kana in common. */
 function meaningsClose(a: string, b: string): boolean {
-  const kanji = (s: string) => new Set([...s].filter((c) => /[\u4e00-\u9fff]/.test(c) && !"的性化".includes(c)));
+  const kanji = (s: string) => new Set([...s].filter((c) => /[\u4e00-\u9fff]/.test(c) && !"的性化月曜日".includes(c)));
   const kb = kanji(b);
   if ([...kanji(a)].some((c) => kb.has(c))) return true;
   const sb = glossSenses(b);
