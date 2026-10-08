@@ -469,6 +469,17 @@ fn setup(conn: Connection) -> rusqlite::Result<Connection> {
             params![crate::srs::SPEAKING_REVIEW_THRESHOLD],
         )?;
     }
+    // A review answered right used to come back 3 / 7 / 14 / 30 days later; now it is done
+    // (`srs::next_state`). Reviews that were waiting only for such a return (done once, so their
+    // level is above 0) go back to the ordinary questions, once; those still missed stay.
+    if meta_get(&conn, "done_reviews_released")?.is_none() {
+        conn.execute(
+            "UPDATE learning_history SET needs_review = 0, next_due_at = NULL, review_mode = NULL
+             WHERE needs_review = 1 AND srs_level > 0",
+            [],
+        )?;
+        meta_set(&conn, "done_reviews_released", "1")?;
+    }
     conn.execute(
         "INSERT OR IGNORE INTO users (id, name, created_at) VALUES (1, 'Player', ?1)",
         params![now_ts()],
@@ -3206,6 +3217,45 @@ mod tests {
         }
         lost.sort();
         assert!(lost.is_empty(), "their meaning belongs in the glossary: {}", lost.join(", "));
+    }
+
+    /// Reviews done once used to come back days later. At the upgrade they wait no more, while
+    /// reviews still missed stay; and that happens once, not to the reviews due again later.
+    #[test]
+    fn reviews_done_once_wait_no_more_after_the_upgrade() {
+        let c = init_in_memory().unwrap();
+        let ids: Vec<i64> = c
+            .prepare("SELECT id FROM questions ORDER BY id LIMIT 2")
+            .unwrap()
+            .query_map([], |r| r.get(0))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        for (id, level) in [(ids[0], 2), (ids[1], 0)] {
+            c.execute(
+                "INSERT INTO learning_history (user_id, question_id, srs_level, needs_review, next_due_at, review_mode, last_studied_at)
+                 VALUES (1, ?1, ?2, 1, '2026-10-20', 'choice', '2026-10-01T00:00:00')",
+                params![id, level],
+            )
+            .unwrap();
+        }
+        c.execute("DELETE FROM meta WHERE key = 'done_reviews_released'", []).unwrap();
+        let c = setup(c).unwrap();
+        let waiting = |c: &Connection, id: i64| -> (i64, Option<String>) {
+            c.query_row(
+                "SELECT needs_review, next_due_at FROM learning_history WHERE question_id = ?1",
+                params![id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap()
+        };
+        assert_eq!(waiting(&c, ids[0]), (0, None), "done once: it waits no more");
+        assert_eq!(waiting(&c, ids[1]), (1, Some("2026-10-20".into())), "still missed: it stays");
+
+        c.execute("UPDATE learning_history SET needs_review = 1, next_due_at = '2026-10-20' WHERE question_id = ?1", params![ids[0]])
+            .unwrap();
+        let c = setup(c).unwrap();
+        assert_eq!(waiting(&c, ids[0]).0, 1, "a review due again after three misses stays at the next start");
     }
 
     /// A question taken out of the bank leaves the table at the next seed; its history stays.

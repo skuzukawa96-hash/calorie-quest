@@ -110,6 +110,24 @@ export function MeaningWithTags({ word, meaning }: { word: string; meaning: stri
 }
 
 /**
+ * A word's meaning as its questions put it: by its nuance when it has near synonyms, with the tags
+ * of that sense ([他] （事実・誤りを）しぶしぶ認める for admit 認める); otherwise as MeaningWithTags.
+ */
+export function CuedMeaningWithTags({ word, meaning, dict }: { word: string; meaning: string; dict?: Dictionary | null }) {
+  const data = useWordTags();
+  if (!data) return <>{meaning}</>;
+  const cue = cueFor(word, meaning, data.cues);
+  if (!cue) return <MeaningWithTags word={word} meaning={meaning} dict={dict} />;
+  const tags = tagsFor(word, meaning, data, dict?.[word.toLowerCase()]);
+  return (
+    <>
+      {tags.length > 0 && <PosTags tags={tags} />}
+      {cue}
+    </>
+  );
+}
+
+/**
  * Only the tags of a word, for a line that has its own description (類似表現, 文中の用法): the sense
  * the description is about, or every tag when the verb's senses are apart and none is meant.
  */

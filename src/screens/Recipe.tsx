@@ -4,7 +4,7 @@ import { DeleteButton } from "../components/IconButtons";
 import PencilIcon from "../components/PencilIcon";
 import { PlayModeTag } from "../components/PlayModeSwitch";
 import WordNotesPanel from "../components/WordNotes";
-import { MeaningWithTags, SlotText, useWordTags } from "../components/PosTags";
+import { CuedMeaningWithTags, MeaningWithTags, SlotText, useWordTags } from "../components/PosTags";
 import { cueFor } from "../lib/pos";
 import { api } from "../lib/api";
 import { loadDictionary, lookup, type Dictionary } from "../lib/dictionary";
@@ -401,11 +401,13 @@ function EntryText({ w, text }: { w: RecipeWord; text: string }) {
 
 /**
  * An entry's meaning: a word's with its tags in front ([名] 腕時計, [他] 承認する, [自] 走る ／ [他]
- * 経営する), a pattern's with [原] [形] [節] boxed, an idiom's as it is.
+ * 経営する), a pattern's with [原] [形] [節] boxed, an idiom's as it is. `cued`: a word with near
+ * synonyms by its nuance, as the reviews ask it (admit: [他] （事実・誤りを）しぶしぶ認める).
  */
-function EntryMeaning({ w, dict }: { w: RecipeWord; dict: Dictionary | null }) {
+function EntryMeaning({ w, dict, cued }: { w: RecipeWord; dict: Dictionary | null; cued?: boolean }) {
   if (w.kind === "usage") return <SlotText text={w.meaning} />;
   if (w.pos === "idiom") return <>{w.meaning}</>;
+  if (cued) return <CuedMeaningWithTags word={w.word} meaning={w.meaning} dict={dict} />;
   return <MeaningWithTags word={w.word} meaning={w.meaning} dict={dict} />;
 }
 
@@ -653,7 +655,7 @@ export default function Recipe({ playMode, onProgress, toast }: Props) {
           </div>
         </div>
         <p className="muted">
-          問題や解説の英単語を<b>右クリック</b>すると、ここに材料として集まります。復習は英単語の意味を4択で選ぶ「選択式」（1語 0.5 kcal）と、日本語から英語を書く「記入式」（1語 1 kcal）の2通り（同じ日に同じ単語を2回目以降に正解すると半分）で、下で選んでいるタブの単語から出題されます。「すべて」「復習中」では、正解したら「習得」（習得済みに）か「まだ」（復習中のまま）を選びます。「習得済み」「除外中」では、正解ならそのまま、間違えると復習中に戻ります。× で外した単語は「除外中」に入り、そこで × を押すと完全に削除されます。獲得したカロリーは今日のおやつ予算に入ります（小数点以下は切り捨て）。
+          問題や解説の英単語を<b>右クリック</b>すると、ここに材料として集まります。復習は英単語の意味を4択で選ぶ「選択式」（1語 0.5 kcal）と、日本語から英語を書く「記入式」（1語 1 kcal）の2通り（同じ日に同じ単語を2回目以降に正解すると半分）で、下で選んでいるタブの単語から出題されます。「すべて」「復習中」では、正解したら「習得」（習得済みに）か「まだ」（復習中のまま）を選びます。「習得済み」「除外中」では、正解ならそのまま、間違えると復習中に戻ります。× で外した単語は「除外中」に入り、そこで × を押すと完全に削除されます（復習中も、答えた後に右上の「除外」（除外中では「削除」）で外せます）。獲得したカロリーは今日のおやつ予算に入ります（小数点以下は切り捨て）。
         </p>
         <div className="row recipe-actions">
           <span className="recipe-target">
@@ -872,7 +874,7 @@ export default function Recipe({ playMode, onProgress, toast }: Props) {
                           </button>
                         )}
                         <span className={"recipe-meaning" + (w.meaning ? "" : " muted")}>
-                          {w.meaning ? <EntryMeaning w={w} dict={dict} /> : NO_MEANING}
+                          {w.meaning ? <EntryMeaning w={w} dict={dict} cued /> : NO_MEANING}
                         </span>
                         {/* Sorted by 間違い順, the count the order goes by. */}
                         {order.key === "misses" && w.misses > 0 && (
@@ -1033,11 +1035,15 @@ function RecipeReview({
   const [fractionPending, setFractionPending] = useState(false);
   const [saving, setSaving] = useState(false);
   const [cleared, setCleared] = useState(false);
+  /** words taken out with × after their answer */
+  const [removed, setRemoved] = useState(0);
   const input = useRef<HTMLInputElement>(null);
 
   const current = queue[idx];
   const finished = idx >= queue.length;
   const decides = asksDecision(target);
+  // × after an answer: to 除外中 from すべて / 復習中 / 習得済み, out of the recipe from 除外中.
+  const deletes = target === "excluded";
   // Drawn once per card: a word saved mid-review reloads the recipe, and that must not reshuffle
   // the options under the learner. Only the dictionary or the patterns' meanings arriving late
   // redraw (the first card).
@@ -1150,6 +1156,26 @@ function RecipeReview({
     [current, answered, saving, next, toast],
   );
 
+  // × after an answer: a word not worth reviewing any more goes at once, whatever the answer did
+  // to it, and the review moves on. It no longer counts among the words remembered or to try again.
+  const remove = useCallback(async () => {
+    if (!current || !answered || saving) return;
+    setSaving(true);
+    try {
+      if (deletes) await api.deleteRecipeWords([current.id]);
+      else await api.excludeRecipeWords([current.id]);
+      setRemembered((w) => w.filter((x) => x.id !== current.id));
+      setLeft((w) => w.filter((x) => x.id !== current.id));
+      setRemoved((n) => n + 1);
+      toast(deletes ? `「${current.word}」をレシピから削除しました` : `「${current.word}」を除外中に移しました`);
+      next();
+    } catch (e) {
+      toast(String(e));
+    } finally {
+      setSaving(false);
+    }
+  }, [current, answered, saving, deletes, next, toast]);
+
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (finished) return;
@@ -1196,6 +1222,11 @@ function RecipeReview({
           <span>
             {again ? "忘れていた" : "まだ"} <b>{left.length}</b>語
           </span>
+          {removed > 0 && (
+            <span>
+              {deletes ? "削除した" : "除外した"} <b>{removed}</b>語
+            </span>
+          )}
           <span className="recipe-kcal">
             おやつ予算 <b>+{earned}</b> kcal
           </span>
@@ -1242,6 +1273,22 @@ function RecipeReview({
     </div>
   ) : null;
 
+  // Up in the card's corner, away from 習得 / まだ and 次へ under the answer.
+  const removeButton = answered ? (
+    <button
+      type="button"
+      className="recipe-review-remove"
+      disabled={saving}
+      title={deletes ? "この単語をレシピから完全に削除" : "この単語をレシピから除外（もう復習しない）"}
+      onClick={() => void remove()}
+    >
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M6.5 6.5l11 11M17.5 6.5l-11 11" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" />
+      </svg>
+      {deletes ? "削除" : "除外"}
+    </button>
+  ) : null;
+
   return (
     <section className="card recipe-review">
       <div className="section-head">
@@ -1264,6 +1311,7 @@ function RecipeReview({
 
       {mode === "choice" ? (
         <div className="flash" key={current.id}>
+          {removeButton}
           <div className="prompt-label">この英語の意味は？</div>
           <button
             className="flash-word"
@@ -1306,6 +1354,7 @@ function RecipeReview({
             if (typed.trim()) void answer(typedRight(current, typed, dict), typed.trim());
           }}
         >
+          {removeButton}
           <div className="prompt-label">この意味の英語は？</div>
           <div className="flash-meaning">
             <EntryText w={current} text={asked ?? current.meaning} />

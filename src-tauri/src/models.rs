@@ -552,7 +552,6 @@ pub struct WeakQuestion {
     pub wrong_count: i64,
     pub last_score: Option<f64>,
     pub next_due: Option<String>,
-    pub srs_level: i64,
 }
 
 /// One entry of お菓子作りレシピ, the learner's own word list.

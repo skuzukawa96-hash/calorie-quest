@@ -1214,6 +1214,33 @@ button.recipe-bulk:hover:not(:disabled) {
 .related-word .usage + .usage {
   padding-top: 6px;
 }
+/* × after an answer in a recipe review, in the card's corner far from 習得 / まだ / 次へ:
+   to 除外中, or out of the recipe in 除外中 */
+.recipe-review .flash {
+  position: relative;
+}
+.recipe-review-remove {
+  position: absolute;
+  top: 4px;
+  right: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 11px 4px 8px;
+  border: 1px solid #f2c4c2;
+  border-radius: 999px;
+  background: var(--berry-bg);
+  color: var(--berry);
+  font-size: 13px;
+  cursor: pointer;
+}
+.recipe-review-remove svg {
+  width: 14px;
+  height: 14px;
+}
+.recipe-review-remove:hover:not(:disabled) {
+  border-color: var(--berry);
+}
 /* After a right answer in a recipe review: 習得 (green) or まだ (red) */
 .decide-buttons {
   gap: 10px;

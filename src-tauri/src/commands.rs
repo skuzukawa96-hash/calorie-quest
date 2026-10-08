@@ -1000,8 +1000,22 @@ pub fn record_answer(conn: &mut Connection, payload: &AnswerPayload) -> Result<A
         kcal = srs::apply_hint_penalty(scored, kcal, hints_used);
     }
     let due_on = if is_due_review { next_due.as_deref() } else { None };
+    // How often this review was missed today before (a low spoken score counts): three or more and
+    // it comes back once more 3 days after it is done.
+    let missed_today: i64 = if is_due_review && done {
+        tx.query_row(
+            "SELECT COUNT(*) FROM answer_log
+             WHERE user_id = ?1 AND question_id = ?2 AND is_review = 1 AND substr(answered_at, 1, 10) = ?3
+               AND (correct = 0 OR (mode = 'speaking' AND score < ?4))",
+            params![USER_ID, payload.question_id, today, srs::SPEAKING_REVIEW_THRESHOLD],
+            |r| r.get(0),
+        )
+        .map_err(err)?
+    } else {
+        0
+    };
     let (new_level, new_needs_review, new_next_due) =
-        srs::next_state(level, in_review, due_on, payload.correct, low_score);
+        srs::next_state(level, in_review, due_on, payload.correct, low_score, missed_today);
     // A miss is reviewed in the mode it happened in; a correct answer leaves that as it was.
     let missed_in = (!payload.correct || low_score).then(|| payload.mode.clone());
 
@@ -1452,7 +1466,7 @@ pub fn load_stats(conn: &Connection) -> CmdResult<Stats> {
 
     let weak_questions = {
         let sql = format!(
-            "SELECT {Q_COLS}, h.wrong_count, h.last_score, h.next_due_at, h.srs_level
+            "SELECT {Q_COLS}, h.wrong_count, h.last_score, h.next_due_at
              FROM learning_history h JOIN questions q ON q.id = h.question_id
              WHERE h.user_id = ?1 AND (h.needs_review = 1 OR h.wrong_count > 0)
              ORDER BY h.needs_review DESC, h.wrong_count DESC, COALESCE(h.last_score, 0) ASC LIMIT 12"
@@ -1467,7 +1481,6 @@ pub fn load_stats(conn: &Connection) -> CmdResult<Stats> {
                     wrong_count: r.get(h)?,
                     last_score: r.get(h + 1)?,
                     next_due: r.get(h + 2)?,
-                    srs_level: r.get(h + 3)?,
                 })
             })
             .map_err(err)?;
@@ -1650,7 +1663,6 @@ mod tests {
         for w in &s.weak_questions {
             assert!([word, grammar].contains(&w.question.id));
             assert_eq!(w.wrong_count, 1);
-            assert_eq!(w.srs_level, 0);
             assert_eq!(w.next_due.as_deref(), Some(date_plus(1).as_str()));
             assert!(w.last_score.is_none());
         }
@@ -1713,7 +1725,7 @@ mod tests {
     }
 
     /// The day's review: a miss pays nothing and stays until answered right; what is left carries
-    /// over; a review answered right is done and not back tomorrow, whatever it took.
+    /// over; a review answered right is done and asked no more, unless it took 3 misses that day.
     #[test]
     fn a_missed_review_stays_in_the_days_review_until_answered_right() {
         let mut c = conn();
@@ -1733,12 +1745,33 @@ mod tests {
             assert!(review.iter().any(|q| q.question.id == qid), "still in today's review");
         }
 
-        // Then right: done, ×1.5, and next seen 3 days later, not tomorrow.
+        // Then right: done, ×1.5, and not asked again (two misses are not three).
         let r = answer(&mut c, qid, "choice", true, None);
-        assert!(r.is_review && !r.stays_today);
+        assert!(r.is_review && !r.stays_today && !r.needs_review);
         assert_eq!(r.kcal_earned, 2, "1 kcal × 1.5 rounded");
-        assert_eq!(history(&c, qid), (1, 1, Some(date_plus(3))));
+        assert_eq!(history(&c, qid), (1, 0, None));
         assert_eq!(due_review_count(&c).unwrap(), 0);
+
+        // Missed three times in today's review: once right, it comes back once more 3 days later.
+        let hard = question_id(&c, "w005");
+        answer(&mut c, hard, "choice", false, None);
+        c.execute("UPDATE learning_history SET next_due_at = ?1 WHERE question_id = ?2", params![today(), hard]).unwrap();
+        for _ in 0..3 {
+            assert!(answer(&mut c, hard, "choice", false, None).stays_today);
+        }
+        let r = answer(&mut c, hard, "choice", true, None);
+        assert!(r.is_review && !r.stays_today && r.needs_review);
+        assert_eq!(r.next_due.as_deref(), Some(date_plus(3).as_str()));
+        assert_eq!(history(&c, hard), (1, 1, Some(date_plus(3))));
+        // Three days on, right at once: done for good.
+        c.execute("UPDATE learning_history SET next_due_at = ?1 WHERE question_id = ?2", params![today(), hard]).unwrap();
+        c.execute(
+            "UPDATE answer_log SET answered_at = ?1 WHERE question_id = ?2",
+            params![format!("{}T12:00:00", date_plus(-3)), hard],
+        )
+        .unwrap();
+        assert!(!answer(&mut c, hard, "choice", true, None).needs_review);
+        assert_eq!(history(&c, hard), (2, 0, None));
 
         // A sentence typed wrong in review earns none of its words.
         let sentence = question_id(&c, "p003");
@@ -1770,7 +1803,7 @@ mod tests {
         let session = session_questions(&c, "choice", "word", "all", 10).unwrap();
         assert!(session.iter().any(|q| q.question.id == mixed && q.is_review));
         assert!(!answer(&mut c, mixed, "choice", true, None).stays_today);
-        assert_eq!(history(&c, mixed).2, Some(date_plus(3)));
+        assert_eq!(history(&c, mixed), (1, 0, None));
     }
 
     #[test]
@@ -1795,7 +1828,7 @@ mod tests {
     }
 
     #[test]
-    fn due_review_pays_bonus_and_advances_level() {
+    fn due_review_pays_bonus_and_is_done() {
         let mut c = conn();
         let qid = question_id(&c, "w003");
         answer(&mut c, qid, "choice", false, None);
@@ -1809,11 +1842,10 @@ mod tests {
         assert!(served.options.contains(&served.answer));
 
         let r = answer(&mut c, qid, "choice", true, None);
-        assert!(r.is_review);
+        assert!(r.is_review && !r.needs_review);
         assert_eq!(r.kcal_earned, 2, "1 kcal x 1.5 rounded");
-        let (level, needs, due) = history(&c, qid);
-        assert_eq!((level, needs), (1, 1));
-        assert_eq!(due.as_deref(), Some(date_plus(3).as_str()));
+        assert_eq!(history(&c, qid), (1, 0, None), "done: not asked again");
+        assert_eq!(due_review_count(&c).unwrap(), 0);
     }
 
     /// A word with a known make-up carries it to the answer; other kinds never do.
@@ -1873,10 +1905,13 @@ mod tests {
         assert_eq!(t.answer, "Nice to meet you.");
         assert!(t.options.is_empty());
 
-        // Answered right in its review, it stays a typing review until it graduates.
+        // Missed three times more in its review, it comes back after it is right as a typing review.
+        for _ in 0..3 {
+            answer(&mut c, typed, "typing", false, None);
+        }
         answer(&mut c, typed, "typing", true, None);
         c.execute("UPDATE learning_history SET next_due_at = ?1", params![today()]).unwrap();
-        assert!(in_session(&c, "typing", typed).is_some());
+        assert!(in_session(&c, "typing", typed).expect("a typing review again").is_review);
         assert!(in_session(&c, "choice", typed).is_none());
     }
 

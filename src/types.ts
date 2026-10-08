@@ -551,7 +551,6 @@ export interface WeakQuestion {
   wrongCount: number;
   lastScore?: number | null;
   nextDue?: string | null;
-  srsLevel: number;
 }
 
 export interface Stats {

@@ -137,7 +137,6 @@ export default function Stats({ onChanged, toast }: Props) {
                 <th>間違い</th>
                 <th>発音スコア</th>
                 <th>次の出題</th>
-                <th>段階</th>
               </tr>
             </thead>
             <tbody>
@@ -150,8 +149,7 @@ export default function Stats({ onChanged, toast }: Props) {
                   <td>{TIER_LABEL[w.question.tier] ?? ""}</td>
                   <td>{w.wrongCount} 回</td>
                   <td>{w.lastScore != null ? Math.round(w.lastScore) : "—"}</td>
-                  <td>{w.nextDue ?? "卒業"}</td>
-                  <td>{w.srsLevel} / 5</td>
+                  <td>{w.nextDue ?? "—"}</td>
                 </tr>
               ))}
             </tbody>

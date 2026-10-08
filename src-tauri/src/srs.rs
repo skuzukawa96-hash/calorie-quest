@@ -1,8 +1,12 @@
 //! Calorie reward rules and the spaced-repetition schedule.
 use crate::util::date_plus;
 
-/// Review intervals in days, indexed by SRS level (翌日 → 3日後 → 1週間後 → 2週間後 → 1か月後).
-pub const INTERVALS: [i64; 5] = [1, 3, 7, 14, 30];
+/// A missed question comes back the next day, as a review.
+pub const RETRY_DAYS: i64 = 1;
+/// A review is done once answered right (消化) and not asked again, unless it was missed this many
+/// times that day before it was right: then it comes back once more, `HARD_REVIEW_DAYS` later.
+pub const HARD_REVIEW_MISSES: i64 = 3;
+pub const HARD_REVIEW_DAYS: i64 = 3;
 
 /// 選択問題は英単語 1 kcal、それ以外（複合語・慣用句・文法・フレーズ・例文）は 2 kcal。
 pub const KCAL_WORD_CHOICE: i64 = 1;
@@ -176,27 +180,32 @@ pub fn add_to_savings(balance: i64, saved: i64) -> (i64, i64) {
 }
 
 /// Returns (new_level, needs_review, next_due_date). `due_on` is the day a review answered as one
-/// (due today or before) was due.
+/// (due today or before) was due, and `missed_today` how often that review was missed today.
 /// - A miss (or a low pronunciation score) of any other question goes to tomorrow's review.
 /// - A miss of a due review keeps the day it was due: it stays in today's review until it is
-///   answered right, and only what is left carries over to the next day. Its level goes back to 0,
-///   so once answered right it comes back 3 days later.
-/// - A review answered right is done for now (消化): back in 3 / 7 / 14 / 30 days by its level, then
-///   never again.
-pub fn next_state(level: i64, in_review: bool, due_on: Option<&str>, correct: bool, low_score: bool) -> (i64, bool, Option<String>) {
+///   answered right, and only what is left carries over to the next day.
+/// - A review answered right is done (消化) and asked no more, unless it was missed 3 times or more
+///   that day first (`HARD_REVIEW_MISSES`): then it comes back once more 3 days later. The level
+///   counts the reviews done.
+pub fn next_state(
+    level: i64,
+    in_review: bool,
+    due_on: Option<&str>,
+    correct: bool,
+    low_score: bool,
+    missed_today: i64,
+) -> (i64, bool, Option<String>) {
     if !correct || low_score {
-        let due = due_on.map(str::to_string).unwrap_or_else(|| date_plus(INTERVALS[0]));
+        let due = due_on.map(str::to_string).unwrap_or_else(|| date_plus(RETRY_DAYS));
         return (0, true, Some(due));
     }
-    if in_review {
-        let next = level + 1;
-        if next as usize >= INTERVALS.len() {
-            (next, false, None)
-        } else {
-            (next, true, Some(date_plus(INTERVALS[next as usize])))
-        }
+    if !in_review {
+        return (level, false, None);
+    }
+    if missed_today >= HARD_REVIEW_MISSES {
+        (level + 1, true, Some(date_plus(HARD_REVIEW_DAYS)))
     } else {
-        (level, false, None)
+        (level + 1, false, None)
     }
 }
 
@@ -336,14 +345,19 @@ mod tests {
     #[test]
     fn srs_progression() {
         let tomorrow = date_plus(1);
-        assert_eq!(next_state(3, false, None, false, false), (0, true, Some(tomorrow.clone())), "a miss: tomorrow's review");
-        assert_eq!(next_state(0, false, None, true, true), (0, true, Some(tomorrow)), "a low score too");
-        let (l, r, d) = next_state(0, true, Some("2026-01-01"), true, false);
-        assert_eq!((l, r, d), (1, true, Some(date_plus(3))), "a review answered right: 3 days later");
-        assert_eq!(next_state(4, true, Some("2026-01-01"), true, false), (5, false, None), "the last one: done");
-        assert_eq!(next_state(2, false, None, true, false), (2, false, None));
+        assert_eq!(next_state(3, false, None, false, false, 0), (0, true, Some(tomorrow.clone())), "a miss: tomorrow's review");
+        assert_eq!(next_state(0, false, None, true, true, 0), (0, true, Some(tomorrow)), "a low score too");
+        assert_eq!(next_state(0, true, Some("2026-01-01"), true, false, 0), (1, false, None), "a review answered right: done");
+        assert_eq!(next_state(0, true, Some("2026-01-01"), true, false, 2), (1, false, None), "two misses first: still done");
+        assert_eq!(
+            next_state(0, true, Some("2026-01-01"), true, false, 3),
+            (1, true, Some(date_plus(3))),
+            "three misses that day: once more 3 days later"
+        );
+        assert_eq!(next_state(1, true, Some("2026-01-01"), true, false, 0), (2, false, None), "and done after that");
+        assert_eq!(next_state(2, false, None, true, false, 0), (2, false, None));
         // A missed review stays on the day it was due, so it is still due today and carries over.
-        assert_eq!(next_state(2, true, Some("2026-01-01"), false, false), (0, true, Some("2026-01-01".to_string())));
-        assert_eq!(next_state(2, true, Some("2026-01-01"), true, true), (0, true, Some("2026-01-01".to_string())));
+        assert_eq!(next_state(2, true, Some("2026-01-01"), false, false, 1), (0, true, Some("2026-01-01".to_string())));
+        assert_eq!(next_state(2, true, Some("2026-01-01"), true, true, 0), (0, true, Some("2026-01-01".to_string())));
     }
 }

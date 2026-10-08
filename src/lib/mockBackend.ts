@@ -99,6 +99,8 @@ interface Hist {
   lastStudiedAt: string;
   /** the mode it was last missed in, which its review is asked in (learning_history.review_mode) */
   reviewMode?: Mode | null;
+  /** how often its review was missed on a day (answer_log's misses with is_review that day) */
+  reviewMisses?: { date: string; count: number };
 }
 
 interface StoredConsumption extends ConsumptionEntry {
@@ -146,6 +148,8 @@ interface MockState {
   examProgress: Partial<Record<ExamLevel, { questionIds: string[]; answers: ExamAnswer[]; savedAt: string }>>;
   /** お気に入り (mirrors favorites); a study question by its `key`, as `history` is */
   favorites: StoredFavorite[];
+  /** mirrors meta done_reviews_released: reviews done once have stopped waiting to return */
+  doneReviewsReleased?: boolean;
   nextId: number;
 }
 
@@ -189,7 +193,10 @@ function tierOf(kind: string, key: string, en: string): Tier {
   if (kind === "dialogue" || kind === "expression") return "phrase";
   return "example";
 }
-const INTERVALS = [1, 3, 7, 14, 30];
+/** Mirrors srs::RETRY_DAYS, HARD_REVIEW_MISSES and HARD_REVIEW_DAYS. */
+const RETRY_DAYS = 1;
+const HARD_REVIEW_MISSES = 3;
+const HARD_REVIEW_DAYS = 3;
 /** Mirrors srs::STALE_REVIEW_DAYS. */
 const STALE_REVIEW_DAYS = RATES.staleReviewDays;
 
@@ -333,6 +340,7 @@ function freshState(): MockState {
     examSeen: {},
     examProgress: {},
     favorites: [],
+    doneReviewsReleased: true,
     nextId: 100,
   };
 }
@@ -400,6 +408,16 @@ function load(): MockState {
         examSeen: stored.examSeen ?? {},
         examProgress: stored.examProgress ?? {},
         favorites: stored.favorites ?? [],
+        // Mirrors the Rust migration: a review done once (level above 0) waits no more, once.
+        history: stored.doneReviewsReleased
+          ? stored.history
+          : Object.fromEntries(
+              Object.entries(stored.history).map(([k, h]) => [
+                k,
+                h.needsReview && h.level > 0 ? { ...h, needsReview: false, nextDue: null, reviewMode: null } : h,
+              ]),
+            ),
+        doneReviewsReleased: true,
       };
     }
   } catch {
@@ -2020,6 +2038,8 @@ function submitAnswer(p: AnswerPayload): AnswerResult {
   // A review pays ×1.5 when done and nothing until then: it stays in today's review.
   if (isDueReview) kcal = done ? Math.round(kcal * RATES.reviewMultiplier) : 0;
   if (!perWord) kcal = hintPenalty(s, kcal, hints);
+  // Mirrors record_answer's count of the review's misses today.
+  const missedToday = h.reviewMisses?.date === t ? h.reviewMisses.count : 0;
   let level = h.level;
   let needsReview = false;
   let nextDue: string | null = null;
@@ -2027,12 +2047,13 @@ function submitAnswer(p: AnswerPayload): AnswerResult {
     // Mirrors srs::next_state: a missed due review keeps the day it was due (still due today).
     level = 0;
     needsReview = true;
-    nextDue = isDueReview ? h.nextDue : datePlus(INTERVALS[0]);
+    nextDue = isDueReview ? h.nextDue : datePlus(RETRY_DAYS);
   } else if (h.needsReview) {
+    // Done (消化), unless it took 3 misses today: then once more 3 days later.
     level = h.level + 1;
-    if (level < INTERVALS.length) {
+    if (missedToday >= HARD_REVIEW_MISSES) {
       needsReview = true;
-      nextDue = datePlus(INTERVALS[level]);
+      nextDue = datePlus(HARD_REVIEW_DAYS);
     }
   }
   state.history[q.key] = {
@@ -2044,6 +2065,7 @@ function submitAnswer(p: AnswerPayload): AnswerResult {
     lastScore: p.score ?? null,
     lastStudiedAt: nowTs(),
     reviewMode: !p.correct || lowScore ? p.mode : (h.reviewMode ?? null),
+    reviewMisses: isDueReview && !done ? { date: t, count: missedToday + 1 } : h.reviewMisses,
   };
   const paid = credit(t, kcal * 8);
   const d = daily(t);
@@ -2113,7 +2135,7 @@ function getStats(): Stats {
       // A key can outlive its question if a pack is removed; drop those rather than render a hole.
       const question = questions.find((q) => q.key === key);
       if (!question) return [];
-      return [{ question, wrongCount: h.wrong, lastScore: h.lastScore, nextDue: h.nextDue, srsLevel: h.level }];
+      return [{ question, wrongCount: h.wrong, lastScore: h.lastScore, nextDue: h.nextDue }];
     })
     .sort((a, b) => b.wrongCount - a.wrongCount)
     .slice(0, 12);
