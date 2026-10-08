@@ -55,6 +55,10 @@ const VERB_TYPES_JSON: &str = include_str!("../data/verb-types.json");
 /// (trick こつ、いたずら、だます: noun, noun, verb). A glossary word in verb-types.json is a verb in
 /// the senses its gloss writes as one (estimate 見積もり、見積もる).
 const GLOSSARY_POS_JSON: &str = include_str!("../data/glossary-pos.json");
+/// Word questions taken out of the bank (moat, kiln: words of a specialist or a rare kind, beyond
+/// what school and TOEIC ask), key → English. Their meaning stays in the glossary; the keys are
+/// never given to another question.
+const RETIRED_WORDS_JSON: &str = include_str!("../data/retired-words.json");
 /// A sentence for every word of the bank, shown under its answer: a sentence of the bank that uses
 /// the word in the question's sense where there is one, a sentence written for it otherwise.
 const WORD_EXAMPLES_JSON: &str = include_str!("../data/word-examples.json");
@@ -558,6 +562,18 @@ fn seed_questions(conn: &Connection) -> rusqlite::Result<()> {
                 group, q.example, q.example_ja, q.point, tier_of(&q.kind, &q.key, &q.en),
                 word_pos().get(&q.key)
             ])?;
+        }
+        // A question taken out of the bank (a word retired from the 単語問題) leaves the table, so no
+        // session, wrong option or count finds it. Its learning history and answer log stay as they
+        // were, joined to nothing.
+        let keys: std::collections::HashSet<&str> = seed.questions.iter().map(|q| q.key.as_str()).collect();
+        let stale: Vec<i64> = {
+            let mut stmt = tx.prepare("SELECT id, key FROM questions")?;
+            let rows = stmt.query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)))?;
+            rows.filter_map(Result::ok).filter(|(_, key)| !keys.contains(key.as_str())).map(|(id, _)| id).collect()
+        };
+        for id in stale {
+            tx.execute("DELETE FROM questions WHERE id = ?1", params![id])?;
         }
     }
     meta_set(&tx, "seed_version", &seed.version.to_string())?;
@@ -2185,6 +2201,7 @@ mod tests {
                     && n != "irregular-verbs.json"
                     && n != "verb-types.json"
                     && n != "glossary-pos.json"
+                    && n != "retired-words.json"
                     && !n.starts_with("exam-")
             })
             .count();
@@ -3163,6 +3180,47 @@ mod tests {
         assert_eq!(cue_text("put on：（動作）身につける").as_deref(), Some("（動作）身につける"));
         assert_eq!(cue_text("返事をする（reply to ～）").as_deref(), Some("返事をする"));
         assert_eq!(cue_text("although とほぼ同じ"), None);
+    }
+
+    /// A retired word's key is never another question's, and the word is no word question again
+    /// (unless it is put back, out of this list); its meaning stays in the glossary.
+    #[test]
+    fn retired_words_stay_out_of_the_bank() {
+        let retired: HashMap<String, String> = serde_json::from_str(RETIRED_WORDS_JSON).unwrap();
+        let glossary: HashMap<String, String> = serde_json::from_str(GLOSSARY_JSON).unwrap();
+        let seed = load_seed();
+        for q in &seed.questions {
+            assert!(!retired.contains_key(&q.key), "{} ({}) uses the key of a retired word", q.key, q.en);
+        }
+        let (words, _) = words_by_english();
+        for (key, en) in &retired {
+            assert!(!words.contains_key(&en.to_lowercase()), "{key} {en} is retired but a word question again");
+            assert!(glossary.contains_key(&en.to_lowercase()), "{key} {en}: its meaning belongs in the glossary");
+        }
+    }
+
+    /// A question taken out of the bank leaves the table at the next seed; its history stays.
+    #[test]
+    fn a_question_out_of_the_bank_leaves_the_table() {
+        let c = init_in_memory().unwrap();
+        c.execute(
+            "INSERT INTO questions (key, kind, difficulty, en, ja, modes) VALUES ('w99999', 'word', 'low', 'moat', '堀', '[\"choice\"]')",
+            [],
+        )
+        .unwrap();
+        let id: i64 = c.query_row("SELECT id FROM questions WHERE key = 'w99999'", [], |r| r.get(0)).unwrap();
+        c.execute(
+            "INSERT INTO learning_history (user_id, question_id, correct_count, wrong_count, last_studied_at) VALUES (1, ?1, 1, 0, '2026-10-01T00:00:00')",
+            params![id],
+        )
+        .unwrap();
+        meta_set(&c, "seed_version", "0").unwrap();
+        seed_questions(&c).unwrap();
+        let left: i64 = c.query_row("SELECT COUNT(*) FROM questions WHERE key = 'w99999'", [], |r| r.get(0)).unwrap();
+        assert_eq!(left, 0);
+        let history: i64 =
+            c.query_row("SELECT COUNT(*) FROM learning_history WHERE question_id = ?1", params![id], |r| r.get(0)).unwrap();
+        assert_eq!(history, 1, "the learning history stays");
     }
 
     /// tend to with a noun after it is looking after it; with a verb, a tendency.

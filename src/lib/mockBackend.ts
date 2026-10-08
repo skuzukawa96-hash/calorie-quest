@@ -230,7 +230,7 @@ const seedQuestions: SeedQuestion[] = [
   ...Object.entries(packModules)
     .filter(
       ([path]) =>
-        !/\/(questions|glossary|grammar-notes|pronunciations|word-parts|tiers|word-examples|word-usage|idiom-origins|word-related|word-pos|word-confusables|word-families|irregular-verbs|verb-types|glossary-pos|exam-[^/]*)\.json$/.test(
+        !/\/(questions|glossary|grammar-notes|pronunciations|word-parts|tiers|word-examples|word-usage|idiom-origins|word-related|word-pos|word-confusables|word-families|irregular-verbs|verb-types|glossary-pos|retired-words|exam-[^/]*)\.json$/.test(
           path,
         ),
     )
@@ -540,7 +540,10 @@ function releaseStaleReviews() {
 }
 function dueCount(): number {
   const t = today();
-  return Object.values(state.history).filter((h) => h.needsReview && h.nextDue !== null && h.nextDue <= t).length;
+  // A key whose question left the bank (a retired word) is no review to do.
+  return Object.entries(state.history).filter(
+    ([key, h]) => h.needsReview && h.nextDue !== null && h.nextDue <= t && questions.some((q) => q.key === key),
+  ).length;
 }
 function ticketsAvailable(): number {
   return state.tickets.filter((t) => !t.usedAt).length;
