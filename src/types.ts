@@ -286,16 +286,21 @@ export const posCategory = (pos: PartOfSpeech) => `pos:${pos}`;
 export type PosTag = "自" | "他" | "名" | "形" | "副";
 
 /**
- * 自動詞・他動詞 of a verb (data/verb-types.json): the same meaning either way, or each sense with
- * its own tag when the two differ (run: [["自", "走る"], ["他", "経営する"]]).
+ * 自動詞・他動詞 of a verb (data/verb-types.json): the same meaning either way, each sense with its
+ * own tag when the two differ (run: [["自", "走る"], ["他", "経営する"]]), or the one verb sense of
+ * a word whose question is another part of speech (estimate: [["他", "見積もる"]]).
  */
-export type VerbType = "自" | "他" | "自他" | Array<["自" | "他", string]>;
+export type VerbType = "自" | "他" | "自他" | Array<["自" | "他" | "自他", string]>;
 
 /** What the tags are worked out from (commands::get_word_tags). */
 export interface WordTags {
   /** English (lowercase) → [part of speech, Japanese] of each word question with it */
   words: Record<string, Array<[PartOfSpeech, string]>>;
+  /** English (lowercase) → [part of speech, sense] of each sense of each word only the glossary has; empty: no tag */
+  glossary: Record<string, Array<[PartOfSpeech, string]>>;
   verbTypes: Record<string, VerbType>;
+  /** English (lowercase) → [group, nuance as a cue ("" when none)] of every 類似表現 group it is in */
+  cues: Record<string, Array<[number, string]>>;
 }
 
 /** Tags with the sense they are for (none when they are for the whole word). */

@@ -49,6 +49,12 @@ const IRREGULAR_VERBS_JSON: &str = include_str!("../data/irregular-verbs.json");
 /// 自動詞・他動詞 of every verb of the word questions, for the tags before a meaning: "自", "他",
 /// "自他", or each sense with its own when the two mean different things (run: 自 走る, 他 経営する).
 const VERB_TYPES_JSON: &str = include_str!("../data/verb-types.json");
+/// The words only the glossary has whose part of speech the shape of their gloss gets wrong
+/// (elastic 伸縮性のある is an adjective, not a verb), and those that take no tag ("none": about,
+/// she, could, heard): one part of speech for every sense, or one apiece in the order of the gloss
+/// (trick こつ、いたずら、だます: noun, noun, verb). A glossary word in verb-types.json is a verb in
+/// the senses its gloss writes as one (estimate 見積もり、見積もる).
+const GLOSSARY_POS_JSON: &str = include_str!("../data/glossary-pos.json");
 /// A sentence for every word of the bank, shown under its answer: a sentence of the bank that uses
 /// the word in the question's sense where there is one, a sentence written for it otherwise.
 const WORD_EXAMPLES_JSON: &str = include_str!("../data/word-examples.json");
@@ -855,6 +861,105 @@ fn related_seeds() -> &'static Vec<RelatedSeed> {
     })
 }
 
+/// A 類似表現 nuance as it is put to a question in place of the bare meaning: its first sentence,
+/// with the English in it taken out ("消えてしまいたいほど恥ずかしい（embarrassed の強い形）" is
+/// 消えてしまいたいほど恥ずかしい, "put on：（動作）身につける" is （動作）身につける). None when
+/// English is what it says ("although とほぼ同じ").
+fn cue_text(nuance: &str) -> Option<String> {
+    let first = nuance.split('。').next().unwrap_or("");
+    let first = first.rsplit_once('：').map_or(first, |(_, after)| after);
+    let mut out = String::new();
+    let mut aside = String::new();
+    let mut depth = 0;
+    for c in first.chars() {
+        match c {
+            '（' => {
+                depth += 1;
+                aside.push(c);
+            }
+            '）' if depth > 0 => {
+                depth -= 1;
+                aside.push(c);
+                if depth == 0 {
+                    if !aside.chars().any(|c| c.is_ascii_alphabetic()) {
+                        out.push_str(&aside);
+                    }
+                    aside.clear();
+                }
+            }
+            _ if depth > 0 => aside.push(c),
+            _ => out.push(c),
+        }
+    }
+    let out = out.trim().to_string();
+    (!out.is_empty() && !out.chars().any(|c| c.is_ascii_alphabetic())).then_some(out)
+}
+
+/// The senses of a gloss with its notes in （ ） left out, for telling how near two glosses are.
+fn plain_senses(ja: &str) -> Vec<String> {
+    ja.split(['、', '，', ',', '／', '/', '。'])
+        .map(|s| {
+            let mut plain = String::new();
+            let mut depth = 0;
+            for c in s.chars() {
+                match c {
+                    '（' | '(' => depth += 1,
+                    '）' | ')' => depth -= 1,
+                    _ if depth == 0 => plain.push(c),
+                    _ => {}
+                }
+            }
+            plain.trim().to_string()
+        })
+        .filter(|s| !s.is_empty())
+        .collect()
+}
+
+/// How near two glosses are: 2 with a sense in common, 1 when a sense holds the other's
+/// (認める in しぶしぶ認める), else 0. Mirrors `closeness` in src/lib/pos.ts.
+fn gloss_closeness(a: &str, b: &str) -> u8 {
+    let x = plain_senses(a);
+    let y = plain_senses(b);
+    if y.iter().any(|s| x.contains(s)) {
+        2
+    } else if y.iter().any(|s| x.iter().any(|t| t.contains(s.as_str()) || s.contains(t.as_str()))) {
+        1
+    } else {
+        0
+    }
+}
+
+/// English (lowercase) → (group, cue) of every 類似表現 group the word is in; the cue is "" when
+/// its nuance says nothing but English (`cue_text`).
+pub fn related_cues() -> &'static HashMap<String, Vec<(usize, String)>> {
+    static TABLE: std::sync::OnceLock<HashMap<String, Vec<(usize, String)>>> = std::sync::OnceLock::new();
+    TABLE.get_or_init(|| {
+        let mut out: HashMap<String, Vec<(usize, String)>> = HashMap::new();
+        for (i, g) in related_seeds().iter().enumerate() {
+            for m in &g.members {
+                out.entry(m.word.to_lowercase()).or_default().push((i, cue_text(&m.nuance).unwrap_or_default()));
+            }
+        }
+        out
+    })
+}
+
+/// What tells a word in a sense apart from its near synonyms when the question gives the Japanese
+/// only: the nuance of its 類似表現 group nearest the meaning (admit 認める: （事実・誤りを）しぶしぶ
+/// 認める). None when it is in no group in that sense, or the nuance says no more than the meaning.
+/// Mirrors `cueFor` in src/lib/pos.ts.
+pub fn cue_of(en: &str, ja: &str) -> Option<String> {
+    let mut best: Option<(&String, u8)> = None;
+    for (_, cue) in related_cues().get(&en.to_lowercase())? {
+        let c = gloss_closeness(cue, ja);
+        if !cue.is_empty() && c > best.map_or(0, |(_, b)| b) {
+            best = Some((cue, c));
+        }
+    }
+    let (cue, _) = best?;
+    (cue.trim() != ja.trim()).then(|| cue.clone())
+}
+
 /// The other words of every 類似表現 group `key` (lowercase) is in: near synonyms (study / learn,
 /// big / large / huge) and pairs told apart there (lend / borrow).
 pub fn related_words(key: &str) -> Vec<String> {
@@ -993,9 +1098,86 @@ pub fn verb_types() -> &'static HashMap<String, crate::models::VerbType> {
     TABLE.get_or_init(|| serde_json::from_str(VERB_TYPES_JSON).expect("data/verb-types.json must be a valid JSON object"))
 }
 
+/// What glossary-pos.json says of a word: one part of speech for all its senses, or one apiece.
+#[derive(Debug, serde::Deserialize)]
+#[serde(untagged)]
+enum WrittenPos {
+    Whole(String),
+    BySense(Vec<String>),
+}
+
+fn glossary_pos_overrides() -> &'static HashMap<String, WrittenPos> {
+    static TABLE: std::sync::OnceLock<HashMap<String, WrittenPos>> = std::sync::OnceLock::new();
+    TABLE.get_or_init(|| serde_json::from_str(GLOSSARY_POS_JSON).expect("data/glossary-pos.json must be a valid JSON object"))
+}
+
+/// The senses of a gloss, apart at 、 outside （ ）: "（傷が）治る、治す" is （傷が）治る and 治す.
+pub fn gloss_senses(ja: &str) -> Vec<String> {
+    let mut out = vec![String::new()];
+    let mut depth = 0;
+    for c in ja.chars() {
+        match c {
+            '（' | '(' => depth += 1,
+            '）' | ')' => depth -= 1,
+            '、' | '，' | ',' if depth == 0 => {
+                out.push(String::new());
+                continue;
+            }
+            _ => {}
+        }
+        out.last_mut().unwrap().push(c);
+    }
+    out.into_iter().map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect()
+}
+
+/// The part of speech of each sense of each word only the glossary has (not a word question), as
+/// (part of speech, sense): what glossary-pos.json writes, else what each sense looks like
+/// (`pos_from_gloss`), a sense that looks like a verb's being one when verb-types.json has the
+/// word. Empty for a word that takes no tag.
+pub fn glossary_pos() -> &'static HashMap<String, Vec<(String, String)>> {
+    static TABLE: std::sync::OnceLock<HashMap<String, Vec<(String, String)>>> = std::sync::OnceLock::new();
+    TABLE.get_or_init(|| {
+        let glossary: HashMap<String, String> =
+            serde_json::from_str(GLOSSARY_JSON).expect("data/glossary.json must be a valid JSON object");
+        let (words, _) = words_by_english();
+        glossary
+            .into_iter()
+            .filter(|(en, _)| !words.contains_key(&en.to_lowercase()))
+            .map(|(en, ja)| {
+                let key = en.to_lowercase();
+                let typed = verb_types().contains_key(&key);
+                let senses = gloss_senses(&ja);
+                let pos: Vec<(String, String)> = match glossary_pos_overrides().get(&key) {
+                    Some(WrittenPos::BySense(each)) => each.iter().cloned().zip(senses).collect(),
+                    Some(WrittenPos::Whole(none)) if none == "none" => Vec::new(),
+                    Some(WrittenPos::Whole(whole)) => senses
+                        .into_iter()
+                        .map(|s| {
+                            let pos = if typed && pos_from_gloss(&s, &en) == "verb" { "verb" } else { whole.as_str() };
+                            (pos.to_string(), s)
+                        })
+                        .collect(),
+                    None => senses
+                        .into_iter()
+                        .map(|s| {
+                            let pos = match pos_from_gloss(&s, &en) {
+                                // A verb with no 自・他 written is a slip the tests catch.
+                                "verb" if !typed => "noun",
+                                pos => pos,
+                            };
+                            (pos.to_string(), s)
+                        })
+                        .collect(),
+                };
+                (key, pos)
+            })
+            .collect()
+    })
+}
+
 /// What the tags before a meaning ([名] [形] [副] [自] [他]) are worked out from: the part of
-/// speech of each word question by its English, and the verbs' 自・他. A word only the glossary
-/// has is tagged by its gloss on screen (`pos_from_gloss`).
+/// speech of each word question by its English and of each word only the glossary has, and the
+/// verbs' 自・他.
 pub fn word_tags() -> crate::models::WordTags {
     let (words, _) = words_by_english();
     crate::models::WordTags {
@@ -1003,13 +1185,15 @@ pub fn word_tags() -> crate::models::WordTags {
             .iter()
             .map(|(en, senses)| (en.clone(), senses.iter().map(|(ja, pos)| (pos.clone(), ja.clone())).collect()))
             .collect(),
+        glossary: glossary_pos().clone(),
         verb_types: verb_types().clone(),
+        cues: related_cues().clone(),
     }
 }
 
 /// The part of speech of a word saved to the recipe: an idiom is "idiom"; a word of the bank takes
-/// its question's (the one whose meaning was saved, when the same English means two things); any
-/// other word goes by its gloss.
+/// its question's (the one whose meaning was saved, when the same English means two things); a
+/// word of the glossary takes its own (`glossary_pos`); any other word goes by its gloss.
 pub fn recipe_pos(word: &str, meaning: &str) -> String {
     let key = word.trim().to_lowercase();
     let (words, idioms) = words_by_english();
@@ -1019,7 +1203,10 @@ pub fn recipe_pos(word: &str, meaning: &str) -> String {
     if idioms.contains(&key) {
         return "idiom".to_string();
     }
-    pos_from_gloss(meaning, word).to_string()
+    match glossary_pos().get(&key).and_then(|senses| senses.first()) {
+        Some((pos, _)) => pos.clone(),
+        None => pos_from_gloss(meaning, word).to_string(),
+    }
 }
 
 /// Everything the data says about a word or an idiom beyond its meaning, or None when it says
@@ -1586,6 +1773,14 @@ fn pieces_found(pieces: &[PatternPiece], headword: &str, tokens: &[String], lemm
                 {
                     continue;
                 }
+                // And the other way round: "to" before what is no verb takes a noun, not 原形:
+                // "tended to the patients" is tend to A, not tend to 原形.
+                if matches!(first, PatternPiece::Word(ws) if ws.iter().any(|w| w == "to"))
+                    && matches!(rest.first(), Some(PatternPiece::Base))
+                    && !(j + 1 < self.tokens.len() && (self.verbs.contains(&self.tokens[j + 1]) || self.is_adverb(j + 1)))
+                {
+                    continue;
+                }
                 let mut seen_after = *after_head;
                 if head_seen && seen_after.is_none() {
                     seen_after = Some(true);
@@ -1989,6 +2184,7 @@ mod tests {
                     && n != "word-families.json"
                     && n != "irregular-verbs.json"
                     && n != "verb-types.json"
+                    && n != "glossary-pos.json"
                     && !n.starts_with("exam-")
             })
             .count();
@@ -2859,10 +3055,10 @@ mod tests {
         }
     }
 
-    /// Every verb of the word questions says whether it is 自, 他 or both, and only they do; a
-    /// verb whose 自 and 他 mean different things has one sense apiece.
+    /// Every verb of the word questions and of the glossary says whether it is 自, 他 or both, and
+    /// only they do; a verb whose 自 and 他 mean different things has one sense apiece.
     #[test]
-    fn every_verb_of_the_word_questions_has_its_type() {
+    fn every_verb_has_its_type() {
         use crate::models::VerbType;
         let (words, _) = words_by_english();
         let verbs: std::collections::HashSet<&String> =
@@ -2871,11 +3067,24 @@ mod tests {
         let mut missing: Vec<&&String> = verbs.iter().filter(|v| !types.contains_key(**v)).collect();
         missing.sort();
         assert!(missing.is_empty(), "verbs with no 自・他 in verb-types.json: {missing:?}");
-        let extra: Vec<&String> = types.keys().filter(|k| !verbs.contains(k)).collect();
-        assert!(extra.is_empty(), "verb-types.json has words that are not verbs of the word questions: {extra:?}");
+        // A word question of another part of speech may be a verb too (forecast 予報: 予報する).
+        let glossary = glossary_pos();
+        let extra: Vec<&String> = types.keys().filter(|k| !words.contains_key(*k) && !glossary.contains_key(*k)).collect();
+        assert!(extra.is_empty(), "verb-types.json has words that are neither word questions nor of the glossary: {extra:?}");
         for (word, t) in types {
             match t {
                 VerbType::Whole(t) => assert!(["自", "他", "自他"].contains(&t.as_str()), "{word}: {t} is not 自, 他 or 自他"),
+                // One sense: the verb of a word whose question is another part of speech
+                // (estimate 見積もり: 他 見積もる). Two: 自 and 他 meaning different things.
+                VerbType::BySense(senses) if senses.len() == 1 => {
+                    let (t, ja) = &senses[0];
+                    assert!(["自", "他", "自他"].contains(&t.as_str()), "{word}: {t} is not 自, 他 or 自他");
+                    assert!(!ja.trim().is_empty(), "{word}: a sense with no meaning");
+                    assert!(
+                        !words.get(word).is_some_and(|qs| qs.iter().any(|(_, pos)| pos == "verb")),
+                        "{word}: a verb question has its own sense; write 自, 他 or 自他"
+                    );
+                }
                 VerbType::BySense(senses) => {
                     assert!(
                         senses.len() == 2 && senses.iter().any(|(t, _)| t == "自") && senses.iter().any(|(t, _)| t == "他"),
@@ -2886,6 +3095,88 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// Every sense of a word only the glossary has that looks like a verb's is a verb with its 自・他
+    /// or has its part of speech written (creepy 不気味な、ぞっとする is an adjective throughout).
+    #[test]
+    fn every_word_of_the_glossary_has_its_part_of_speech() {
+        let glossary: HashMap<String, String> = serde_json::from_str(GLOSSARY_JSON).unwrap();
+        let (words, _) = words_by_english();
+        let types = verb_types();
+        let written = glossary_pos_overrides();
+        let mut unknown: Vec<&String> = glossary
+            .iter()
+            .filter(|(en, ja)| {
+                let key = en.to_lowercase();
+                !words.contains_key(&key)
+                    && gloss_senses(ja).iter().any(|s| pos_from_gloss(s, en) == "verb")
+                    && !types.contains_key(&key)
+                    && !written.contains_key(&key)
+            })
+            .map(|(en, _)| en)
+            .collect();
+        unknown.sort();
+        assert!(
+            unknown.is_empty(),
+            "verbs of the glossary with no 自・他 in verb-types.json (or a part of speech in glossary-pos.json): {unknown:?}"
+        );
+        for (key, pos) in written {
+            let ja = glossary.get(key).unwrap_or_else(|| panic!("glossary-pos.json: {key} is not in the glossary"));
+            assert!(!words.contains_key(key), "glossary-pos.json: {key} is a word question; its part of speech is in word-pos.json");
+            match pos {
+                WrittenPos::Whole(pos) => {
+                    assert!(["noun", "adjective", "adverb", "none"].contains(&pos.as_str()), "glossary-pos.json: {key}: {pos}")
+                }
+                WrittenPos::BySense(each) => {
+                    assert_eq!(each.len(), gloss_senses(ja).len(), "glossary-pos.json: {key}: one part of speech for each sense of {ja}");
+                    for pos in each {
+                        assert!(["noun", "adjective", "adverb", "verb"].contains(&pos.as_str()), "glossary-pos.json: {key}: {pos}");
+                        assert!(pos != "verb" || types.contains_key(key), "glossary-pos.json: {key} is a verb with no 自・他 in verb-types.json");
+                    }
+                }
+            }
+        }
+        let senses = |key: &str| -> Vec<(&str, &str)> {
+            glossary_pos()[key].iter().map(|(p, s)| (p.as_str(), s.as_str())).collect()
+        };
+        assert_eq!(senses("elastic"), vec![("adjective", "伸縮性のある")]);
+        assert_eq!(senses("reject"), vec![("verb", "却下する")]);
+        assert_eq!(senses("about"), vec![]);
+        assert_eq!(senses("sincerely"), vec![("adverb", "心から")]);
+        assert_eq!(senses("spot"), vec![("noun", "場所"), ("noun", "地点"), ("verb", "見つける")]);
+        assert_eq!(senses("trick"), vec![("noun", "こつ"), ("noun", "いたずら"), ("verb", "だます")]);
+        assert_eq!(senses("creepy"), vec![("adjective", "不気味な"), ("adjective", "ぞっとする")]);
+        assert_eq!(gloss_senses("（傷が）治る、治す"), vec!["（傷が）治る", "治す"]);
+    }
+
+    /// A word of a 類似表現 group is asked with its nuance, the English in it left out; a nuance that
+    /// says no more than the meaning, or only English, gives none.
+    #[test]
+    fn a_word_of_a_group_is_asked_with_its_nuance() {
+        assert_eq!(cue_of("admit", "認める").as_deref(), Some("（事実・誤りを）しぶしぶ認める"));
+        assert_eq!(cue_of("reduce", "減らす").as_deref(), Some("（数・量を）減らす"));
+        assert_eq!(cue_of("similar", "似ている"), None);
+        assert_eq!(cue_of("though", "けれども"), None);
+        assert_eq!(cue_of("apple", "りんご"), None);
+        assert_eq!(cue_text("消えてしまいたいほど恥ずかしい（embarrassed の強い形）").as_deref(), Some("消えてしまいたいほど恥ずかしい"));
+        assert_eq!(cue_text("put on：（動作）身につける").as_deref(), Some("（動作）身につける"));
+        assert_eq!(cue_text("返事をする（reply to ～）").as_deref(), Some("返事をする"));
+        assert_eq!(cue_text("although とほぼ同じ"), None);
+    }
+
+    /// tend to with a noun after it is looking after it; with a verb, a tendency.
+    #[test]
+    fn tend_to_a_noun_is_looking_after_it() {
+        let patterns = |s: &str| -> Vec<String> {
+            used_words(&[s.to_string()])
+                .into_iter()
+                .filter(|w| w.word == "tend")
+                .flat_map(|w| w.usages.into_iter().map(|u| u.pattern))
+                .collect()
+        };
+        assert_eq!(patterns("The nurse tended to the patients."), vec!["tend to A"]);
+        assert_eq!(patterns("Prices tend to rise in spring."), vec!["tend to 原形"]);
     }
 
     #[test]

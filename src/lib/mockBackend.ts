@@ -15,11 +15,12 @@ import wordPos from "../../src-tauri/data/word-pos.json";
 import relatedSeeds from "../../src-tauri/data/word-related.json";
 import confusableSets from "../../src-tauri/data/word-confusables.json";
 import verbTypes from "../../src-tauri/data/verb-types.json";
+import glossaryPosOverrides from "../../src-tauri/data/glossary-pos.json";
 import examBasic from "../../src-tauri/data/exam-basic.json";
 import exam600 from "../../src-tauri/data/exam-600.json";
 import exam800 from "../../src-tauri/data/exam-800.json";
 import { expandDictionary, lemmas, tokenize, type Dictionary } from "./dictionary";
-import { posFromGloss } from "./pos";
+import { cueFor, cueText, meaningParts, posFromGloss } from "./pos";
 import { answerWordCount, CLEAR_SCORE, hintPenalty, kcalFor, scoredKind, scoresPerWord } from "./scoring";
 import { exampleSentence, sentences } from "./sentences";
 import type {
@@ -229,7 +230,7 @@ const seedQuestions: SeedQuestion[] = [
   ...Object.entries(packModules)
     .filter(
       ([path]) =>
-        !/\/(questions|glossary|grammar-notes|pronunciations|word-parts|tiers|word-examples|word-usage|idiom-origins|word-related|word-pos|word-confusables|word-families|irregular-verbs|verb-types|exam-[^/]*)\.json$/.test(
+        !/\/(questions|glossary|grammar-notes|pronunciations|word-parts|tiers|word-examples|word-usage|idiom-origins|word-related|word-pos|word-confusables|word-families|irregular-verbs|verb-types|glossary-pos|exam-[^/]*)\.json$/.test(
           path,
         ),
     )
@@ -628,6 +629,20 @@ function relatedWords(key: string): string[] {
 type Distractor = [ja: string, en: string];
 
 /** Mirrors commands::word_distractors: wrong meanings of the same part of speech. */
+let relatedCuesCache: Record<string, Array<[number, string]>> | null = null;
+
+/** Mirrors db::related_cues: each word's 類似表現 groups, with its nuance as a cue. */
+function relatedCues(): Record<string, Array<[number, string]>> {
+  if (!relatedCuesCache) {
+    const out: Record<string, Array<[number, string]>> = {};
+    (relatedSeeds as Array<{ members: Array<{ word: string; nuance: string }> }>).forEach((g, i) => {
+      for (const m of g.members) (out[m.word.toLowerCase()] ??= []).push([i, cueText(m.nuance) ?? ""]);
+    });
+    relatedCuesCache = out;
+  }
+  return relatedCuesCache;
+}
+
 function wordDistractors(q: Question): Distractor[] | null {
   const pos = posOf[q.key];
   if (!pos) return null;
@@ -658,6 +673,15 @@ function wordDistractors(q: Question): Distractor[] | null {
     }
   };
   take((c) => confused.includes(c.en.toLowerCase()), true, 2);
+  // Mirrors the Rust side: an answer asked with its nuance among others with theirs.
+  if (cueFor(q.en, q.ja, relatedCues())) {
+    const cued = (c: Question) => !!cueFor(c.en, c.ja, relatedCues());
+    take((c) => cued(c) && spelledAlike(c.en, q.en), false, 2);
+    take((c) => cued(c) && c.group === q.group, false, 3);
+    take((c) => cued(c) && c.category === q.category, false, 3);
+    take((c) => cued(c) && c.tier === q.tier, false, 3);
+    take(cued, false, 3);
+  }
   take((c) => spelledAlike(c.en, q.en), false, 2);
   take((c) => c.group === q.group, false, 3);
   take((c) => c.category === q.category, false, 3);
@@ -1344,6 +1368,15 @@ function piecesFound(pieces: Piece[], headword: string, tokens: string[], lemmaL
         j + 1 < tokens.length &&
         baseVerbs.has(tokens[j + 1]) &&
         !NOUNS_AFTER_TO.includes(tokens[j + 1])
+      ) {
+        continue;
+      }
+      // And "to" before what is no verb takes a noun, not 原形: "tended to the patients".
+      if (
+        first.kind === "word" &&
+        first.words.includes("to") &&
+        next?.kind === "base" &&
+        !(j + 1 < tokens.length && (baseVerbs.has(tokens[j + 1]) || isAdverb(tokens[j + 1])))
       ) {
         continue;
       }
@@ -2146,13 +2179,39 @@ const recipeLookup = (() => {
   return { words, idioms };
 })();
 
+/**
+ * Mirrors db::glossary_pos: each sense of each word only the glossary has, with its part of speech
+ * as glossary-pos.json writes it or as it looks, a verb's sense a verb when it has a type.
+ */
+const glossaryPos = (() => {
+  const out: Record<string, Array<[PartOfSpeech, string]>> = {};
+  const written = glossaryPosOverrides as Record<string, string | string[]>;
+  for (const [en, ja] of Object.entries(glossary as Record<string, string>)) {
+    const key = en.toLowerCase();
+    if (recipeLookup.words.has(key)) continue;
+    const typed = key in verbTypes;
+    const senses = meaningParts(ja);
+    const own = written[key];
+    if (Array.isArray(own)) out[key] = senses.map((s, i) => [own[i] as PartOfSpeech, s]);
+    else if (own === "none") out[key] = [];
+    else
+      out[key] = senses.map((s) => {
+        const shape = posFromGloss(s, en);
+        if (shape === "verb") return [typed ? "verb" : ((own as PartOfSpeech) ?? "noun"), s];
+        return [(own as PartOfSpeech) ?? shape, s];
+      });
+  }
+  return out;
+})();
+
 /** Mirrors db::recipe_pos. */
 function recipePos(word: string, meaning: string): RecipePos {
   const key = word.trim().toLowerCase();
   const senses = recipeLookup.words.get(key);
   if (senses) return (senses.find(([ja]) => ja === meaning) ?? senses[0])[1];
   if (recipeLookup.idioms.has(key)) return "idiom";
-  return posFromGloss(meaning, word);
+  const own = glossaryPos[key]?.[0];
+  return own ? own[0] : posFromGloss(meaning, word);
 }
 
 const withPos = (w: StoredRecipeWord): RecipeWord => ({
@@ -2423,10 +2482,10 @@ export async function mockInvoke<T>(cmd: string, args: Record<string, unknown>):
     case "get_pronunciations":
       return pronunciations as T;
     case "get_word_tags": {
-      // Mirrors db::word_tags: each word question's part of speech by its English, and the verbs' 自・他.
+      // Mirrors db::word_tags: each word question's and glossary word's part of speech, and the verbs' 自・他.
       const words: WordTags["words"] = {};
       for (const [en, senses] of recipeLookup.words) words[en] = senses.map(([ja, pos]) => [pos, ja]);
-      return { words, verbTypes: verbTypes as unknown as WordTags["verbTypes"] } as T;
+      return { words, glossary: glossaryPos, verbTypes: verbTypes as unknown as WordTags["verbTypes"], cues: relatedCues() } as T;
     }
     case "get_idioms": {
       // Mirrors db::idiom_keys: idioms, minus any English that is also a vocabulary item.

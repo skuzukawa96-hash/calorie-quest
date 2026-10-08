@@ -688,5 +688,10 @@ pub enum VerbType {
 pub struct WordTags {
     /// English (lowercase) → (part of speech, Japanese) of each word question with it
     pub words: std::collections::HashMap<String, Vec<(String, String)>>,
+    /// English (lowercase) → (part of speech, sense) of each sense of each word only the glossary
+    /// has; empty for a word that takes no tag
+    pub glossary: std::collections::HashMap<String, Vec<(String, String)>>,
     pub verb_types: std::collections::HashMap<String, VerbType>,
+    /// English (lowercase) → (group, nuance as a cue) of every 類似表現 group it is in (see `db::cue_of`)
+    pub cues: std::collections::HashMap<String, Vec<(usize, String)>>,
 }

@@ -922,6 +922,7 @@
 {"word": "tell", "pattern": "tell 人 to 原形", "ja": "（人）に～するよう言う", "example": "My mother told me to clean my room.", "exampleJa": "母は私に部屋を片付けるよう言った。"},
 {"word": "tell", "pattern": "tell A from B", "ja": "AとBを見分ける", "example": "Can you tell the twins apart? I can't tell one from the other.", "exampleJa": "その双子を見分けられる？ 私にはどちらがどちらか分からない。"},
 {"word": "tend", "pattern": "tend to 原形", "ja": "～する傾向がある", "example": "He tends to talk too much.", "exampleJa": "彼は話しすぎる傾向がある。"},
+{"word": "tend", "pattern": "tend to A", "ja": "Aの世話をする、Aに対応する", "example": "She tended to her sick mother all night.", "exampleJa": "彼女は一晩中、病気の母親の世話をした。"},
 {"word": "terrible", "pattern": "be terrible at A", "ja": "Aがひどく下手だ", "example": "I'm terrible at drawing.", "exampleJa": "私は絵を描くのがひどく下手だ。"},
 {"word": "terrified", "pattern": "be terrified of A", "ja": "Aをひどく怖がる", "example": "She is terrified of heights.", "exampleJa": "彼女は高い所がひどく怖い。"},
 {"word": "thank", "pattern": "thank 人 for A", "ja": "（人）にAのことで感謝する", "example": "Thank you for your help.", "exampleJa": "手伝ってくれてありがとう。"},

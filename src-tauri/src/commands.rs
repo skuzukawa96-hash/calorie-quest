@@ -529,6 +529,16 @@ fn word_distractors(conn: &Connection, q: &Question) -> rusqlite::Result<Option<
         }
     };
     take(&|c| confused.contains(&c.en.to_lowercase()), true, 2);
+    // An answer asked with its nuance (（事実・誤りを）しぶしぶ認める for admit) is set among others
+    // with theirs where there are any, so that it is not the one option that looks different.
+    if db::cue_of(&q.en, &q.ja).is_some() {
+        let cued = |c: &Candidate| db::cue_of(&c.en, &c.ja).is_some();
+        take(&|c| cued(c) && spelled_alike(&c.en, &q.en), false, 2);
+        take(&|c| cued(c) && c.group == q.group, false, 3);
+        take(&|c| cued(c) && c.category == q.category, false, 3);
+        take(&|c| cued(c) && c.tier == q.tier, false, 3);
+        take(&|c| cued(c), false, 3);
+    }
     take(&|c| spelled_alike(&c.en, &q.en), false, 2);
     take(&|c| c.group == q.group, false, 3);
     take(&|c| c.category == q.category, false, 3);

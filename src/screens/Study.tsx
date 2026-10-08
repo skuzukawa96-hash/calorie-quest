@@ -5,7 +5,7 @@ import IpaLine from "../components/IpaLine";
 import PronunciationTips, { HighlightedText } from "../components/PronunciationTips";
 import { PlayModeTag } from "../components/PlayModeSwitch";
 import WordNotesPanel from "../components/WordNotes";
-import { MeaningWithTags } from "../components/PosTags";
+import { MeaningWithTags, useAskedMeaning, useOptionLabels } from "../components/PosTags";
 import { PHONEMES } from "../lib/phonemes";
 import { loadPronunciations, type Pronunciations } from "../lib/pronunciation";
 import { api, runningInTauri } from "../lib/api";
@@ -638,6 +638,7 @@ function ChoiceCard({
   // already, so no hover meanings.
   const canSave = q.question.kind === "word" || q.question.kind === "idiom";
   const canSpeak = isTtsSupported();
+  const labels = useOptionLabels(q);
   const sayOption = (i: number, en: string) => {
     setSaying(i);
     speak(en)
@@ -669,7 +670,7 @@ function ChoiceCard({
             <>
               <span className="option-num">{i + 1}</span>
               <span className="option-text">
-                <span>{opt}</span>
+                <span>{labels[i]}</span>
                 {en && (
                   <span className={"option-en" + (enBelow ? " below" : "")} lang="en">
                     {canSave ? <GlossedText text={en} dict={dict} enabled={false} context="" speakOnClick={false} /> : en}
@@ -730,6 +731,8 @@ function TypingCard({
   // Switching the setting mid-question applies to this question too.
   useEffect(() => setShowHint(hintAlways), [hintAlways]);
 
+  // A word with near synonyms is asked with its nuance: （事実・誤りを）しぶしぶ認める is admit.
+  const asked = useAskedMeaning(q);
   const hintWords = q.answer.split(" ");
   // 文の記入問題は1語 1 kcal、開示した語1つにつき −1 kcal。英単語は1語でも開示すると 0 kcal、
   // 複合語・慣用句は開示1語ごとに半分（srs::apply_hint_penalty）。
@@ -745,7 +748,7 @@ function TypingCard({
       }}
     >
       <div className="prompt-label">日本語に合う英語を入力しよう</div>
-      <div className="prompt">{q.display}</div>
+      <div className="prompt">{asked}</div>
       {q.subDisplay && <div className="muted">{q.subDisplay}</div>}
       <input
         ref={ref}
@@ -829,6 +832,7 @@ function ListeningCard({
   const [playing, setPlaying] = useState(false);
   const [plays, setPlays] = useState(0);
   const isDialogue = q.question.kind === "dialogue";
+  const labels = useOptionLabels(q);
 
   const play = useCallback(() => {
     setPlaying(true);
@@ -886,7 +890,7 @@ function ListeningCard({
           return (
             <button key={opt + i} className={cls} disabled={disabled} onClick={() => onAnswer(opt)}>
               <span className="option-num">{i + 1}</span>
-              <span>{opt}</span>
+              <span>{labels[i]}</span>
             </button>
           );
         })}

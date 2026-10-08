@@ -1,8 +1,8 @@
 import { Fragment, useEffect, useState, type ReactNode } from "react";
 import { api } from "../lib/api";
-import { sharesSense, tagSenses, tagsFor } from "../lib/pos";
+import { cueFor, tagMeaning, tagsFor } from "../lib/pos";
 import type { Dictionary } from "../lib/dictionary";
-import type { PosTag, WordTags } from "../types";
+import type { PosTag, SessionQuestion, WordTags } from "../types";
 
 let cached: WordTags | null = null;
 let loading: Promise<WordTags> | null = null;
@@ -37,6 +37,34 @@ export function useWordTags(): WordTags | null {
   return data;
 }
 
+/**
+ * The Japanese of a word question's options as they are put: when the answer has a nuance that
+ * tells it from its near synonyms (admit: （事実・誤りを）しぶしぶ認める), each option with one shows
+ * its own, so the answer is not the one that looks different. Answering still goes by the plain
+ * option.
+ */
+export function useOptionLabels(q: SessionQuestion): string[] {
+  const data = useWordTags();
+  if (!data || q.question.kind !== "word" || q.options.length !== q.optionEn.length) return q.options;
+  if (!cueFor(q.question.en, q.question.ja, data.cues)) return q.options;
+  return q.options.map((opt, i) =>
+    opt === q.answer ? (cueFor(q.question.en, q.question.ja, data.cues) ?? opt) : (cueFor(q.optionEn[i], opt, data.cues) ?? opt),
+  );
+}
+
+/** A word question's Japanese as it is asked to be written in English: with its nuance when it has one. */
+export function useAskedMeaning(q: SessionQuestion): string {
+  const data = useWordTags();
+  if (!data || q.question.kind !== "word") return q.display;
+  return cueFor(q.question.en, q.question.ja, data.cues) ?? q.display;
+}
+
+/** A meaning put to a question with its nuance when the word has one (the recipe's own words). */
+export function useCue(word: string, meaning: string): string | undefined {
+  const data = useWordTags();
+  return data ? cueFor(word, meaning, data.cues) : undefined;
+}
+
 const TAG_TITLE: Record<PosTag, string> = { 自: "自動詞", 他: "他動詞", 名: "名詞", 形: "形容詞", 副: "副詞" };
 
 /** Boxed tags: [自] [他] [名] [形] [副]. */
@@ -53,44 +81,25 @@ export function PosTags({ tags }: { tags: PosTag[] }) {
 }
 
 /**
- * A word's meaning with its tags in front: [他] 承認する. A verb whose 自 and 他 mean different
- * things shows each sense with its own: [自] 走る ／ [他] 経営する (the meaning on screen first,
- * the other after it when the meaning holds only one).
+ * A word's meaning with its tags in front, sense by sense: [他] 承認する, [名] 場所、地点 ／ [他]
+ * 見つける, [自] 走る ／ [他] 経営する. A verb sense the meaning leaves out comes after it, quieter
+ * (estimate 見積もり ／ [他] 見積もる). The dictionary is unused now the data has every word.
  */
-export function MeaningWithTags({ word, meaning, dict }: { word: string; meaning: string; dict?: Dictionary | null }) {
+export function MeaningWithTags({ word, meaning }: { word: string; meaning: string; dict?: Dictionary | null }) {
   const data = useWordTags();
   if (!data) return <>{meaning}</>;
-  const senses = tagSenses(word, meaning, data, dict?.[word.toLowerCase()]);
-  if (!senses.length) return <>{meaning}</>;
-  if (senses.length === 1 || senses.some((s) => !s.ja)) {
-    return (
-      <>
-        <PosTags tags={senses.flatMap((s) => s.tags)} />
-        {meaning}
-      </>
-    );
-  }
-  // Senses apart: all of them in place of the meaning when it holds them all.
-  if (senses.every((s) => sharesSense(s.ja ?? "", meaning))) {
-    return (
-      <>
-        {senses.map((s, i) => (
-          <Fragment key={i}>
-            {i > 0 && <span className="pos-sense-sep"> ／ </span>}
-            <PosTags tags={s.tags} />
-            {s.ja}
-          </Fragment>
-        ))}
-      </>
-    );
-  }
-  const [own, ...others] = senses;
+  const { groups, others } = tagMeaning(word, meaning, data);
   return (
     <>
-      <PosTags tags={own.tags} />
-      {meaning}
+      {groups.map((g, i) => (
+        <Fragment key={i}>
+          {i > 0 && <span className="pos-sense-sep"> ／ </span>}
+          {g.tags.length > 0 && <PosTags tags={g.tags} />}
+          {g.ja}
+        </Fragment>
+      ))}
       {others.map((s, i) => (
-        <span key={i} className="pos-other-sense">
+        <span key={`o${i}`} className="pos-other-sense">
           {" ／ "}
           <PosTags tags={s.tags} />
           {s.ja}

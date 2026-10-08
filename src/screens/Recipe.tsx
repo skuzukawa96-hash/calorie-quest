@@ -4,7 +4,8 @@ import { DeleteButton } from "../components/IconButtons";
 import PencilIcon from "../components/PencilIcon";
 import { PlayModeTag } from "../components/PlayModeSwitch";
 import WordNotesPanel from "../components/WordNotes";
-import { MeaningWithTags, SlotText } from "../components/PosTags";
+import { MeaningWithTags, SlotText, useWordTags } from "../components/PosTags";
+import { cueFor } from "../lib/pos";
 import { api } from "../lib/api";
 import { loadDictionary, lookup, type Dictionary } from "../lib/dictionary";
 import { onRecipeChanged } from "../lib/recipe";
@@ -248,7 +249,49 @@ function dictionaryMeanings(dict: Dictionary): string[] {
  * option is right. Two come from the learner's own recipe when it has them, the rest from the
  * dictionary, preferring glosses of a similar length so the answer does not stand out.
  */
-function meaningOptions(word: RecipeWord, words: RecipeWord[], dict: Dictionary | null, usagePool: string[]): string[] {
+/** Each word's 類似表現 groups with its nuance as a cue (WordTags.cues). */
+type Cues = Record<string, Array<[number, string]>>;
+
+/** English → its gloss, the other way round: whose meaning an option of the dictionary is. */
+const glossOwners = new WeakMap<Dictionary, Map<string, string>>();
+function ownerOf(dict: Dictionary | null, gloss: string): string | undefined {
+  if (!dict) return undefined;
+  let owners = glossOwners.get(dict);
+  if (!owners) {
+    owners = new Map();
+    for (const [en, ja] of Object.entries(dict)) if (!owners.has(ja)) owners.set(ja, en);
+    glossOwners.set(dict, owners);
+  }
+  return owners.get(gloss);
+}
+
+/** The English an option of a word's review stands for: a word of the recipe, else the dictionary's. */
+function optionEnglish(meaning: string, words: RecipeWord[], dict: Dictionary | null): string | undefined {
+  return words.find((w) => w.kind !== "usage" && w.meaning === meaning)?.word ?? ownerOf(dict, meaning);
+}
+
+/**
+ * The options of a word's review as they are put: when the word has a nuance that tells it from its
+ * near synonyms (admit: （事実・誤りを）しぶしぶ認める), every option with one shows its own.
+ */
+function optionLabels(word: RecipeWord, options: string[], words: RecipeWord[], dict: Dictionary | null, cues: Cues | null): string[] {
+  if (!cues || word.kind === "usage") return options;
+  const own = cueFor(word.word, word.meaning, cues);
+  if (!own) return options;
+  return options.map((o) => {
+    if (o === word.meaning) return own;
+    const en = optionEnglish(o, words, dict);
+    return (en && cueFor(en, o, cues)) || o;
+  });
+}
+
+function meaningOptions(
+  word: RecipeWord,
+  words: RecipeWord[],
+  dict: Dictionary | null,
+  usagePool: string[],
+  cues: Cues | null,
+): string[] {
   const picked: string[] = [];
   const taken = new Set(senses(word.meaning));
   const len = word.meaning.length;
@@ -273,6 +316,21 @@ function meaningOptions(word: RecipeWord, words: RecipeWord[], dict: Dictionary 
     return shuffled([...picked, word.meaning]);
   }
   const own = words.filter((w) => w.id !== word.id && w.kind !== "usage" && w.meaning).map((w) => w.meaning);
+  // A word asked with its nuance is set among words with theirs, from other 類似表現 groups than
+  // its own (whose words are its near synonyms), so that it is not the one option that looks different.
+  if (cues && cueFor(word.word, word.meaning, cues)) {
+    const groups = new Set((cues[word.word.toLowerCase()] ?? []).map(([g]) => g));
+    const apart = (en: string) => !(cues[en.toLowerCase()] ?? []).some(([g]) => groups.has(g));
+    const cuedOwn = words
+      .filter((w) => w.id !== word.id && w.kind !== "usage" && w.meaning && apart(w.word) && cueFor(w.word, w.meaning, cues))
+      .map((w) => w.meaning);
+    const cuedDict = Object.keys(cues)
+      .filter((en) => dict?.[en] && apart(en) && cueFor(en, dict[en], cues))
+      .map((en) => dict![en]);
+    take(cuedOwn, 2, near);
+    take(cuedDict, 3, near);
+    take(cuedDict, 3);
+  }
   take(own, 2, near);
   if (dict) {
     take(dictionaryMeanings(dict), 3, near);
@@ -983,11 +1041,20 @@ function RecipeReview({
   // Drawn once per card: a word saved mid-review reloads the recipe, and that must not reshuffle
   // the options under the learner. Only the dictionary or the patterns' meanings arriving late
   // redraw (the first card).
+  const tags = useWordTags();
+  const cues = tags?.cues ?? null;
   const options = useMemo(
-    () => (current && mode === "choice" ? meaningOptions(current, words, dict, usagePool) : []),
+    () => (current && mode === "choice" ? meaningOptions(current, words, dict, usagePool, cues) : []),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [current, mode, dict === null, usagePool.length === 0],
+    [current, mode, dict === null, usagePool.length === 0, cues === null],
   );
+  const labels = useMemo(
+    () => (current ? optionLabels(current, options, words, dict, cues) : options),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [options, cues === null],
+  );
+  // A word with near synonyms is asked to be written from its nuance: （事実・誤りを）しぶしぶ認める.
+  const asked = current && current.kind !== "usage" && cues ? (cueFor(current.word, current.meaning, cues) ?? current.meaning) : current?.meaning;
   const gapped = useMemo(() => (current ? withGap(current) : null), [current]);
   // The same explanation a word question shows under its answer: how the word is built, sentences
   // and patterns using it, an idiom's origin. Fetched with the card, shown once it is answered.
@@ -1222,7 +1289,7 @@ function RecipeReview({
                 >
                   <span className="option-num">{i + 1}</span>
                   <span>
-                    <EntryText w={current} text={opt} />
+                    <EntryText w={current} text={labels[i] ?? opt} />
                   </span>
                 </button>
               );
@@ -1241,7 +1308,7 @@ function RecipeReview({
         >
           <div className="prompt-label">この意味の英語は？</div>
           <div className="flash-meaning">
-            <EntryText w={current} text={current.meaning} />
+            <EntryText w={current} text={asked ?? current.meaning} />
           </div>
           {current.kind === "usage" && (
             <div className="muted small">
