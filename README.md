@@ -136,7 +136,7 @@ cd src-tauri && cargo test
 - 文法問題は回答後に、空欄を埋めた完成文とその文法ポイントの解説が表示されます。
 - 英単語は、接頭辞・語根・接尾辞に分けると覚えやすい語（699語）なら、回答後の正解の下に **成り立ち** が出ます（例: 接頭辞 de-「下へ」＋ 語根 press「押す」＋ 接尾辞 -ion「〜すること」→ depression「うつ病」）。分け方は1語ずつ確かめて書いたもので、mother を moth＋-er と分けるような機械的な誤りはありません。語源がはっきりしない語や、分けるとかえって誤解を招く語は分けていません。
 - 成り立ちの部品のうち、同じ意味で使われている語がほかにもあるもの（点線の枠に ▸ が付いた部品、82グループ）は、クリックすると **関連語** が開きます。1つの部品につき原則3語まで（spect「見る」だけは4語）で、それぞれの成り立ち（共通の部品を色付き）・訳・共通点が短く出ます（例: confident の fid「信じる」→ confidence「信じる気持ち」・confidential「信頼した人にだけ明かす」、equilibrium の libr「天秤」→ deliberate「天秤で量るようによく考える」）。語源（ラテン語 fidere「信じる」など）は事実だけを書き、語呂合わせは載せていません。同じつづりでも意味が違う部品（connect の con-「共に」と confident の con-「すっかり」）は別に扱い、適切な関連語のない部品は押せません。関連語は閉じた状態から始まるので、解説が長くなることはありません。
-- 英単語は回答後に、その単語を使った **例文**（全6,119語。問題集にその意味で使っている文があればそれを、なければ新しく書いた文）が出ます。前置詞などと組み合わせて使う動詞・形容詞・副詞（793語）には **用法** も出ます（visit A「to は付けない」、be supposed to [原]、almost all A「almost people とは言わない」、go abroad など）。句動詞は、その動詞の用法のうち句動詞で始まるもの（look forward to なら「look forward to A／-ing」）が出ます。用法が複数ある語はそれぞれに例文が付きます（例: [compare A with B：AとBを比較する] We compared the new model with the previous model. ／ [compare A to B：AをBに例える] He compared his life to a journey. ／ [be/feel envious of A：Aをうらやましく思う]）。用法の書き方は、名詞が入る部分が「A」（2つあれば A と B）、人なら「人」、動名詞なら「-ing」で、動詞の原形・形容詞・節は四角の [原] [形] [節] で示します（too [形] to [原]、I'm afraid (that) [節]）。いくつかの形が入るときは「look forward to A／-ing」のように「／」で並べ、「dance to A：A（音楽）に合わせて踊る」のように何が入るかを訳に添えます。例文の 🔊 で読み上げられます。
+- 英単語は回答後に、その単語を使った **例文**（全8,862語。問題集にその意味で使っている文があればそれを、なければ新しく書いた文）が出ます。前置詞などと組み合わせて使う動詞・形容詞・副詞（793語）には **用法** も出ます（visit A「to は付けない」、be supposed to [原]、almost all A「almost people とは言わない」、go abroad など）。句動詞は、その動詞の用法のうち句動詞で始まるもの（look forward to なら「look forward to A／-ing」）が出ます。用法が複数ある語はそれぞれに例文が付きます（例: [compare A with B：AとBを比較する] We compared the new model with the previous model. ／ [compare A to B：AをBに例える] He compared his life to a journey. ／ [be/feel envious of A：Aをうらやましく思う]）。用法の書き方は、名詞が入る部分が「A」（2つあれば A と B）、人なら「人」、動名詞なら「-ing」で、動詞の原形・形容詞・節は四角の [原] [形] [節] で示します（too [形] to [原]、I'm afraid (that) [節]）。いくつかの形が入るときは「look forward to A／-ing」のように「／」で並べ、「dance to A：A（音楽）に合わせて踊る」のように何が入るかを訳に添えます。例文の 🔊 で読み上げられます。
 - 用法の右の **類似表現** を押すと、意味が近い語や混同しやすい語（247グループ）が開き、それぞれの違いと用法が出ます。lend なら borrow「（無料で）人から物を借りる」・rent「（お金を払って）借りる・貸す」・owe、afraid なら scared・terrified・scary「（物事が）怖い。人を怖がらせる側を言う」・creepy「（物・場所・人が）不気味でぞっとする」、embarrassed なら ashamed「自分の悪い行いを道徳的に恥じている」・shy など。-ed と -ing（interested と interesting など）の区別もあります。 意味は似ていても使い道の違う語もまとめてあります（expect「当然そうなると思う」・predict「データなどから予測する」・forecast「天気などを予報する」・estimate「見積もる」、job「数えられる仕事・職」と work「数えない仕事」、during「名詞の前」・while「主語と動詞の前」・for「期間の長さ」、affect「影響する（動詞）」と effect「影響（名詞）」、few / little、economic / economical など）。
 - 文法・慣用句・フレーズ・例文・会話の問題でも、回答後に **文中の用法** が出ます。文の中の語のうち、その文が実際に使っている形だけを出します（"She compared her life to a journey." なら [compare A to B] だけで、compare A with B は出ません。"He is capable of finishing the project alone." なら [be capable of A／-ing]）。discuss（about は付けない）のような前置詞の注意と、creepy や lend のように混同しやすい語は、その語があれば出ます（"Could you lend me your textbook?" なら lend のニュアンス「（無料で）人に物を貸す」と、文がそのまま使っている [lend 人 A／lend A to 人]）。語ごとに「類似表現」も開けます。have・get・take・make・go のように意味の多すぎる基本語は、その文で用法が見つかったときだけ出します。
 - **不規則動詞** は回答後に「原形-過去形-過去分詞」が出ます（cut-cut-cut、buy-bought-bought、get-got-got / gotten）。句動詞は動詞の部分だけの活用です（come back なら come-came-come）。英単語の動詞の問題ではその語の、文法・慣用句・フレーズ・例文・会話・試験の問題では文が使っている不規則動詞（She **bought** a new car. なら buy）の活用です。🔊 を押すと3つを約0.3秒ずつ間をあけて続けて読み上げ、読んでいる形に色が付きます（read は「リード、レッド、レッド」と読みます）。アプリ内の音声では3語をまとめて合成し、前後の無音を削ってから 0.3 秒の無音でつなぐので、間はいつも同じです。be は文に必ずと言っていいほど出るので出さず、助動詞の do・have（Did you go? / I have finished）、名詞の使い方（a cut、the building、a TV show、turn left）も数えません。活用の一覧は `src-tauri/data/irregular-verbs.json`（142語）です。
@@ -144,11 +144,11 @@ cd src-tauri && cargo test
 
 ## 問題データ
 
-`src-tauri/data/` に21,778問。分類（英単語・複合語・文法・慣用句・フレーズ・例文）と26ジャンル、英単語は品詞でも絞り込めます。
+`src-tauri/data/` に24,521問。分類（英単語・複合語・文法・慣用句・フレーズ・例文）と26ジャンル、英単語は品詞でも絞り込めます。
 
 | 種類 | 問題数 | 分類 | ファイル |
 | --- | --- | --- | --- |
-| 英単語 | 6,119 | 英単語（4,160。句動詞122を含む）・複合語（1,959） | `questions.json`, `words-2a/2b/3〜26.json`（品詞は `word-pos.json`（複合語も全体の意味で）。`words-20.json` は副詞114語、`words-21.json` は基本動詞351語、`words-22.json` は基本形容詞236語、`words-23.json` は句動詞109語、`words-24.json` は動詞41語・形容詞58語、`words-25.json` は副詞76語） |
+| 英単語 | 8,862 | 英単語（6,869。句動詞122を含む）・複合語（1,993） | `questions.json`, `words-2a/2b/3〜26.json`, `words-cefr-1〜4.json`（中学〜高校の CEFR-J A1〜B2 と TOEIC Service List から足した3,240語）（品詞は `word-pos.json`（複合語も全体の意味で）。`words-20.json` は副詞114語、`words-21.json` は基本動詞351語、`words-22.json` は基本形容詞236語、`words-23.json` は句動詞109語、`words-24.json` は動詞41語・形容詞58語、`words-25.json` は副詞76語） |
 | 文法（穴埋め4択） | 1,983 | 文法 | `questions.json`, `grammar-2〜9.json` |
 | 慣用句 | 1,611 | 慣用句 | `questions.json`, `idioms-2〜8.json` |
 | 丸暗記フレーズ | 297 | フレーズ | `expressions.json` |
@@ -181,7 +181,7 @@ cd src-tauri && cargo test
 ## 単語の意味ポップアップと単語の読み上げ
 
 英文の単語にカーソルを合わせる（タップする）と日本語の意味が出ます。学習画面の「🔤 単語の意味」で切り替えでき、設定は保存されます。
-辞書は単語問題6,119語と `glossary.json`（5,683語）から作られ（同じつづりで複数の意味を問う語は、その意味すべてと `glossary.json` にしかない意味を並べます。like なら「好む、気に入る、好き、〜のような」）、起動時に活用形（studies, running, bigger, busiest, lost, brought など）へ展開されます。
+辞書は単語問題8,862語と `glossary.json`（6,189語）から作られ（同じつづりで複数の意味を問う語は、その意味すべてと `glossary.json` にしかない意味を並べます。like なら「好む、気に入る、好き、〜のような」）、起動時に活用形（studies, running, bigger, busiest, lost, brought など）へ展開されます。
 
 **熟語・慣用句はまとまりで意味が出ます。** "He always requests a **doggy bag** for leftovers." の doggy にカーソルを合わせると、1行目に「doggy bag 持ち帰り用の袋」、2行目に「doggy 犬の、ワンちゃん」と、熟語の意味と語自体の意味を並べて表示します。熟語の範囲は一続きの実線で示されます。
 慣用句は同じ語の並びが文字どおりの意味でも使われるため（"The cat is **under the table**." は「テーブルの下に」）、意味の前に「慣用句なら」と添えます。doggy bag のような複合語には付きません。
@@ -302,3 +302,8 @@ scripts/
 [MIT License](LICENSE)
 
 発音記号のデータ（`src-tauri/data/pronunciations.json`）は CMU Pronouncing Dictionary（Copyright (C) 1993-2015 Carnegie Mellon University）から作成しています。同辞書のライセンスは [src-tauri/data/cmudict-LICENSE.txt](src-tauri/data/cmudict-LICENSE.txt) を参照してください。
+
+単語問題にする語は、次の語彙表と照合して選んでいます（表そのものはリポジトリに含みません）。
+
+- CEFR-J Wordlist Version 1.5（東京外国語大学 投野由紀夫研究室。[openlanguageprofiles/olp-en-cefrj](https://github.com/openlanguageprofiles/olp-en-cefrj)）
+- TOEIC Service List 1.2（Browne, C. & Culligan, B. [newgeneralservicelist.com](https://www.newgeneralservicelist.com/toeic-service-list)、CC BY-SA 4.0）

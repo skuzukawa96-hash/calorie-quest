@@ -3115,7 +3115,7 @@ mod tests {
     }
 
     /// Every sense of a word only the glossary has that looks like a verb's is a verb with its 自・他
-    /// or has its part of speech written (creepy 不気味な、ぞっとする is an adjective throughout).
+    /// or has its part of speech written (viral ウイルスの、拡散する is an adjective throughout).
     #[test]
     fn every_word_of_the_glossary_has_its_part_of_speech() {
         let glossary: HashMap<String, String> = serde_json::from_str(GLOSSARY_JSON).unwrap();
@@ -3162,7 +3162,7 @@ mod tests {
         assert_eq!(senses("about"), vec![]);
         assert_eq!(senses("afar"), vec![("adverb", "遠くに")]);
         assert_eq!(senses("buff"), vec![("noun", "愛好家"), ("verb", "磨く")]);
-        assert_eq!(senses("creepy"), vec![("adjective", "不気味な"), ("adjective", "ぞっとする")]);
+        assert_eq!(senses("viral"), vec![("adjective", "ウイルスの"), ("adjective", "拡散する")]);
         assert_eq!(gloss_senses("（傷が）治る、治す"), vec!["（傷が）治る", "治す"]);
     }
 
