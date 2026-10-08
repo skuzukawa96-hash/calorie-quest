@@ -1112,7 +1112,7 @@ function ReviewNote({ result, correct, rate }: { result: AnswerResult; correct: 
       <div className="muted">
         復習を消化しました。
         {result.needsReview && result.nextDue
-          ? `今日の復習で3回以上間違えたので、${result.nextDue} にもう一度だけ復習します。`
+          ? `今日の復習で間違えたので、${result.nextDue} にもう一度復習します。`
           : "この問題の復習はおしまいです。"}
       </div>
     );

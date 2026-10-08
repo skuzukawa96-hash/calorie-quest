@@ -1000,8 +1000,8 @@ pub fn record_answer(conn: &mut Connection, payload: &AnswerPayload) -> Result<A
         kcal = srs::apply_hint_penalty(scored, kcal, hints_used);
     }
     let due_on = if is_due_review { next_due.as_deref() } else { None };
-    // How often this review was missed today before (a low spoken score counts): three or more and
-    // it comes back once more 3 days after it is done.
+    // How often this review was missed today before (a low spoken score counts): enough of them
+    // (`srs::misses_to_review_again`) and it comes back 3 days after it is done.
     let missed_today: i64 = if is_due_review && done {
         tx.query_row(
             "SELECT COUNT(*) FROM answer_log
@@ -1015,7 +1015,7 @@ pub fn record_answer(conn: &mut Connection, payload: &AnswerPayload) -> Result<A
         0
     };
     let (new_level, new_needs_review, new_next_due) =
-        srs::next_state(level, in_review, due_on, payload.correct, low_score, missed_today);
+        srs::next_state(level, in_review, due_on, payload.correct, low_score, missed_today, &payload.mode);
     // A miss is reviewed in the mode it happened in; a correct answer leaves that as it was.
     let missed_in = (!payload.correct || low_score).then(|| payload.mode.clone());
 
@@ -1725,7 +1725,8 @@ mod tests {
     }
 
     /// The day's review: a miss pays nothing and stays until answered right; what is left carries
-    /// over; a review answered right is done and asked no more, unless it took 3 misses that day.
+    /// over; a review answered right is done, and back 3 days later if it took misses that day (one
+    /// picked, three typed or spoken).
     #[test]
     fn a_missed_review_stays_in_the_days_review_until_answered_right() {
         let mut c = conn();
@@ -1745,33 +1746,44 @@ mod tests {
             assert!(review.iter().any(|q| q.question.id == qid), "still in today's review");
         }
 
-        // Then right: done, ×1.5, and not asked again (two misses are not three).
+        // Then right: done, ×1.5, and as a pick missed today, back once more 3 days later.
         let r = answer(&mut c, qid, "choice", true, None);
-        assert!(r.is_review && !r.stays_today && !r.needs_review);
+        assert!(r.is_review && !r.stays_today && r.needs_review);
         assert_eq!(r.kcal_earned, 2, "1 kcal × 1.5 rounded");
-        assert_eq!(history(&c, qid), (1, 0, None));
+        assert_eq!(r.next_due.as_deref(), Some(date_plus(3).as_str()));
+        assert_eq!(history(&c, qid), (1, 1, Some(date_plus(3))));
         assert_eq!(due_review_count(&c).unwrap(), 0);
 
-        // Missed three times in today's review: once right, it comes back once more 3 days later.
-        let hard = question_id(&c, "w005");
-        answer(&mut c, hard, "choice", false, None);
-        c.execute("UPDATE learning_history SET next_due_at = ?1 WHERE question_id = ?2", params![today(), hard]).unwrap();
-        for _ in 0..3 {
-            assert!(answer(&mut c, hard, "choice", false, None).stays_today);
+        // Three days on, the same rule: missed once more, back 3 days later again; right at once,
+        // done for good. (The misses of the days before do not count.)
+        let three_days_on = |c: &Connection, qid: i64| {
+            c.execute("UPDATE learning_history SET next_due_at = ?1 WHERE question_id = ?2", params![today(), qid]).unwrap();
+            c.execute(
+                "UPDATE answer_log SET answered_at = ?1 WHERE question_id = ?2",
+                params![format!("{}T12:00:00", date_plus(-3)), qid],
+            )
+            .unwrap();
+        };
+        three_days_on(&c, qid);
+        assert!(answer(&mut c, qid, "choice", false, None).stays_today);
+        assert!(answer(&mut c, qid, "choice", true, None).needs_review);
+        assert_eq!(history(&c, qid), (1, 1, Some(date_plus(3))), "the miss took the level back to 0");
+        three_days_on(&c, qid);
+        assert!(!answer(&mut c, qid, "choice", true, None).needs_review);
+        assert_eq!(history(&c, qid), (2, 0, None));
+
+        // Typed, two slips are let go; three bring it back 3 days later.
+        for (key, misses, back) in [("w005", 2, false), ("w006", 3, true)] {
+            let typed = question_id(&c, key);
+            answer(&mut c, typed, "typing", false, None);
+            c.execute("UPDATE learning_history SET next_due_at = ?1 WHERE question_id = ?2", params![today(), typed]).unwrap();
+            for _ in 0..misses {
+                assert!(answer(&mut c, typed, "typing", false, None).stays_today);
+            }
+            let r = answer(&mut c, typed, "typing", true, None);
+            assert!(r.is_review && !r.stays_today);
+            assert_eq!(r.needs_review, back, "{key}: {misses} misses typed");
         }
-        let r = answer(&mut c, hard, "choice", true, None);
-        assert!(r.is_review && !r.stays_today && r.needs_review);
-        assert_eq!(r.next_due.as_deref(), Some(date_plus(3).as_str()));
-        assert_eq!(history(&c, hard), (1, 1, Some(date_plus(3))));
-        // Three days on, right at once: done for good.
-        c.execute("UPDATE learning_history SET next_due_at = ?1 WHERE question_id = ?2", params![today(), hard]).unwrap();
-        c.execute(
-            "UPDATE answer_log SET answered_at = ?1 WHERE question_id = ?2",
-            params![format!("{}T12:00:00", date_plus(-3)), hard],
-        )
-        .unwrap();
-        assert!(!answer(&mut c, hard, "choice", true, None).needs_review);
-        assert_eq!(history(&c, hard), (2, 0, None));
 
         // A sentence typed wrong in review earns none of its words.
         let sentence = question_id(&c, "p003");

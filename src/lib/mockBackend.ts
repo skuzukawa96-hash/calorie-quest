@@ -193,10 +193,11 @@ function tierOf(kind: string, key: string, en: string): Tier {
   if (kind === "dialogue" || kind === "expression") return "phrase";
   return "example";
 }
-/** Mirrors srs::RETRY_DAYS, HARD_REVIEW_MISSES and HARD_REVIEW_DAYS. */
+/** Mirrors srs::RETRY_DAYS and REVIEW_AGAIN_DAYS. */
 const RETRY_DAYS = 1;
-const HARD_REVIEW_MISSES = 3;
-const HARD_REVIEW_DAYS = 3;
+const REVIEW_AGAIN_DAYS = 3;
+/** Mirrors srs::misses_to_review_again: one miss picked, three typed or spoken. */
+const missesToReviewAgain = (mode: Mode) => (mode === "typing" || mode === "speaking" ? 3 : 1);
 /** Mirrors srs::STALE_REVIEW_DAYS. */
 const STALE_REVIEW_DAYS = RATES.staleReviewDays;
 
@@ -2049,11 +2050,11 @@ function submitAnswer(p: AnswerPayload): AnswerResult {
     needsReview = true;
     nextDue = isDueReview ? h.nextDue : datePlus(RETRY_DAYS);
   } else if (h.needsReview) {
-    // Done (消化), unless it took 3 misses today: then once more 3 days later.
+    // Done (消化); back 3 days later if it took misses today (one picked, three typed or spoken).
     level = h.level + 1;
-    if (missedToday >= HARD_REVIEW_MISSES) {
+    if (missedToday >= missesToReviewAgain(p.mode)) {
       needsReview = true;
-      nextDue = datePlus(HARD_REVIEW_DAYS);
+      nextDue = datePlus(REVIEW_AGAIN_DAYS);
     }
   }
   state.history[q.key] = {
