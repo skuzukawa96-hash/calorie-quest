@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useState, type ReactNode } from "react";
 import { api } from "../lib/api";
-import { cueFor, tagMeaning, tagsFor } from "../lib/pos";
+import { cuedMeaning, tagMeaning, tagsFor } from "../lib/pos";
 import type { Dictionary } from "../lib/dictionary";
 import type { PosTag, SessionQuestion, WordTags } from "../types";
 
@@ -46,23 +46,16 @@ export function useWordTags(): WordTags | null {
 export function useOptionLabels(q: SessionQuestion): string[] {
   const data = useWordTags();
   if (!data || q.question.kind !== "word" || q.options.length !== q.optionEn.length) return q.options;
-  if (!cueFor(q.question.en, q.question.ja, data.cues)) return q.options;
-  return q.options.map((opt, i) =>
-    opt === q.answer ? (cueFor(q.question.en, q.question.ja, data.cues) ?? opt) : (cueFor(q.optionEn[i], opt, data.cues) ?? opt),
-  );
+  const own = cuedMeaning(q.question.en, q.question.ja, data.cues);
+  if (!own) return q.options;
+  return q.options.map((opt, i) => (opt === q.answer ? own : (cuedMeaning(q.optionEn[i], opt, data.cues) ?? opt)));
 }
 
 /** A word question's Japanese as it is asked to be written in English: with its nuance when it has one. */
 export function useAskedMeaning(q: SessionQuestion): string {
   const data = useWordTags();
   if (!data || q.question.kind !== "word") return q.display;
-  return cueFor(q.question.en, q.question.ja, data.cues) ?? q.display;
-}
-
-/** A meaning put to a question with its nuance when the word has one (the recipe's own words). */
-export function useCue(word: string, meaning: string): string | undefined {
-  const data = useWordTags();
-  return data ? cueFor(word, meaning, data.cues) : undefined;
+  return cuedMeaning(q.question.en, q.question.ja, data.cues) ?? q.display;
 }
 
 const TAG_TITLE: Record<PosTag, string> = { 自: "自動詞", 他: "他動詞", 名: "名詞", 形: "形容詞", 副: "副詞" };
@@ -110,21 +103,14 @@ export function MeaningWithTags({ word, meaning }: { word: string; meaning: stri
 }
 
 /**
- * A word's meaning as its questions put it: by its nuance when it has near synonyms, with the tags
- * of that sense ([他] （事実・誤りを）しぶしぶ認める for admit 認める); otherwise as MeaningWithTags.
+ * A word's meaning as its questions put it, each sense by its nuance where it has one and with its
+ * tags ([他] （事実・誤りを）しぶしぶ認める for admit 認める; [他] （丁寧に）断る ／ [自] 減少 for decline
+ * 断る、減少).
  */
 export function CuedMeaningWithTags({ word, meaning, dict }: { word: string; meaning: string; dict?: Dictionary | null }) {
   const data = useWordTags();
   if (!data) return <>{meaning}</>;
-  const cue = cueFor(word, meaning, data.cues);
-  if (!cue) return <MeaningWithTags word={word} meaning={meaning} dict={dict} />;
-  const tags = tagsFor(word, meaning, data, dict?.[word.toLowerCase()]);
-  return (
-    <>
-      {tags.length > 0 && <PosTags tags={tags} />}
-      {cue}
-    </>
-  );
+  return <MeaningWithTags word={word} meaning={cuedMeaning(word, meaning, data.cues) ?? meaning} dict={dict} />;
 }
 
 /**

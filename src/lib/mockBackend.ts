@@ -2179,8 +2179,12 @@ function mockDictionary(): Dictionary {
     for (const s of q.ja.split("、")) if (!senses.includes(s)) senses.push(s);
     asked.set(key, senses);
   }
+  // A plain sense a question gives already with a note (取る for （手に）取る) is not repeated.
+  const plain = (x: string) => x.replace(/（[^）]*）|\([^)]*\)/g, "").trim();
+  const given = (senses: string[], s: string) =>
+    senses.some((x) => x === s || (!/[（(]/.test(s) && !/[／/。，,]/.test(x) && plain(x) === s));
   for (const [key, senses] of asked) {
-    for (const s of (base[key] ?? "").split("、")) if (s && !senses.includes(s)) senses.push(s);
+    for (const s of (base[key] ?? "").split("、")) if (s && !given(senses, s)) senses.push(s);
     base[key] = senses.join("、");
   }
   const texts = questions.flatMap((q) => [q.en, q.prompt ?? "", q.example ?? "", ...(q.choices ?? [])]);

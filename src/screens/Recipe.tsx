@@ -5,7 +5,7 @@ import PencilIcon from "../components/PencilIcon";
 import { PlayModeTag } from "../components/PlayModeSwitch";
 import WordNotesPanel from "../components/WordNotes";
 import { CuedMeaningWithTags, MeaningWithTags, SlotText, useWordTags } from "../components/PosTags";
-import { cueFor } from "../lib/pos";
+import { cuedMeaning } from "../lib/pos";
 import { api } from "../lib/api";
 import { loadDictionary, lookup, type Dictionary } from "../lib/dictionary";
 import { onRecipeChanged } from "../lib/recipe";
@@ -276,12 +276,12 @@ function optionEnglish(meaning: string, words: RecipeWord[], dict: Dictionary | 
  */
 function optionLabels(word: RecipeWord, options: string[], words: RecipeWord[], dict: Dictionary | null, cues: Cues | null): string[] {
   if (!cues || word.kind === "usage") return options;
-  const own = cueFor(word.word, word.meaning, cues);
+  const own = cuedMeaning(word.word, word.meaning, cues);
   if (!own) return options;
   return options.map((o) => {
     if (o === word.meaning) return own;
     const en = optionEnglish(o, words, dict);
-    return (en && cueFor(en, o, cues)) || o;
+    return (en && cuedMeaning(en, o, cues)) || o;
   });
 }
 
@@ -318,14 +318,14 @@ function meaningOptions(
   const own = words.filter((w) => w.id !== word.id && w.kind !== "usage" && w.meaning).map((w) => w.meaning);
   // A word asked with its nuance is set among words with theirs, from other 類似表現 groups than
   // its own (whose words are its near synonyms), so that it is not the one option that looks different.
-  if (cues && cueFor(word.word, word.meaning, cues)) {
+  if (cues && cuedMeaning(word.word, word.meaning, cues)) {
     const groups = new Set((cues[word.word.toLowerCase()] ?? []).map(([g]) => g));
     const apart = (en: string) => !(cues[en.toLowerCase()] ?? []).some(([g]) => groups.has(g));
     const cuedOwn = words
-      .filter((w) => w.id !== word.id && w.kind !== "usage" && w.meaning && apart(w.word) && cueFor(w.word, w.meaning, cues))
+      .filter((w) => w.id !== word.id && w.kind !== "usage" && w.meaning && apart(w.word) && cuedMeaning(w.word, w.meaning, cues))
       .map((w) => w.meaning);
     const cuedDict = Object.keys(cues)
-      .filter((en) => dict?.[en] && apart(en) && cueFor(en, dict[en], cues))
+      .filter((en) => dict?.[en] && apart(en) && cuedMeaning(en, dict[en], cues))
       .map((en) => dict![en]);
     take(cuedOwn, 2, near);
     take(cuedDict, 3, near);
@@ -1060,7 +1060,7 @@ function RecipeReview({
     [options, cues === null],
   );
   // A word with near synonyms is asked to be written from its nuance: （事実・誤りを）しぶしぶ認める.
-  const asked = current && current.kind !== "usage" && cues ? (cueFor(current.word, current.meaning, cues) ?? current.meaning) : current?.meaning;
+  const asked = current && current.kind !== "usage" && cues ? (cuedMeaning(current.word, current.meaning, cues) ?? current.meaning) : current?.meaning;
   const gapped = useMemo(() => (current ? withGap(current) : null), [current]);
   // The same explanation a word question shows under its answer: how the word is built, sentences
   // and patterns using it, an idiom's origin. Fetched with the card, shown once it is answered.

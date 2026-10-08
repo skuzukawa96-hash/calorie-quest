@@ -2023,10 +2023,13 @@ pub fn dictionary(conn: &Connection) -> rusqlite::Result<HashMap<String, String>
         // Question data comes first: it is the vocabulary being studied. A word asked in two senses
         // (right: 右 / 正しい) keeps both, and senses only the glossary has (like: 〜のような) follow,
         // so a word in a sentence shows every meaning it may have there.
+        // A plain sense a question gives already with a note (取る for （手に）取る, 断る for （丁重に）断る)
+        // says nothing more; one with a note of its own stays (滑る（slip one's mind: うっかり忘れる）).
         for (key, mut senses) in asked {
             if let Some(extra) = map.get(&key) {
                 for s in extra.split('、') {
-                    if !senses.iter().any(|x| x == s) {
+                    let given = senses.iter().any(|x| x == s || (!s.contains(['（', '(']) && plain_senses(x) == [s]));
+                    if !given {
                         senses.push(s.to_string());
                     }
                 }
@@ -2688,6 +2691,17 @@ mod tests {
     /// "doggy bag" is 持ち帰り用の袋; "doggy" is not. The builder used to hand every word of a
     /// multi-word entry the whole entry's meaning, so hovering "doggy" said 持ち帰り用の袋 and
     /// "register" (from "cash register") said レジ.
+    /// A word asked in a sense keeps the glossary's other senses, but not the same sense again
+    /// without its note: decline is 減少する、（丁重に）断る、減少, not …、断る、減少.
+    #[test]
+    fn a_word_does_not_repeat_a_sense_its_question_gives() {
+        let conn = init_in_memory().unwrap();
+        let dict = dictionary(&conn).unwrap();
+        assert_eq!(dict.get("decline").map(String::as_str), Some("減少する、（丁重に）断る、減少"));
+        assert_eq!(dict.get("take").map(|g| g.split('、').filter(|s| *s == "取る").count()), Some(0));
+        assert!(dict["slip"].contains("（slip one's mind"), "a sense with a note of its own stays");
+    }
+
     #[test]
     fn phrase_meanings_stay_with_the_phrase() {
         let conn = init_in_memory().unwrap();

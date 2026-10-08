@@ -191,3 +191,20 @@ export function cueFor(en: string, ja: string, cues: Record<string, Array<[numbe
   }
   return best && best.trim() !== ja.trim() ? best : undefined;
 }
+
+/**
+ * A meaning as it is put to a question, each sense by its own nuance where the word has one for it
+ * and as it is otherwise, so a word of two meanings keeps both (decline 減少する、（丁重に）断る:
+ * 減少する、（丁寧に）断る; admit 認める: （事実・誤りを）しぶしぶ認める). Undefined when no sense has one.
+ */
+export function cuedMeaning(en: string, ja: string, cues: Record<string, Array<[number, string]>>): string | undefined {
+  const out: string[] = [];
+  let cued = false;
+  for (const part of meaningParts(ja)) {
+    const cue = cueFor(en, part, cues);
+    if (cue) cued = true;
+    const shown = cue ?? part;
+    if (!out.includes(shown)) out.push(shown);
+  }
+  return cued ? out.join("、") : undefined;
+}
