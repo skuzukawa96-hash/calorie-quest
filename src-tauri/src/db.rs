@@ -3158,7 +3158,7 @@ mod tests {
             glossary_pos()[key].iter().map(|(p, s)| (p.as_str(), s.as_str())).collect()
         };
         assert_eq!(senses("elastic"), vec![("adjective", "伸縮性のある")]);
-        assert_eq!(senses("reject"), vec![("verb", "却下する")]);
+        assert_eq!(senses("overanalyze"), vec![("verb", "分析しすぎる")]);
         assert_eq!(senses("about"), vec![]);
         assert_eq!(senses("sincerely"), vec![("adverb", "心から")]);
         assert_eq!(senses("buff"), vec![("noun", "愛好家"), ("verb", "磨く")]);
