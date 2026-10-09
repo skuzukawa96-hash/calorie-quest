@@ -83,17 +83,34 @@ function phraseIndexFor(dict: Dictionary): PhraseIndex {
   return index;
 }
 
-/** Which word pieces spell `target` ("heard", or "doggy bag"), inflections included. */
+/**
+ * How far a word of the sentence is from a word of the target: 0 the same, 1 a form of it
+ * (crossings, discussed, heard), 2 a form in -er / -est (cheaper, but also stapler for staple), 3
+ * the target a form of it, otherwise no match.
+ */
+function distance(w: string, t: string): number {
+  if (w === t) return 0;
+  if (lemmas(w).includes(t)) return /(er|est)$/.test(w) && !/(er|est)$/.test(t) ? 2 : 1;
+  return lemmas(t).includes(w) ? 3 : Infinity;
+}
+
+/**
+ * Which word pieces spell `target` ("heard", or "doggy bag"), inflections included: the closest
+ * match, the first of those as close. "Cross the street at the crossing." marks crossing for
+ * crossing, not Cross; "The stapler is out of staples." marks staples for staple.
+ */
 function highlightedPieces(wordPiece: number[], words: string[], target: string | undefined): Set<number> {
   const out = new Set<number>();
   const want = target ? tokenize(target) : [];
   if (want.length === 0) return out;
-  const same = (w: string, t: string) => w === t || lemmas(w).includes(t) || lemmas(t).includes(w);
+  let best = -1;
+  let bestDistance = Infinity;
   for (let i = 0; i + want.length <= words.length; i++) {
-    if (!want.every((t, k) => same(words[i + k], t))) continue;
-    for (let p = wordPiece[i]; p <= wordPiece[i + want.length - 1]; p++) out.add(p);
-    break;
+    const d = want.reduce((sum, t, k) => sum + distance(words[i + k], t), 0);
+    if (d < bestDistance) [best, bestDistance] = [i, d];
   }
+  if (best < 0) return out;
+  for (let p = wordPiece[best]; p <= wordPiece[best + want.length - 1]; p++) out.add(p);
   return out;
 }
 

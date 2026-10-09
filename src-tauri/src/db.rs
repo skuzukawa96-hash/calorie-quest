@@ -2907,11 +2907,23 @@ mod tests {
     /// compare, "nearest" for near).
     fn uses_word(text: &str, word: &str) -> bool {
         let text = crate::util::tokens(text);
+        let key = word.to_lowercase();
         let word = crate::util::tokens(word);
+        // A form in -er / -est is the word's only when the word compares (cheaper, nearest): mother
+        // is no form of moth, nor stapler of staple.
+        let compares = words_by_english()
+            .0
+            .get(&key)
+            .is_none_or(|senses| senses.iter().any(|(_, pos)| pos == "adjective" || pos == "adverb"));
+        let compared = |t: &str, p: &str| {
+            ["er", "est"].iter().any(|end| t.ends_with(end) && !p.ends_with(end)) && !t.starts_with(&format!("{p}s"))
+        };
         !word.is_empty()
-            && text
-                .windows(word.len())
-                .any(|w| w.iter().zip(&word).all(|(t, p)| t == p || crate::util::lemmas(t).contains(p)))
+            && text.windows(word.len()).any(|w| {
+                w.iter()
+                    .zip(&word)
+                    .all(|(t, p)| t == p || (crate::util::lemmas(t).contains(p) && (compares || !compared(t, p))))
+            })
     }
 
     /// Every word of the bank has a sentence to show under its answer, and the sentence uses it.
