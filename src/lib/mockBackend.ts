@@ -23,7 +23,7 @@ import examBasic from "../../src-tauri/data/exam-basic.json";
 import exam600 from "../../src-tauri/data/exam-600.json";
 import exam800 from "../../src-tauri/data/exam-800.json";
 import { expandDictionary, lemmas, tokenize, type Dictionary } from "./dictionary";
-import { cueFor, cueText, meaningParts, posFromGloss } from "./pos";
+import { cueFor, cueText, meaningParts, posFromGloss, posOf as posOfSense } from "./pos";
 import { answerWordCount, CLEAR_SCORE, hintPenalty, kcalFor, scoredKind, scoresPerWord } from "./scoring";
 import { exampleSentence, sentences } from "./sentences";
 import type {
@@ -2292,21 +2292,35 @@ const POS_PRIORITY: PartOfSpeech[] = ["verb", "adjective", "noun", "adverb"];
 /** Mirrors db::recipe_poses: every part of speech of a saved word, the one it is sorted under first. */
 function recipePoses(word: string, meaning: string): RecipePos[] {
   const key = word.trim().toLowerCase();
-  const said: string[] = [];
+  // Each sense of the word with its part of speech, as the tags see them.
+  const senses: Array<[PartOfSpeech, string]> = [];
   if (recipeLookup.words.has(key)) {
     const { asked, added } = wordSenses(key);
-    said.push(...[...asked, ...added].map(([pos]) => pos));
+    senses.push(...([...asked, ...added] as Array<[PartOfSpeech, string]>));
   } else if (recipeLookup.idioms.has(key)) return ["idiom"];
-  else if (glossaryPos[key]) said.push(...glossaryPos[key].map(([pos]) => pos));
-  if (key in verbTypes) said.push("verb");
-  let found = [...new Set(said.filter((p): p is PartOfSpeech => POS_PRIORITY.includes(p as PartOfSpeech)))];
-  if (!found.length) found = [...new Set(meaningParts(meaning).map((s) => posFromGloss(s, word)))];
-  if (!found.length) found = [posFromGloss(meaning, word)];
+  else if (glossaryPos[key]) senses.push(...glossaryPos[key]);
+  const type = (verbTypes as Record<string, string | string[][]>)[key];
+  if (type && !senses.some(([p]) => p === "verb")) {
+    if (typeof type === "string") senses.push(["verb", ""]);
+    else for (const [, ja] of type) senses.push(["verb", ja]);
+  }
+  const isPos = (p: string): p is PartOfSpeech => POS_PRIORITY.includes(p as PartOfSpeech);
+  const found = [...new Set(senses.map(([p]) => p).filter(isPos))];
+  // The parts of speech of the senses the saved meaning has come first.
+  const meant = [
+    ...new Set(meaningParts(meaning).map((part) => posOfSense(part, senses, word) ?? posFromGloss(part, word)).filter(isPos)),
+  ];
+  for (const p of meant) if (!found.includes(p)) found.push(p);
+  if (!found.length) found.push(posFromGloss(meaning, word));
   const order = (posOrder as Record<string, string[]>)[key] ?? [];
-  const rank = (p: PartOfSpeech) => [order.includes(p) ? order.indexOf(p) : Infinity, POS_PRIORITY.indexOf(p)];
+  const rank = (p: PartOfSpeech) => [
+    meant.includes(p) ? 0 : 1,
+    order.includes(p) ? order.indexOf(p) : Infinity,
+    POS_PRIORITY.indexOf(p),
+  ];
   return found.sort((a, b) => {
     const [x, y] = [rank(a), rank(b)];
-    return x[0] - y[0] || x[1] - y[1];
+    return x[0] - y[0] || x[1] - y[1] || x[2] - y[2];
   });
 }
 

@@ -1361,29 +1361,38 @@ fn pos_order() -> &'static HashMap<String, Vec<String>> {
 pub fn recipe_poses(word: &str, meaning: &str) -> Vec<String> {
     let key = word.trim().to_lowercase();
     let (_, idioms) = words_by_english();
-    let mut said: Vec<&str> = Vec::new();
-    if let Some(senses) = word_senses().get(&key) {
-        said.extend(senses.asked.iter().chain(&senses.added).map(|(pos, _)| pos.as_str()));
+    // Each sense of the word with its part of speech, as the tags see them.
+    let mut senses: Vec<(String, String)> = Vec::new();
+    if let Some(own) = word_senses().get(&key) {
+        senses.extend(own.asked.iter().chain(&own.added).cloned());
     } else if idioms.contains_key(&key) {
         return vec!["idiom".to_string()];
-    } else if let Some(senses) = glossary_pos().get(&key) {
-        said.extend(senses.iter().map(|(pos, _)| pos.as_str()));
+    } else if let Some(own) = glossary_pos().get(&key) {
+        senses.extend(own.iter().cloned());
     }
-    if verb_types().contains_key(&key) {
-        said.push("verb");
+    match verb_types().get(&key) {
+        Some(_) if senses.iter().any(|(pos, _)| pos == "verb") => {}
+        Some(crate::models::VerbType::BySense(each)) => senses.extend(each.iter().map(|(_, ja)| ("verb".to_string(), ja.clone()))),
+        Some(_) => senses.push(("verb".to_string(), String::new())),
+        None => {}
     }
     let mut found: Vec<String> = Vec::new();
-    for pos in said {
-        if POS_PRIORITY.contains(&pos) && !found.iter().any(|p| p == pos) {
-            found.push(pos.to_string());
+    for (pos, _) in &senses {
+        if POS_PRIORITY.contains(&pos.as_str()) && !found.contains(pos) {
+            found.push(pos.clone());
         }
     }
-    if found.is_empty() {
-        for s in gloss_senses(meaning) {
-            let pos = pos_from_gloss(&s, word);
-            if !found.iter().any(|p| p == pos) {
-                found.push(pos.to_string());
-            }
+    // The parts of speech of the senses the saved meaning has.
+    let mut meant: Vec<String> = Vec::new();
+    for part in gloss_senses(meaning) {
+        let pos = sense_part_of_speech(&part, &senses, word);
+        if POS_PRIORITY.contains(&pos.as_str()) && !meant.contains(&pos) {
+            meant.push(pos);
+        }
+    }
+    for pos in &meant {
+        if !found.contains(pos) {
+            found.push(pos.clone());
         }
     }
     if found.is_empty() {
@@ -1392,10 +1401,39 @@ pub fn recipe_poses(word: &str, meaning: &str) -> Vec<String> {
     let order = pos_order().get(&key);
     let rank = |pos: &String| {
         let common = order.and_then(|o| o.iter().position(|p| p == pos)).unwrap_or(usize::MAX);
-        (common, POS_PRIORITY.iter().position(|p| p == pos))
+        (!meant.contains(pos), common, POS_PRIORITY.iter().position(|p| p == pos))
     };
     found.sort_by_key(|p| rank(p));
     found
+}
+
+/// The part of speech of one sense of a meaning among a word's senses: the one written the same
+/// way, else the sense's look when the word has that part of speech, else the closest sense's.
+/// Mirrors `posOf` in src/lib/pos.ts, which tags the same senses on screen.
+fn sense_part_of_speech(part: &str, own: &[(String, String)], word: &str) -> String {
+    let shape = pos_from_gloss(part, word);
+    let kinds: std::collections::HashSet<&str> = own.iter().map(|(pos, _)| pos.as_str()).collect();
+    if own.is_empty() {
+        return shape.to_string();
+    }
+    if kinds.len() == 1 {
+        return own[0].0.clone();
+    }
+    if let Some((pos, _)) = own.iter().find(|(_, ja)| !ja.is_empty() && gloss_closeness(ja, part) == 2) {
+        return pos.clone();
+    }
+    if kinds.contains(shape) {
+        return shape.to_string();
+    }
+    let mut best: Option<&String> = None;
+    let mut score = 0;
+    for (pos, ja) in own {
+        let c = gloss_closeness(ja, part);
+        if c > score {
+            (best, score) = (Some(pos), c);
+        }
+    }
+    best.cloned().unwrap_or_else(|| shape.to_string())
 }
 
 /// The part of speech the recipe sorts a saved word under (`recipe_poses`' first).
@@ -3251,11 +3289,16 @@ mod tests {
         assert_eq!(recipe_pos("barely", "かろうじて"), "adverb");
         assert_eq!(recipe_pos("traffic light", "信号"), "noun");
         assert_eq!(recipe_pos("sign up", "登録する"), "verb");
-        // A noun and a verb at the same level: the verb.
-        assert_eq!(recipe_poses("watch", "腕時計"), ["verb", "noun"]);
-        assert_eq!(recipe_poses("figure", "数字、人の姿"), ["verb", "noun"], "used as a verb too (verb-types.json)");
-        // The commoner first: book is a noun at A1 and a verb at B1.
-        assert_eq!(recipe_poses("book", "本"), ["noun", "verb"]);
+        // A part of speech of the meaning saved first, then the others it has too.
+        assert_eq!(recipe_poses("watch", "腕時計"), ["noun", "verb"]);
+        assert_eq!(recipe_poses("watch", "じっと見る、見守る"), ["verb", "noun"]);
+        assert_eq!(recipe_poses("figure", "数字、人の姿"), ["noun", "verb"], "used as a verb too (verb-types.json)");
+        assert_eq!(recipe_poses("decline", "減少する、（丁重に）断る"), ["verb", "noun"]);
+        assert_eq!(recipe_poses("decline", "減少"), ["noun", "verb"]);
+        // Among those of the meaning, the commoner first: book is a noun at A1 and a verb at B1;
+        // a noun and a verb at the same level, the verb.
+        assert_eq!(recipe_poses("book", "本、予約する"), ["noun", "verb"]);
+        assert_eq!(recipe_poses("watch", "腕時計、見守る"), ["verb", "noun"]);
         assert_eq!(recipe_poses("apple", "りんご"), ["noun"]);
         assert_eq!(recipe_pos("keep your fingers crossed", "幸運を祈る"), "idiom");
         assert_eq!(recipe_pos("hear", "聞く"), "verb");

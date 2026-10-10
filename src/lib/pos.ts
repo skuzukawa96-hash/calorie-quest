@@ -90,7 +90,7 @@ function sensesOf(key: string, data: WordTags, added = false): Sense[] | null {
  * else the one the sense looks like when the word has it (見積もる of estimate), else the closest
  * (不気味でぞっとする is creepy's 不気味な, an adjective).
  */
-function posOf(part: string, own: Sense[], word: string): PartOfSpeech | undefined {
+export function posOf(part: string, own: Array<[PartOfSpeech, string]>, word: string): PartOfSpeech | undefined {
   if (!own.length) return posFromGloss(part, word);
   const kinds = new Set(own.map(([p]) => p));
   if (kinds.size === 1) return own[0][0];
