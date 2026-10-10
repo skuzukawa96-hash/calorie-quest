@@ -55,6 +55,8 @@ const VERB_TYPES_JSON: &str = include_str!("../data/verb-types.json");
 /// (trick こつ、いたずら、だます: noun, noun, verb). A glossary word in verb-types.json is a verb in
 /// the senses its gloss writes as one (estimate 見積もり、見積もる).
 const GLOSSARY_POS_JSON: &str = include_str!("../data/glossary-pos.json");
+/// The part of speech of each sense of a word question whose senses are not all its own.
+const SENSE_POS_JSON: &str = include_str!("../data/sense-pos.json");
 /// Word questions taken out of the bank (moat, kiln: words of a specialist or a rare kind, beyond
 /// what school and TOEIC ask), key → English. Their meaning stays in the glossary; the keys are
 /// never given to another question.
@@ -1083,7 +1085,10 @@ pub fn pos_from_gloss(ja: &str, en: &str) -> &'static str {
         }
     }
     let plain = plain.trim();
-    if plain.ends_with(['に', 'と']) {
+    if plain.ends_with("こと") || plain.ends_with("もの") {
+        // 読むこと, ありがたいもの: what a thing is, whatever the word before it
+        "noun"
+    } else if plain.ends_with(['に', 'と']) {
         "adverb"
     } else if plain.ends_with(['う', 'く', 'ぐ', 'す', 'つ', 'ぬ', 'ぶ', 'む', 'る']) {
         if plain.ends_with('く') && en.trim().to_lowercase().ends_with("ly") {
@@ -1204,16 +1209,108 @@ pub fn glossary_pos() -> &'static HashMap<String, Vec<(String, String)>> {
     })
 }
 
+/// sense-pos.json: question key → the part of speech of each sense of its Japanese, for a question
+/// whose senses are not all of its part of speech (superior よりすぐれた、上司: adjective, noun).
+fn sense_pos() -> &'static HashMap<String, Vec<String>> {
+    static TABLE: std::sync::OnceLock<HashMap<String, Vec<String>>> = std::sync::OnceLock::new();
+    TABLE.get_or_init(|| serde_json::from_str(SENSE_POS_JSON).expect("data/sense-pos.json must be a valid JSON object"))
+}
+
+/// Whether a question's senses give a sense of the glossary already: the same, or the same without
+/// a note (取る for （手に）取る). Mirrors what `dictionary` leaves out.
+fn sense_given(asked: &[String], s: &str) -> bool {
+    asked.iter().any(|x| x == s || (!s.contains(['（', '(']) && plain_senses(x) == [s]))
+}
+
+/// The part of speech of a sense the glossary adds to a word question's (ショー to show 見せる):
+/// glossary-pos.json's for it if it writes one, else its look when a question of the word is of
+/// that part of speech (正しい of correct, a verb and an adjective) or the look is sure: な・の・的
+/// an adjective, に・と an adverb, a noun's look a noun (but an adverb's beside an adverb, whose
+/// senses often look like nouns: 時々), a verb's look a verb when verb-types.json has the word. A
+/// look that is not sure (狙い, 一人で) is the question's part of speech.
+fn added_sense_pos(key: &str, sense: &str, index: usize, asked: &[&str]) -> String {
+    match glossary_pos_overrides().get(key) {
+        Some(WrittenPos::BySense(each)) => {
+            if let Some(pos) = each.get(index) {
+                return pos.clone();
+            }
+        }
+        Some(WrittenPos::Whole(whole)) => return whole.clone(),
+        None => {}
+    }
+    let main = asked[0];
+    let shape = pos_from_gloss(sense, key);
+    if asked.contains(&shape) {
+        return shape.to_string();
+    }
+    let plain: String = plain_senses(sense).join("");
+    let pos = match shape {
+        "verb" if verb_types().contains_key(key) => "verb",
+        "verb" => main,
+        "adjective" if plain.ends_with(['な', 'の', '的']) => "adjective",
+        "adjective" => main,
+        "noun" if asked.contains(&"adverb") => "adverb",
+        other => other,
+    };
+    pos.to_string()
+}
+
+/// Every sense of a word question's English with its part of speech: each question's Japanese
+/// (sense by sense where sense-pos.json writes them), then the senses only the glossary adds
+/// (`added_sense_pos`), as the hover dictionary lists them.
+fn question_word_senses(key: &str) -> Vec<(String, String)> {
+    let (words, _) = words_by_english();
+    let Some(questions) = words.get(key) else {
+        return Vec::new();
+    };
+    let keys = question_keys_by_english().get(key).map(Vec::as_slice).unwrap_or_default();
+    let mut out: Vec<(String, String)> = Vec::new();
+    let mut asked: Vec<String> = Vec::new();
+    for ((ja, pos), qkey) in questions.iter().zip(keys) {
+        let senses = gloss_senses(ja);
+        match sense_pos().get(qkey) {
+            Some(each) => out.extend(each.iter().cloned().zip(senses.iter().cloned())),
+            None => out.push((pos.clone(), ja.clone())),
+        }
+        asked.extend(ja.split('、').map(str::to_string));
+    }
+    let glossary: &HashMap<String, String> = glossary_table();
+    if let Some(gloss) = glossary.get(key) {
+        let own: Vec<&str> = questions.iter().map(|(_, pos)| pos.as_str()).collect();
+        for (i, s) in gloss_senses(gloss).into_iter().enumerate() {
+            if !sense_given(&asked, &s) {
+                out.push((added_sense_pos(key, &s, i, &own), s));
+            }
+        }
+    }
+    out
+}
+
+/// English (lowercase) → the keys of its word questions, in the order of `words_by_english`.
+fn question_keys_by_english() -> &'static HashMap<String, Vec<String>> {
+    static TABLE: std::sync::OnceLock<HashMap<String, Vec<String>>> = std::sync::OnceLock::new();
+    TABLE.get_or_init(|| {
+        let mut keys: HashMap<String, Vec<String>> = HashMap::new();
+        for q in load_seed().questions.into_iter().filter(|q| q.kind == "word") {
+            keys.entry(q.en.to_lowercase()).or_default().push(q.key);
+        }
+        keys
+    })
+}
+
+/// glossary.json, read once.
+fn glossary_table() -> &'static HashMap<String, String> {
+    static TABLE: std::sync::OnceLock<HashMap<String, String>> = std::sync::OnceLock::new();
+    TABLE.get_or_init(|| serde_json::from_str(GLOSSARY_JSON).expect("data/glossary.json must be a valid JSON object"))
+}
+
 /// What the tags before a meaning ([名] [形] [副] [自] [他]) are worked out from: the part of
 /// speech of each word question by its English and of each word only the glossary has, and the
 /// verbs' 自・他.
 pub fn word_tags() -> crate::models::WordTags {
     let (words, _) = words_by_english();
     crate::models::WordTags {
-        words: words
-            .iter()
-            .map(|(en, senses)| (en.clone(), senses.iter().map(|(ja, pos)| (pos.clone(), ja.clone())).collect()))
-            .collect(),
+        words: words.keys().map(|en| (en.clone(), question_word_senses(en))).collect(),
         glossary: glossary_pos().clone(),
         verb_types: verb_types().clone(),
         cues: related_cues().clone(),
@@ -1239,19 +1336,19 @@ fn pos_order() -> &'static HashMap<String, Vec<String>> {
 pub fn recipe_poses(word: &str, meaning: &str) -> Vec<String> {
     let key = word.trim().to_lowercase();
     let (words, idioms) = words_by_english();
-    let mut said: Vec<&str> = Vec::new();
-    if let Some(senses) = words.get(&key) {
-        said.extend(senses.iter().map(|(_, pos)| pos.as_str()));
+    let mut said: Vec<String> = Vec::new();
+    if words.contains_key(&key) {
+        said.extend(question_word_senses(&key).into_iter().map(|(pos, _)| pos));
     } else if idioms.contains(&key) {
         return vec!["idiom".to_string()];
     } else if let Some(senses) = glossary_pos().get(&key) {
-        said.extend(senses.iter().map(|(pos, _)| pos.as_str()));
+        said.extend(senses.iter().map(|(pos, _)| pos.clone()));
     }
     if verb_types().contains_key(&key) {
-        said.push("verb");
+        said.push("verb".to_string());
     }
     let mut found: Vec<String> = Vec::new();
-    for pos in said {
+    for pos in said.iter().map(String::as_str) {
         if POS_PRIORITY.contains(&pos) && !found.iter().any(|p| p == pos) {
             found.push(pos.to_string());
         }
@@ -2263,6 +2360,7 @@ mod tests {
                     && n != "glossary-pos.json"
                     && n != "retired-words.json"
                     && n != "pos-order.json"
+                    && n != "sense-pos.json"
                     && !n.starts_with("exam-")
             })
             .count();
@@ -3147,6 +3245,35 @@ mod tests {
         assert_eq!(pos_from_gloss("書く", "write"), "verb");
     }
 
+    /// sense-pos.json writes a part of speech for each sense of a word question, the first its own,
+    /// and the senses of superior and memorial are told apart by it; a sense the glossary adds to a
+    /// question word has its own part of speech (decline's 減少 is a noun, not a verb).
+    #[test]
+    fn each_sense_of_a_word_has_its_part_of_speech() {
+        let seed = load_seed();
+        for (key, each) in sense_pos() {
+            let q = seed.questions.iter().find(|q| &q.key == key).unwrap_or_else(|| panic!("sense-pos.json: no question {key}"));
+            assert_eq!(q.kind, "word", "sense-pos.json: {key} is no word question");
+            assert_eq!(each.len(), gloss_senses(&q.ja).len(), "sense-pos.json: {key}: one part of speech for each sense of {}", q.ja);
+            assert_eq!(Some(&each[0]), word_pos().get(key), "sense-pos.json: {key} begins with its part of speech in word-pos.json");
+            assert!(each.iter().any(|p| p != &each[0]), "sense-pos.json: {key}: all one part of speech, no line needed");
+            for pos in each {
+                assert!(["noun", "adjective", "adverb", "verb"].contains(&pos.as_str()), "sense-pos.json: {key}: {pos}");
+                assert!(pos != "verb" || verb_types().contains_key(&q.en.to_lowercase()), "sense-pos.json: {key}: a verb with no 自・他");
+            }
+        }
+        let senses = |en: &str| -> Vec<(String, String)> { question_word_senses(en) };
+        assert_eq!(
+            senses("superior")[..2],
+            [("adjective".into(), "（to で）よりすぐれた".into()), ("noun".into(), "上司".into())]
+        );
+        assert!(senses("memorial").contains(&("adjective".into(), "記念の".into())));
+        assert_eq!(senses("decline").last(), Some(&("noun".into(), "減少".into())));
+        assert!(senses("show").contains(&("noun".into(), "ショー".into())));
+        assert_eq!(pos_from_gloss("読むこと", "reading"), "noun");
+        assert_eq!(recipe_poses("superior", "（to で）よりすぐれた、上司"), ["adjective", "noun"]);
+    }
+
     /// pos-order.json lists words of the dictionary, each with two parts of speech or more, in an
     /// order other than the default one (a word in that order needs no line).
     #[test]
@@ -3243,9 +3370,9 @@ mod tests {
             unknown.is_empty(),
             "verbs of the glossary with no 自・他 in verb-types.json (or a part of speech in glossary-pos.json): {unknown:?}"
         );
+        // A word question's line speaks for the senses only the glossary adds to the question's.
         for (key, pos) in written {
             let ja = glossary.get(key).unwrap_or_else(|| panic!("glossary-pos.json: {key} is not in the glossary"));
-            assert!(!words.contains_key(key), "glossary-pos.json: {key} is a word question; its part of speech is in word-pos.json");
             match pos {
                 WrittenPos::Whole(pos) => {
                     assert!(["noun", "adjective", "adverb", "none"].contains(&pos.as_str()), "glossary-pos.json: {key}: {pos}")
@@ -3253,7 +3380,7 @@ mod tests {
                 WrittenPos::BySense(each) => {
                     assert_eq!(each.len(), gloss_senses(ja).len(), "glossary-pos.json: {key}: one part of speech for each sense of {ja}");
                     for pos in each {
-                        assert!(["noun", "adjective", "adverb", "verb"].contains(&pos.as_str()), "glossary-pos.json: {key}: {pos}");
+                        assert!(["noun", "adjective", "adverb", "verb", "none"].contains(&pos.as_str()), "glossary-pos.json: {key}: {pos}");
                         assert!(pos != "verb" || types.contains_key(key), "glossary-pos.json: {key} is a verb with no 自・他 in verb-types.json");
                     }
                 }

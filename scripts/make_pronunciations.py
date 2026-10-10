@@ -22,7 +22,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA = os.path.join(ROOT, "src-tauri", "data")
 NOT_QUESTIONS = {"glossary.json", "grammar-notes.json", "pronunciations.json", "word-parts.json", "tiers.json",
                  "word-examples.json", "word-usage.json", "idiom-origins.json", "word-related.json",
-                 "word-pos.json", "word-confusables.json", "word-families.json", "irregular-verbs.json", "verb-types.json", "glossary-pos.json", "retired-words.json", "pos-order.json",
+                 "word-pos.json", "word-confusables.json", "word-families.json", "irregular-verbs.json", "verb-types.json", "glossary-pos.json", "retired-words.json", "pos-order.json", "sense-pos.json",
                  "exam-basic.json", "exam-600.json", "exam-800.json"}
 
 VOWELS = {

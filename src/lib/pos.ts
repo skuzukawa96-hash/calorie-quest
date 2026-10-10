@@ -7,6 +7,8 @@ import type { PartOfSpeech, PosTag, TagSense, VerbType, WordTags } from "../type
  */
 export function posFromGloss(ja: string, en = ""): PartOfSpeech {
   const first = (ja.split(/[、，,]/)[0] ?? "").replace(/（[^）]*）|\([^)]*\)/g, "").trim();
+  // 読むこと, ありがたいもの: what a thing is, whatever the word before it.
+  if (/(こと|もの)$/.test(first)) return "noun";
   if (/[にと]$/.test(first)) return "adverb";
   if (/[うくぐすつぬぶむる]$/.test(first)) return first.endsWith("く") && /ly$/i.test(en.trim()) ? "adverb" : "verb";
   if (/[いなの的ただてで]$/.test(first)) return "adjective";
@@ -108,7 +110,8 @@ function verbTags(type: VerbType | undefined, part: string): PosTag[] {
 
 function tagsOfPart(key: string, part: string, own: Sense[], data: WordTags, word: string): PosTag[] {
   const pos = posOf(part, own, word);
-  if (!pos) return [];
+  // "none": a sense that takes no tag (may 〜かもしれない, so だから).
+  if (!pos || (pos !== "verb" && !(pos in POS_TAG))) return [];
   if (pos === "verb") return verbTags(data.verbTypes[key], part);
   return [POS_TAG[pos]];
 }

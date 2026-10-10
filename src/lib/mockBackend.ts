@@ -17,6 +17,7 @@ import confusableSets from "../../src-tauri/data/word-confusables.json";
 import verbTypes from "../../src-tauri/data/verb-types.json";
 import glossaryPosOverrides from "../../src-tauri/data/glossary-pos.json";
 import posOrder from "../../src-tauri/data/pos-order.json";
+import sensePos from "../../src-tauri/data/sense-pos.json";
 import examBasic from "../../src-tauri/data/exam-basic.json";
 import exam600 from "../../src-tauri/data/exam-600.json";
 import exam800 from "../../src-tauri/data/exam-800.json";
@@ -239,7 +240,7 @@ const seedQuestions: SeedQuestion[] = [
   ...Object.entries(packModules)
     .filter(
       ([path]) =>
-        !/\/(questions|glossary|grammar-notes|pronunciations|word-parts|tiers|word-examples|word-usage|idiom-origins|word-related|word-pos|word-confusables|word-families|irregular-verbs|verb-types|glossary-pos|retired-words|pos-order|exam-[^/]*)\.json$/.test(
+        !/\/(questions|glossary|grammar-notes|pronunciations|word-parts|tiers|word-examples|word-usage|idiom-origins|word-related|word-pos|word-confusables|word-families|irregular-verbs|verb-types|glossary-pos|retired-words|pos-order|sense-pos|exam-[^/]*)\.json$/.test(
           path,
         ),
     )
@@ -2201,14 +2202,59 @@ type StoredRecipeWord = Omit<RecipeWord, "pos" | "poses" | "kind" | "misses"> & 
 /** Mirrors db::words_by_english: each word question's meaning and part of speech, and the idioms. */
 const recipeLookup = (() => {
   const words = new Map<string, Array<[string, PartOfSpeech]>>();
+  const keys = new Map<string, string[]>();
   const idioms = new Set<string>();
   for (const q of questions) {
     const en = q.en.toLowerCase();
-    if (q.kind === "word") words.set(en, [...(words.get(en) ?? []), [q.ja, posOf[q.key] ?? posFromGloss(q.ja, q.en)]]);
-    else if (q.kind === "idiom") idioms.add(en);
+    if (q.kind === "word") {
+      words.set(en, [...(words.get(en) ?? []), [q.ja, posOf[q.key] ?? posFromGloss(q.ja, q.en)]]);
+      keys.set(en, [...(keys.get(en) ?? []), q.key]);
+    } else if (q.kind === "idiom") idioms.add(en);
   }
-  return { words, idioms };
+  return { words, keys, idioms };
 })();
+
+/** Mirrors db::sense_given: a question gives a sense of the glossary already (取る for （手に）取る). */
+function senseGiven(asked: string[], s: string): boolean {
+  const plain = (x: string) => x.replace(/（[^）]*）|\([^)]*\)/g, "").trim();
+  return asked.some((x) => x === s || (!/[（(]/.test(s) && !/[／/。，,]/.test(x) && plain(x) === s));
+}
+
+/** Mirrors db::added_sense_pos: the part of speech of a sense the glossary adds to a question word's. */
+function addedSensePos(key: string, sense: string, index: number, asked: string[]): string {
+  const written = (glossaryPosOverrides as Record<string, string | string[]>)[key];
+  if (Array.isArray(written) && written[index]) return written[index];
+  if (typeof written === "string") return written;
+  const shape = posFromGloss(sense, key);
+  if (asked.includes(shape)) return shape;
+  const plain = sense.replace(/（[^）]*）|\([^)]*\)/g, "").trim();
+  if (shape === "verb") return key in verbTypes ? "verb" : asked[0];
+  if (shape === "adjective") return /[なの的]$/.test(plain) ? "adjective" : asked[0];
+  if (shape === "noun" && asked.includes("adverb")) return "adverb";
+  return shape;
+}
+
+/** Mirrors db::question_word_senses: each sense of a question word with its part of speech. */
+function questionWordSenses(key: string): Array<[string, string]> {
+  const questionsOf = recipeLookup.words.get(key) ?? [];
+  const keys = recipeLookup.keys.get(key) ?? [];
+  const out: Array<[string, string]> = [];
+  const asked: string[] = [];
+  questionsOf.forEach(([ja, pos], i) => {
+    const each = (sensePos as Record<string, string[]>)[keys[i]];
+    if (each) meaningParts(ja).forEach((s, k) => out.push([each[k], s]));
+    else out.push([pos, ja]);
+    asked.push(...ja.split("、"));
+  });
+  const gloss = (glossary as Record<string, string>)[key];
+  if (gloss && questionsOf.length) {
+    const own = questionsOf.map(([, pos]) => pos as string);
+    meaningParts(gloss).forEach((s, i) => {
+      if (!senseGiven(asked, s)) out.push([addedSensePos(key, s, i, own), s]);
+    });
+  }
+  return out;
+}
 
 /**
  * Mirrors db::glossary_pos: each sense of each word only the glossary has, with its part of speech
@@ -2242,8 +2288,7 @@ const POS_PRIORITY: PartOfSpeech[] = ["verb", "adjective", "noun", "adverb"];
 function recipePoses(word: string, meaning: string): RecipePos[] {
   const key = word.trim().toLowerCase();
   const said: string[] = [];
-  const senses = recipeLookup.words.get(key);
-  if (senses) said.push(...senses.map(([, pos]) => pos));
+  if (recipeLookup.words.has(key)) said.push(...questionWordSenses(key).map(([pos]) => pos));
   else if (recipeLookup.idioms.has(key)) return ["idiom"];
   else if (glossaryPos[key]) said.push(...glossaryPos[key].map(([pos]) => pos));
   if (key in verbTypes) said.push("verb");
@@ -2531,7 +2576,7 @@ export async function mockInvoke<T>(cmd: string, args: Record<string, unknown>):
     case "get_word_tags": {
       // Mirrors db::word_tags: each word question's and glossary word's part of speech, and the verbs' 自・他.
       const words: WordTags["words"] = {};
-      for (const [en, senses] of recipeLookup.words) words[en] = senses.map(([ja, pos]) => [pos, ja]);
+      for (const en of recipeLookup.words.keys()) words[en] = questionWordSenses(en) as WordTags["words"][string];
       return { words, glossary: glossaryPos, verbTypes: verbTypes as unknown as WordTags["verbTypes"], cues: relatedCues() } as T;
     }
     case "get_idioms": {
