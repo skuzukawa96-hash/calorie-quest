@@ -1820,7 +1820,10 @@ function buildExam(level: ExamLevel): ExamQuestion[] {
   const count = (sets: number[]) => sets.reduce((s, i) => s + list[i].questions.length, 0);
   // 読解: the passages not asked yet that come closest to 8, topped up only when they make fewer than 6.
   const readingOrder = ofPart("reading");
-  const fresh = readingOrder.filter((i) => !state.examSeen[list[i].id]);
+  // Mirrors build_exam_from: passages of 3 first (3 + 3 + 2 is their only way to 8), so the 2s last.
+  const fresh = readingOrder
+    .filter((i) => !state.examSeen[list[i].id])
+    .sort((a, b) => Number(list[a].questions.length % 2 === 0) - Number(list[b].questions.length % 2 === 0));
   const asked = readingOrder.filter((i) => !!state.examSeen[list[i].id]);
   const reading = fullest(fresh, (i) => list[i].questions.length, EXAM.reading);
   if (count(reading) < EXAM.reading - 2) reading.push(...fullest(asked, (i) => list[i].questions.length, EXAM.reading - count(reading)));

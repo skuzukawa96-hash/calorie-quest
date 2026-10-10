@@ -276,8 +276,12 @@ pub fn build_exam_from(level: &str, seen: &HashMap<String, String>) -> Result<Ve
     // 読解 comes a passage (2 to 4 questions) at a time: the passages not asked yet that come
     // closest to READING, topped up with those asked longest ago only when they make fewer than
     // READING - 2; the 短文穴埋め make up the rest.
-    let (fresh, asked): (Vec<usize>, Vec<usize>) =
+    let (mut fresh, asked): (Vec<usize>, Vec<usize>) =
         of_part("reading").into_iter().partition(|&i| !seen.contains_key(&list[i].id));
+    // A passage of 3 makes READING only with another 3 and a 2 (3 + 3 + 2), while 2s and 4s go
+    // together many ways: the 3s are tried first, so they are used up while the 2s last, and later
+    // exams are not left with 3s that only make 6 (and take more 短文穴埋め).
+    fresh.sort_by_key(|&i| list[i].questions.len() % 2 == 0);
     let sizes = |v: &[usize]| v.iter().map(|&i| (i, list[i].questions.len())).collect::<Vec<_>>();
     let mut reading = fullest(&sizes(&fresh), READING);
     if count(&reading) < READING - 2 {
@@ -712,10 +716,10 @@ mod tests {
         }
     }
 
-    /// Each level has questions enough for ten exams in a row with nothing asked twice.
+    /// Each level has questions enough for fifteen exams in a row with nothing asked twice.
     #[test]
     fn every_level_can_make_varied_exams() {
-        const EXAMS: usize = 10;
+        const EXAMS: usize = 15;
         for level in LEVELS {
             let list = &sets()[level];
             let count = |part: &str| list.iter().filter(|s| s.part == part).map(|s| s.questions.len()).sum::<usize>();
@@ -804,31 +808,21 @@ mod tests {
         assert_eq!(overview(&c).unwrap().review_count, 0);
     }
 
-    /// Exams take what has not been asked yet: one after another, no set comes back while the level
-    /// still has sets of that part not asked.
+    /// Exams take what has not been asked yet: fifteen exams in a row ask no set twice, whichever
+    /// way the shuffles fall (the 読解 passages of 3 tried first leave each exam the same number of
+    /// 短文穴埋め to take).
     #[test]
     fn exams_ask_what_has_not_been_asked_first() {
         for level in LEVELS {
             let mut c = conn();
-            let list = &sets()[level];
-            let mut asked: HashMap<&str, HashSet<String>> = HashMap::new();
-            // Each exam's sets, part by part, until a part has fewer sets left than one exam takes.
-            for round in 0..9 {
+            let mut asked: HashSet<String> = HashSet::new();
+            for round in 0..15 {
                 let exam = build_exam_from(level, &seen_sets(&c, level).unwrap()).unwrap();
                 assert_eq!(exam.len(), EXAM_SIZE, "{level} #{round}");
-                let mut this: HashMap<&str, HashSet<String>> = HashMap::new();
-                for q in &exam {
-                    let part = list.iter().find(|s| s.id == q.set_id).unwrap().part.as_str();
-                    this.entry(part).or_default().insert(q.set_id.clone());
-                }
-                for (part, ids) in &this {
-                    let before = asked.entry(part).or_default();
-                    let pool = list.iter().filter(|s| s.part == *part).count();
-                    if pool - before.len() >= ids.len() {
-                        assert!(ids.is_disjoint(before), "{level} #{round}: a {part} set asked again too soon");
-                    }
-                    before.extend(ids.iter().cloned());
-                }
+                let sets: HashSet<String> = exam.iter().map(|q| q.set_id.clone()).collect();
+                let again: Vec<&String> = sets.intersection(&asked).collect();
+                assert!(again.is_empty(), "{level} #{round}: asked again {again:?}");
+                asked.extend(sets);
                 finish(&mut c, level, &answers(&exam, 30)).unwrap();
             }
         }
