@@ -712,10 +712,10 @@ mod tests {
         }
     }
 
-    /// Each level has questions enough for five exams in a row with nothing asked twice.
+    /// Each level has questions enough for ten exams in a row with nothing asked twice.
     #[test]
     fn every_level_can_make_varied_exams() {
-        const EXAMS: usize = 5;
+        const EXAMS: usize = 10;
         for level in LEVELS {
             let list = &sets()[level];
             let count = |part: &str| list.iter().filter(|s| s.part == part).map(|s| s.questions.len()).sum::<usize>();
@@ -813,7 +813,7 @@ mod tests {
             let list = &sets()[level];
             let mut asked: HashMap<&str, HashSet<String>> = HashMap::new();
             // Each exam's sets, part by part, until a part has fewer sets left than one exam takes.
-            for round in 0..4 {
+            for round in 0..9 {
                 let exam = build_exam_from(level, &seen_sets(&c, level).unwrap()).unwrap();
                 assert_eq!(exam.len(), EXAM_SIZE, "{level} #{round}");
                 let mut this: HashMap<&str, HashSet<String>> = HashMap::new();
