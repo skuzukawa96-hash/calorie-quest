@@ -831,17 +831,26 @@ main {
   margin-top: 8px;
 }
 .recipe-item-foot {
-  display: flex;
-  align-items: center;
-  gap: 10px;
   margin-top: 8px;
 }
-.recipe-item-foot > :first-child {
-  margin-right: auto;
-}
-.recipe-item-foot .btn-small {
+/* ✓ 覚えた / 復習に戻す and × at the right end of the row, kept to the row's height */
+.recipe-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
   flex-shrink: 0;
+  align-self: center;
+  margin: -4px 0;
+  cursor: default;
+}
+.recipe-actions .btn-small {
+  padding: 3px 10px;
+  font-size: 12px;
   white-space: nowrap;
+}
+.recipe-actions .icon-btn {
+  width: 28px;
+  height: 26px;
 }
 .recipe-empty {
   text-align: center;

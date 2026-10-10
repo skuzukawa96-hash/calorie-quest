@@ -722,7 +722,7 @@ export default function Recipe({ playMode, onProgress, toast }: Props) {
         {inTab[filter].length > pool.length && (
           <p className="muted small">
             辞書に意味のない{inTab[filter].length - pool.length}語は復習に出ません
-            {filter === "learning" && "（一覧で単語を開き「✓ 覚えた」を押すと習得済みにできます）"}。
+            {filter === "learning" && "（一覧の「✓ 覚えた」を押すと習得済みにできます）"}。
           </p>
         )}
       </section>
@@ -819,7 +819,7 @@ export default function Recipe({ playMode, onProgress, toast }: Props) {
                   ? filter === "mastered"
                     ? "習得済みの単語はまだありません。"
                     : filter === "excluded"
-                      ? "除外中の単語はありません。単語を開いて × を押すと、ここに入ります。"
+                      ? "除外中の単語はありません。一覧で × を押すと、ここに入ります。"
                       : filter === "learning"
                         ? "復習中の単語はありません。"
                         : "単語はありません。"
@@ -890,6 +890,59 @@ export default function Recipe({ playMode, onProgress, toast }: Props) {
                             ✓
                           </span>
                         )}
+                        {/* At the right end of the row, open or not; a press here does not open the row. */}
+                        <span className="recipe-actions" onClick={(e) => e.stopPropagation()}>
+                          {w.excludedAt ? (
+                            <>
+                              <button
+                                className="btn-small"
+                                disabled={busy}
+                                onClick={() =>
+                                  run(async () => {
+                                    await api.setRecipeMastered(w.id, false);
+                                    toast(`「${w.word}」を復習中に戻しました`);
+                                  })
+                                }
+                              >
+                                復習に戻す
+                              </button>
+                              <DeleteButton
+                                label="レシピから完全に削除"
+                                disabled={busy}
+                                onClick={() =>
+                                  run(async () => {
+                                    await api.deleteRecipeWords([w.id]);
+                                    toast(`「${w.word}」をレシピから削除しました`);
+                                  })
+                                }
+                              />
+                            </>
+                          ) : (
+                            <>
+                              <button
+                                className={"btn-small " + (w.masteredAt ? "" : "eat")}
+                                disabled={busy}
+                                onClick={() =>
+                                  run(async () => {
+                                    await api.setRecipeMastered(w.id, !w.masteredAt);
+                                  })
+                                }
+                              >
+                                {w.masteredAt ? "復習に戻す" : "✓ 覚えた"}
+                              </button>
+                              <DeleteButton
+                                label="レシピから除外"
+                                disabled={busy}
+                                onClick={() =>
+                                  run(async () => {
+                                    await api.excludeRecipeWords([w.id]);
+                                    toast(`「${w.word}」を除外中に移しました`);
+                                  })
+                                }
+                              />
+                            </>
+                          )}
+                        </span>
                         <span className="recipe-caret" aria-hidden="true">
                           ▾
                         </span>
@@ -902,65 +955,13 @@ export default function Recipe({ playMode, onProgress, toast }: Props) {
                             </div>
                           )}
                           {w.exampleJa && <div className="muted small">{w.exampleJa}</div>}
-                          <div className="recipe-item-foot">
-                            <span className="muted small">
-                              {w.poses.map((p) => RECIPE_POS_LABEL[p]).join("・")}
-                              {shownForm(w) && `・「${shownForm(w)}」から登録`}・{stamp(w.addedAt)} に追加
-                              {w.reviews > 0 && `・復習 ${w.reviews}回`}
-                              {w.misses > 0 && `・間違い ${w.misses}回`}
-                              {w.masteredAt && !w.excludedAt && `・${stamp(w.masteredAt)} に習得`}
-                              {w.excludedAt && `・${stamp(w.excludedAt)} に除外`}
-                            </span>
-                            {w.excludedAt ? (
-                              <>
-                                <button
-                                  className="btn-small"
-                                  disabled={busy}
-                                  onClick={() =>
-                                    run(async () => {
-                                      await api.setRecipeMastered(w.id, false);
-                                      toast(`「${w.word}」を復習中に戻しました`);
-                                    })
-                                  }
-                                >
-                                  復習に戻す
-                                </button>
-                                <DeleteButton
-                                  label="レシピから完全に削除"
-                                  disabled={busy}
-                                  onClick={() =>
-                                    run(async () => {
-                                      await api.deleteRecipeWords([w.id]);
-                                      toast(`「${w.word}」をレシピから削除しました`);
-                                    })
-                                  }
-                                />
-                              </>
-                            ) : (
-                              <>
-                                <button
-                                  className={"btn-small " + (w.masteredAt ? "" : "eat")}
-                                  disabled={busy}
-                                  onClick={() =>
-                                    run(async () => {
-                                      await api.setRecipeMastered(w.id, !w.masteredAt);
-                                    })
-                                  }
-                                >
-                                  {w.masteredAt ? "復習に戻す" : "✓ 覚えた"}
-                                </button>
-                                <DeleteButton
-                                  label="レシピから除外"
-                                  disabled={busy}
-                                  onClick={() =>
-                                    run(async () => {
-                                      await api.excludeRecipeWords([w.id]);
-                                      toast(`「${w.word}」を除外中に移しました`);
-                                    })
-                                  }
-                                />
-                              </>
-                            )}
+                          <div className="recipe-item-foot muted small">
+                            {w.poses.map((p) => RECIPE_POS_LABEL[p]).join("・")}
+                            {shownForm(w) && `・「${shownForm(w)}」から登録`}・{stamp(w.addedAt)} に追加
+                            {w.reviews > 0 && `・復習 ${w.reviews}回`}
+                            {w.misses > 0 && `・間違い ${w.misses}回`}
+                            {w.masteredAt && !w.excludedAt && `・${stamp(w.masteredAt)} に習得`}
+                            {w.excludedAt && `・${stamp(w.excludedAt)} に除外`}
                           </div>
                         </div>
                       )}
