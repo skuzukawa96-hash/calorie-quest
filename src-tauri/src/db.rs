@@ -2070,6 +2070,24 @@ fn related_phrase_at<'a>(i: usize, tokens: &[String], lemmas: &[Vec<String>]) ->
     })
 }
 
+/// The dictionary's phrases that are no verbs: the word questions of more than one word but the
+/// phrasal verbs, the idioms, and the glossary's whose first sense is no verb (rush hour, break the
+/// ice, standard deviation). A word inside one in a sentence is the phrase's, not used in a sense of
+/// its own (the rush of "rush hour" is no 急ぐ); the verb of a phrasal verb mostly keeps its sense
+/// (woke up, grew up), so it is still shown.
+fn compound_phrases() -> &'static crate::util::PhraseIndex {
+    static TABLE: std::sync::OnceLock<crate::util::PhraseIndex> = std::sync::OnceLock::new();
+    TABLE.get_or_init(|| {
+        let (words, idioms) = words_by_english();
+        let nouns = words.iter().filter(|(_, asked)| asked.iter().all(|(_, pos, _)| pos != "verb")).map(|(en, _)| en);
+        let glossed = glossary_pos()
+            .iter()
+            .filter(|(_, senses)| senses.first().is_none_or(|(pos, _)| pos != "verb"))
+            .map(|(en, _)| en);
+        crate::util::PhraseIndex::new(nouns.chain(idioms.keys()).chain(glossed))
+    })
+}
+
 pub fn used_words(texts: &[String]) -> Vec<crate::models::UsedWord> {
     let mut out: Vec<crate::models::UsedWord> = Vec::new();
     // Whether a pattern of each was found in the sentence (else it is there for being confusable).
@@ -2077,6 +2095,10 @@ pub fn used_words(texts: &[String]) -> Vec<crate::models::UsedWord> {
     for text in texts {
         let tokens = crate::util::tokens(text);
         let lemmas: Vec<Vec<String>> = tokens.iter().map(|t| crate::util::lemmas(t)).collect();
+        let mut in_phrase = vec![false; tokens.len()];
+        for span in compound_phrases().spans(&tokens) {
+            in_phrase[span.start..span.end].fill(true);
+        }
         // The words of a phrasal verb found are its own, not its verb's (mapped out is not map).
         let mut skip_to = 0;
         for (i, candidates) in lemmas.iter().enumerate() {
@@ -2110,8 +2132,11 @@ pub fn used_words(texts: &[String]) -> Vec<crate::models::UsedWord> {
                 if out.iter().any(|u| &u.word == word) {
                     continue;
                 }
-                // Read as the word, not as a noun after "the" ("a rise in prices").
-                let as_word = reads_as(&tokens[i], word) && !(i > 0 && DETERMINERS.contains(&tokens[i - 1].as_str()));
+                // Read as the word, not as a noun after "the" ("a rise in prices") nor as a piece of a
+                // phrase ("rush hour").
+                let as_word = reads_as(&tokens[i], word)
+                    && !(i > 0 && DETERMINERS.contains(&tokens[i - 1].as_str()))
+                    && !in_phrase[i];
                 let found: Vec<(crate::models::WordUsage, bool)> = word_usages()
                     .get(word)
                     .map(|all| {
@@ -3744,5 +3769,15 @@ mod tests {
         assert!(words("They predict heavy rain tomorrow.").contains(&"predict".to_string()));
         assert!(words("She called while I was cooking.").contains(&"while".to_string()));
         assert!(!words("I stayed there for three days.").contains(&"for".to_string()), "for is in most sentences");
+    }
+
+    /// A word inside a phrase of the dictionary is the phrase's: the rush of "rush hour" is no 急ぐ.
+    #[test]
+    fn a_word_inside_a_phrase_is_not_shown_as_itself() {
+        let words = |s: &str| used_words(&[s.to_string()]).into_iter().map(|u| u.word).collect::<Vec<_>>();
+        assert!(!words("However, it may take longer during rush hour.").contains(&"rush".to_string()));
+        assert!(words("We rushed to the station.").contains(&"rush".to_string()), "rush by itself is 急ぐ");
+        // The verb of a phrasal verb keeps its sense: turn into is the ～になる of turn.
+        assert!(words("Water turns into gas when it boils.").contains(&"turn".to_string()));
     }
 }

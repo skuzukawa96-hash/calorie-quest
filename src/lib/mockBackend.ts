@@ -22,7 +22,7 @@ import homonymGroups from "../../src-tauri/data/homonyms.json";
 import examBasic from "../../src-tauri/data/exam-basic.json";
 import exam600 from "../../src-tauri/data/exam-600.json";
 import exam800 from "../../src-tauri/data/exam-800.json";
-import { expandDictionary, lemmas, tokenize, type Dictionary } from "./dictionary";
+import { buildPhraseIndex, expandDictionary, lemmas, phraseSpans, tokenize, type Dictionary, type PhraseIndex } from "./dictionary";
 import { cueFor, cueText, meaningParts, posFromGloss, posOf as posOfSense } from "./pos";
 import { answerWordCount, CLEAR_SCORE, hintPenalty, kcalFor, scoredKind, scoresPerWord } from "./scoring";
 import { exampleSentence, sentences } from "./sentences";
@@ -1437,12 +1437,30 @@ function relatedPhraseAt(i: number, tokens: string[], lemmaList: string[][]): st
   );
 }
 
+/**
+ * Mirrors db::compound_phrases: the word questions of more than one word but the phrasal verbs, the
+ * idioms, and the glossary's whose first sense is no verb. A word inside one is the phrase's (the
+ * rush of "rush hour" is no 急ぐ).
+ */
+let compoundIndex: PhraseIndex | null = null;
+function compoundPhrases(): PhraseIndex {
+  if (compoundIndex) return compoundIndex;
+  const keys: Dictionary = {};
+  for (const [en, asked] of recipeLookup.words) if (asked.every(([, pos]) => pos !== "verb")) keys[en] = "";
+  for (const en of recipeLookup.idioms.keys()) keys[en] = "";
+  for (const [en, senses] of Object.entries(glossaryPos)) if (senses[0]?.[0] !== "verb") keys[en] = "";
+  compoundIndex = buildPhraseIndex(keys);
+  return compoundIndex;
+}
+
 function usedWords(texts: string[]): UsedWord[] {
   const out: UsedWord[] = [];
   const foundPattern: boolean[] = [];
   for (const text of texts) {
     const tokens = tokenize(text);
     const lemmaList = tokens.map(lemmas);
+    const inPhrase = tokens.map(() => false);
+    for (const span of phraseSpans(tokens, compoundPhrases())) inPhrase.fill(true, span.start, span.end);
     // Mirrors used_words: the words of a phrasal verb found are its own, not its verb's.
     let skipTo = 0;
     lemmaList.forEach((candidates, i) => {
@@ -1466,7 +1484,8 @@ function usedWords(texts: string[]): UsedWord[] {
       }
       for (const word of candidates) {
         if (out.some((u) => u.word === word)) continue;
-        const asWord = readsAs(tokens[i], word) && !(i > 0 && DETERMINERS.includes(tokens[i - 1]));
+        // Mirrors used_words: not as a noun after "the", nor as a piece of a phrase ("rush hour").
+        const asWord = readsAs(tokens[i], word) && !(i > 0 && DETERMINERS.includes(tokens[i - 1])) && !inPhrase[i];
         const found: [WordUsage, boolean][] = [];
         for (const u of (usagesByWord.get(word) ?? []) as WordUsage[]) {
           const hits = patternWays(u.pattern, word)
