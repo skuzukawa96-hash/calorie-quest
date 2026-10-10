@@ -57,6 +57,8 @@ const VERB_TYPES_JSON: &str = include_str!("../data/verb-types.json");
 const GLOSSARY_POS_JSON: &str = include_str!("../data/glossary-pos.json");
 /// The part of speech of each sense of a word question whose senses are not all its own.
 const SENSE_POS_JSON: &str = include_str!("../data/sense-pos.json");
+/// Words of the same spelling as a word question (bark 樹皮 / ほえる), each as the senses that are its.
+const HOMONYMS_JSON: &str = include_str!("../data/homonyms.json");
 /// Word questions taken out of the bank (moat, kiln: words of a specialist or a rare kind, beyond
 /// what school and TOEIC ask), key → English. Their meaning stays in the glossary; the keys are
 /// never given to another question.
@@ -1103,22 +1105,25 @@ pub fn pos_from_gloss(ja: &str, en: &str) -> &'static str {
     }
 }
 
-/// English (lowercase) → (Japanese, part of speech) of each word question with it, and the idioms.
-fn words_by_english() -> &'static (HashMap<String, Vec<(String, String)>>, std::collections::HashSet<String>) {
-    static TABLE: std::sync::OnceLock<(HashMap<String, Vec<(String, String)>>, std::collections::HashSet<String>)> =
+/// A word question as the part-of-speech tables see it: (Japanese, part of speech, key).
+type AskedWord = (String, String, String);
+
+/// English (lowercase) → each word question with it, and English (lowercase) → the Japanese of each
+/// idiom with it.
+#[allow(clippy::type_complexity)]
+fn words_by_english() -> &'static (HashMap<String, Vec<AskedWord>>, HashMap<String, Vec<String>>) {
+    static TABLE: std::sync::OnceLock<(HashMap<String, Vec<AskedWord>>, HashMap<String, Vec<String>>)> =
         std::sync::OnceLock::new();
     TABLE.get_or_init(|| {
-        let mut words: HashMap<String, Vec<(String, String)>> = HashMap::new();
-        let mut idioms = std::collections::HashSet::new();
+        let mut words: HashMap<String, Vec<AskedWord>> = HashMap::new();
+        let mut idioms: HashMap<String, Vec<String>> = HashMap::new();
         for q in load_seed().questions {
             match q.kind.as_str() {
                 "word" => {
                     let pos = word_pos().get(&q.key).cloned().unwrap_or_else(|| pos_from_gloss(&q.ja, &q.en).to_string());
-                    words.entry(q.en.to_lowercase()).or_default().push((q.ja, pos));
+                    words.entry(q.en.to_lowercase()).or_default().push((q.ja, pos, q.key));
                 }
-                "idiom" => {
-                    idioms.insert(q.en.to_lowercase());
-                }
+                "idiom" => idioms.entry(q.en.to_lowercase()).or_default().push(q.ja),
                 _ => {}
             }
         }
@@ -1171,10 +1176,9 @@ pub fn gloss_senses(ja: &str) -> Vec<String> {
 pub fn glossary_pos() -> &'static HashMap<String, Vec<(String, String)>> {
     static TABLE: std::sync::OnceLock<HashMap<String, Vec<(String, String)>>> = std::sync::OnceLock::new();
     TABLE.get_or_init(|| {
-        let glossary: HashMap<String, String> =
-            serde_json::from_str(GLOSSARY_JSON).expect("data/glossary.json must be a valid JSON object");
         let (words, _) = words_by_english();
-        glossary
+        glossary_table()
+            .clone()
             .into_iter()
             .filter(|(en, _)| !words.contains_key(&en.to_lowercase()))
             .map(|(en, ja)| {
@@ -1209,17 +1213,16 @@ pub fn glossary_pos() -> &'static HashMap<String, Vec<(String, String)>> {
     })
 }
 
-/// sense-pos.json: question key → the part of speech of each sense of its Japanese, for a question
-/// whose senses are not all of its part of speech (superior よりすぐれた、上司: adjective, noun).
-fn sense_pos() -> &'static HashMap<String, Vec<String>> {
-    static TABLE: std::sync::OnceLock<HashMap<String, Vec<String>>> = std::sync::OnceLock::new();
-    TABLE.get_or_init(|| serde_json::from_str(SENSE_POS_JSON).expect("data/sense-pos.json must be a valid JSON object"))
-}
-
-/// Whether a question's senses give a sense of the glossary already: the same, or the same without
-/// a note (取る for （手に）取る). Mirrors what `dictionary` leaves out.
-fn sense_given(asked: &[String], s: &str) -> bool {
-    asked.iter().any(|x| x == s || (!s.contains(['（', '(']) && plain_senses(x) == [s]))
+/// The senses of a glossary entry that the word's questions and idioms (`given`, their Japanese
+/// apart at 、) do not give already, each with its place in the entry: not the same, nor the same
+/// without a note (取る for （手に）取る, 断る for （丁重に）断る). A sense with a note of its own stays
+/// (滑る（slip one's mind: うっかり忘れる）). What `dictionary` adds after a question's meaning.
+fn senses_beyond(given: &[String], gloss: &str) -> Vec<(usize, String)> {
+    gloss_senses(gloss)
+        .into_iter()
+        .enumerate()
+        .filter(|(_, s)| !given.iter().any(|x| x == s || (!s.contains(['（', '(']) && plain_senses(x) == [s.as_str()])))
+        .collect()
 }
 
 /// The part of speech of a sense the glossary adds to a word question's (ショー to show 見せる):
@@ -1255,46 +1258,55 @@ fn added_sense_pos(key: &str, sense: &str, index: usize, asked: &[&str]) -> Stri
     pos.to_string()
 }
 
-/// Every sense of a word question's English with its part of speech: each question's Japanese
-/// (sense by sense where sense-pos.json writes them), then the senses only the glossary adds
-/// (`added_sense_pos`), as the hover dictionary lists them.
-fn question_word_senses(key: &str) -> Vec<(String, String)> {
-    let (words, _) = words_by_english();
-    let Some(questions) = words.get(key) else {
-        return Vec::new();
-    };
-    let keys = question_keys_by_english().get(key).map(Vec::as_slice).unwrap_or_default();
-    let mut out: Vec<(String, String)> = Vec::new();
-    let mut asked: Vec<String> = Vec::new();
-    for ((ja, pos), qkey) in questions.iter().zip(keys) {
-        let senses = gloss_senses(ja);
-        match sense_pos().get(qkey) {
-            Some(each) => out.extend(each.iter().cloned().zip(senses.iter().cloned())),
-            None => out.push((pos.clone(), ja.clone())),
-        }
-        asked.extend(ja.split('、').map(str::to_string));
-    }
-    let glossary: &HashMap<String, String> = glossary_table();
-    if let Some(gloss) = glossary.get(key) {
-        let own: Vec<&str> = questions.iter().map(|(_, pos)| pos.as_str()).collect();
-        for (i, s) in gloss_senses(gloss).into_iter().enumerate() {
-            if !sense_given(&asked, &s) {
-                out.push((added_sense_pos(key, &s, i, &own), s));
-            }
-        }
-    }
-    out
+/// sense-pos.json: question key → the part of speech of each sense of its Japanese, for a question
+/// whose senses are not all of its part of speech (superior よりすぐれた、上司: adjective, noun).
+fn sense_pos() -> &'static HashMap<String, Vec<String>> {
+    static TABLE: std::sync::OnceLock<HashMap<String, Vec<String>>> = std::sync::OnceLock::new();
+    TABLE.get_or_init(|| serde_json::from_str(SENSE_POS_JSON).expect("data/sense-pos.json must be a valid JSON object"))
 }
 
-/// English (lowercase) → the keys of its word questions, in the order of `words_by_english`.
-fn question_keys_by_english() -> &'static HashMap<String, Vec<String>> {
-    static TABLE: std::sync::OnceLock<HashMap<String, Vec<String>>> = std::sync::OnceLock::new();
+/// The senses of a word question's English, each as (part of speech, Japanese): `asked`, each
+/// question's Japanese (sense by sense where sense-pos.json writes them); `added`, the senses only
+/// the glossary has, which the hover dictionary lists after them (`added_sense_pos`).
+pub struct WordSenses {
+    pub asked: Vec<(String, String)>,
+    pub added: Vec<(String, String)>,
+}
+
+/// `WordSenses` of every word question's English, worked out once.
+fn word_senses() -> &'static HashMap<String, WordSenses> {
+    static TABLE: std::sync::OnceLock<HashMap<String, WordSenses>> = std::sync::OnceLock::new();
     TABLE.get_or_init(|| {
-        let mut keys: HashMap<String, Vec<String>> = HashMap::new();
-        for q in load_seed().questions.into_iter().filter(|q| q.kind == "word") {
-            keys.entry(q.en.to_lowercase()).or_default().push(q.key);
-        }
-        keys
+        let (words, idioms) = words_by_english();
+        words
+            .iter()
+            .map(|(key, questions)| {
+                let mut asked = Vec::new();
+                let mut given: Vec<String> = Vec::new();
+                for (ja, pos, qkey) in questions {
+                    match sense_pos().get(qkey) {
+                        Some(each) => asked.extend(each.iter().cloned().zip(gloss_senses(ja))),
+                        None => asked.push((pos.clone(), ja.clone())),
+                    }
+                    given.extend(ja.split('、').map(str::to_string));
+                }
+                // An idiom of the same English gives its senses too, as in the dictionary.
+                for ja in idioms.get(key).into_iter().flatten() {
+                    given.extend(ja.split('、').map(str::to_string));
+                }
+                let own: Vec<&str> = questions.iter().map(|(_, pos, _)| pos.as_str()).collect();
+                let added = glossary_table()
+                    .get(key)
+                    .map(|gloss| {
+                        senses_beyond(&given, gloss)
+                            .into_iter()
+                            .map(|(i, s)| (added_sense_pos(key, &s, i, &own), s))
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                (key.clone(), WordSenses { asked, added })
+            })
+            .collect()
     })
 }
 
@@ -1304,16 +1316,29 @@ fn glossary_table() -> &'static HashMap<String, String> {
     TABLE.get_or_init(|| serde_json::from_str(GLOSSARY_JSON).expect("data/glossary.json must be a valid JSON object"))
 }
 
-/// What the tags before a meaning ([名] [形] [副] [自] [他]) are worked out from: the part of
-/// speech of each word question by its English and of each word only the glossary has, and the
-/// verbs' 自・他.
+/// homonyms.json: English (lowercase) → its words of the same spelling, each the senses that are
+/// its (bark: 樹皮 / ほえる, fine: 元気な、結構な、晴れた / 罰金).
+fn homonyms() -> &'static HashMap<String, Vec<Vec<String>>> {
+    static TABLE: std::sync::OnceLock<HashMap<String, Vec<Vec<String>>>> = std::sync::OnceLock::new();
+    TABLE.get_or_init(|| serde_json::from_str(HOMONYMS_JSON).expect("data/homonyms.json must be a valid JSON object"))
+}
+
+/// What the tags before a meaning ([名] [形] [副] [自] [他]) are worked out from: the senses of each
+/// word question's English with their parts of speech (`word_senses`), each word only the glossary
+/// has, the verbs' 自・他, and the words of the same spelling.
 pub fn word_tags() -> crate::models::WordTags {
-    let (words, _) = words_by_english();
+    let senses = word_senses();
     crate::models::WordTags {
-        words: words.keys().map(|en| (en.clone(), question_word_senses(en))).collect(),
+        words: senses.iter().map(|(en, s)| (en.clone(), s.asked.clone())).collect(),
+        added: senses
+            .iter()
+            .filter(|(_, s)| !s.added.is_empty())
+            .map(|(en, s)| (en.clone(), s.added.clone()))
+            .collect(),
         glossary: glossary_pos().clone(),
         verb_types: verb_types().clone(),
         cues: related_cues().clone(),
+        homonyms: homonyms().clone(),
     }
 }
 
@@ -1335,20 +1360,20 @@ fn pos_order() -> &'static HashMap<String, Vec<String>> {
 /// (`pos_order`), else verb → adjective → noun → adverb.
 pub fn recipe_poses(word: &str, meaning: &str) -> Vec<String> {
     let key = word.trim().to_lowercase();
-    let (words, idioms) = words_by_english();
-    let mut said: Vec<String> = Vec::new();
-    if words.contains_key(&key) {
-        said.extend(question_word_senses(&key).into_iter().map(|(pos, _)| pos));
-    } else if idioms.contains(&key) {
+    let (_, idioms) = words_by_english();
+    let mut said: Vec<&str> = Vec::new();
+    if let Some(senses) = word_senses().get(&key) {
+        said.extend(senses.asked.iter().chain(&senses.added).map(|(pos, _)| pos.as_str()));
+    } else if idioms.contains_key(&key) {
         return vec!["idiom".to_string()];
     } else if let Some(senses) = glossary_pos().get(&key) {
-        said.extend(senses.iter().map(|(pos, _)| pos.clone()));
+        said.extend(senses.iter().map(|(pos, _)| pos.as_str()));
     }
     if verb_types().contains_key(&key) {
-        said.push("verb".to_string());
+        said.push("verb");
     }
     let mut found: Vec<String> = Vec::new();
-    for pos in said.iter().map(String::as_str) {
+    for pos in said {
         if POS_PRIORITY.contains(&pos) && !found.iter().any(|p| p == pos) {
             found.push(pos.to_string());
         }
@@ -2143,8 +2168,7 @@ pub fn idiom_keys(conn: &Connection) -> rusqlite::Result<Vec<String>> {
 }
 
 pub fn dictionary(conn: &Connection) -> rusqlite::Result<HashMap<String, String>> {
-    let mut map: HashMap<String, String> =
-        serde_json::from_str(GLOSSARY_JSON).expect("data/glossary.json must be a valid JSON object");
+    let mut map: HashMap<String, String> = glossary_table().clone();
 
     {
         // Vocabulary and idioms both go in under their whole English. A multi-word entry stays a
@@ -2166,16 +2190,11 @@ pub fn dictionary(conn: &Connection) -> rusqlite::Result<HashMap<String, String>
         // Question data comes first: it is the vocabulary being studied. A word asked in two senses
         // (right: 右 / 正しい) keeps both, and senses only the glossary has (like: 〜のような) follow,
         // so a word in a sentence shows every meaning it may have there.
-        // A plain sense a question gives already with a note (取る for （手に）取る, 断る for （丁重に）断る)
-        // says nothing more; one with a note of its own stays (滑る（slip one's mind: うっかり忘れる）).
+        // A plain sense a question gives already with a note says nothing more (`senses_beyond`).
         for (key, mut senses) in asked {
             if let Some(extra) = map.get(&key) {
-                for s in extra.split('、') {
-                    let given = senses.iter().any(|x| x == s || (!s.contains(['（', '(']) && plain_senses(x) == [s]));
-                    if !given {
-                        senses.push(s.to_string());
-                    }
-                }
+                let beyond = senses_beyond(&senses, extra);
+                senses.extend(beyond.into_iter().map(|(_, s)| s));
             }
             map.insert(key, senses.join("、"));
         }
@@ -2361,6 +2380,7 @@ mod tests {
                     && n != "retired-words.json"
                     && n != "pos-order.json"
                     && n != "sense-pos.json"
+                    && n != "homonyms.json"
                     && !n.starts_with("exam-")
             })
             .count();
@@ -3012,7 +3032,7 @@ mod tests {
         let compares = words_by_english()
             .0
             .get(&key)
-            .is_none_or(|senses| senses.iter().any(|(_, pos)| pos == "adjective" || pos == "adverb"));
+            .is_none_or(|senses| senses.iter().any(|(_, pos, _)| pos == "adjective" || pos == "adverb"));
         let compared = |t: &str, p: &str| {
             ["er", "est"].iter().any(|end| t.ends_with(end) && !p.ends_with(end)) && !t.starts_with(&format!("{p}s"))
         };
@@ -3262,7 +3282,10 @@ mod tests {
                 assert!(pos != "verb" || verb_types().contains_key(&q.en.to_lowercase()), "sense-pos.json: {key}: a verb with no 自・他");
             }
         }
-        let senses = |en: &str| -> Vec<(String, String)> { question_word_senses(en) };
+        let senses = |en: &str| -> Vec<(String, String)> {
+            let s = &word_senses()[en];
+            s.asked.iter().chain(&s.added).cloned().collect()
+        };
         assert_eq!(
             senses("superior")[..2],
             [("adjective".into(), "（to で）よりすぐれた".into()), ("noun".into(), "上司".into())]
@@ -3272,6 +3295,64 @@ mod tests {
         assert!(senses("show").contains(&("noun".into(), "ショー".into())));
         assert_eq!(pos_from_gloss("読むこと", "reading"), "noun");
         assert_eq!(recipe_poses("superior", "（to で）よりすぐれた、上司"), ["adjective", "noun"]);
+    }
+
+    /// The tags work on the senses the hover dictionary shows: a word question's English has its
+    /// questions' Japanese and the glossary's other senses, in the same way in both (an idiom of
+    /// the same English gives its senses too).
+    #[test]
+    fn the_tags_see_the_senses_the_dictionary_shows() {
+        let conn = init_in_memory().unwrap();
+        let dict = dictionary(&conn).unwrap();
+        let mut apart = Vec::new();
+        for (en, senses) in word_senses() {
+            let mut shown: Vec<String> = Vec::new();
+            for (_, ja) in &senses.asked {
+                for s in ja.split('、') {
+                    if !shown.iter().any(|x| x == s) {
+                        shown.push(s.to_string());
+                    }
+                }
+            }
+            let idioms = words_by_english().1.get(en).into_iter().flatten();
+            for ja in words_by_english().0[en].iter().map(|(ja, _, _)| ja).chain(idioms) {
+                for s in ja.split('、') {
+                    if !shown.iter().any(|x| x == s) {
+                        shown.push(s.to_string());
+                    }
+                }
+            }
+            let gloss: Vec<&str> = dict[en].split('、').collect();
+            let added: Vec<&str> = senses.added.iter().map(|(_, s)| s.as_str()).collect();
+            if !added.iter().all(|s| gloss.contains(s)) || gloss.iter().any(|s| !shown.iter().any(|x| x == s) && !added.contains(s)) {
+                apart.push(format!("{en}: {} / {:?}", dict[en], added));
+            }
+        }
+        apart.sort();
+        assert!(apart.is_empty(), "the tags and the dictionary see different senses: {}", apart.join("; "));
+    }
+
+    /// homonyms.json: a word question's English with two words or more of its spelling, each group
+    /// of senses the word's own (its questions', its glossary entry's or its verb types'), no sense
+    /// in two groups.
+    #[test]
+    fn words_of_the_same_spelling_are_the_words_senses() {
+        let (words, _) = words_by_english();
+        for (en, groups) in homonyms() {
+            let questions = words.get(en).unwrap_or_else(|| panic!("homonyms.json: {en} is no word question"));
+            assert!(groups.len() >= 2, "homonyms.json: {en}: one word only");
+            let mut known: Vec<String> = questions.iter().flat_map(|(ja, _, _)| gloss_senses(ja)).collect();
+            known.extend(glossary_table().get(en).map(|g| gloss_senses(g)).unwrap_or_default());
+            if let Some(crate::models::VerbType::BySense(each)) = verb_types().get(en) {
+                known.extend(each.iter().flat_map(|(_, ja)| gloss_senses(ja)));
+            }
+            let mut seen = HashSet::new();
+            for s in groups.iter().flatten() {
+                assert!(known.contains(s), "homonyms.json: {en}: {s} is none of its senses");
+                assert!(seen.insert(s), "homonyms.json: {en}: {s} in two words");
+            }
+        }
+        assert_eq!(homonyms()["bark"], vec![vec!["樹皮".to_string()], vec!["ほえる".to_string()]]);
     }
 
     /// pos-order.json lists words of the dictionary, each with two parts of speech or more, in an
@@ -3311,7 +3392,7 @@ mod tests {
         use crate::models::VerbType;
         let (words, _) = words_by_english();
         let verbs: std::collections::HashSet<&String> =
-            words.iter().filter(|(_, senses)| senses.iter().any(|(_, pos)| pos == "verb")).map(|(en, _)| en).collect();
+            words.iter().filter(|(_, senses)| senses.iter().any(|(_, pos, _)| pos == "verb")).map(|(en, _)| en).collect();
         let types = verb_types();
         let mut missing: Vec<&&String> = verbs.iter().filter(|v| !types.contains_key(**v)).collect();
         missing.sort();
@@ -3330,7 +3411,7 @@ mod tests {
                     assert!(["自", "他", "自他"].contains(&t.as_str()), "{word}: {t} is not 自, 他 or 自他");
                     assert!(!ja.trim().is_empty(), "{word}: a sense with no meaning");
                     assert!(
-                        !words.get(word).is_some_and(|qs| qs.iter().any(|(_, pos)| pos == "verb")),
+                        !words.get(word).is_some_and(|qs| qs.iter().any(|(_, pos, _)| pos == "verb")),
                         "{word}: a verb question has its own sense; write 自, 他 or 自他"
                     );
                 }

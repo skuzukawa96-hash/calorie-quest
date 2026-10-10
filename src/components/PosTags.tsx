@@ -78,10 +78,22 @@ export function PosTags({ tags }: { tags: PosTag[] }) {
  * 見つける, [自] 走る ／ [他] 経営する. A verb sense the meaning leaves out comes after it, quieter
  * (estimate 見積もり ／ [他] 見積もる). The dictionary is unused now the data has every word.
  */
-export function MeaningWithTags({ word, meaning }: { word: string; meaning: string; dict?: Dictionary | null }) {
+export function MeaningWithTags({
+  word,
+  meaning,
+  others: withOthers = true,
+}: {
+  word: string;
+  meaning: string;
+  dict?: Dictionary | null;
+  /** the verb senses the meaning leaves out, after it (off for a line that is about one word of the spelling) */
+  others?: boolean;
+}) {
   const data = useWordTags();
   if (!data) return <>{meaning}</>;
-  const { groups, others } = tagMeaning(word, meaning, data);
+  const tagged = tagMeaning(word, meaning, data);
+  const groups = tagged.groups;
+  const others = withOthers ? tagged.others : [];
   return (
     <>
       {groups.map((g, i) => (

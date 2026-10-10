@@ -2262,6 +2262,20 @@ button.option:hover:not(:disabled) {
   color: var(--choco);
 }
 /* 成り立ち under a word's answer: prefix / root / suffix chips, then the word */
+/* 同じつづりの別の語: bark 樹皮 → [自] ほえる */
+.homonym-line {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.homonym-line > .label {
+  flex-shrink: 0;
+}
+.homonym-words {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+}
 .word-parts {
   display: flex;
   align-items: baseline;

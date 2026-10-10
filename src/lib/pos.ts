@@ -67,14 +67,16 @@ type Sense = [PartOfSpeech, string];
 
 /**
  * Every part of speech a word has, each with its sense: its word questions' (or, for a word only
- * the glossary has, its gloss's, sense by sense), and its verb senses from verb-types.json when no
- * question is a verb (estimate 見積もり is a noun question; 見積もる its verb). null when the word
- * takes no tag (about, she, could); empty when the data does not know it.
+ * the glossary has, its gloss's, sense by sense), with `added` the senses the glossary adds to a
+ * question word's (decline 減少), and its verb senses from verb-types.json when no sense is a verb
+ * (estimate 見積もり is a noun question; 見積もる its verb). null when the word takes no tag
+ * (about, she, could); empty when the data does not know it.
  */
-function sensesOf(key: string, data: WordTags): Sense[] | null {
+function sensesOf(key: string, data: WordTags, added = false): Sense[] | null {
   const own = data.words[key] ?? data.glossary[key];
   if (own && own.length === 0) return null;
   const out: Sense[] = own ? [...own] : [];
+  if (added) out.push(...(data.added?.[key] ?? []));
   const type = data.verbTypes[key];
   if (type && !out.some(([p]) => p === "verb")) {
     if (typeof type === "string") out.push(["verb", ""]);
@@ -108,6 +110,17 @@ function verbTags(type: VerbType | undefined, part: string): PosTag[] {
   return [...new Set(type.flatMap(([t]) => typeTags(t)))];
 }
 
+/**
+ * The words of the same spelling as the one a meaning is of: the groups of homonyms.json none of
+ * whose senses is in the meaning (bark 樹皮: ほえる), when one of them is. Empty for any other word.
+ */
+export function homonymsApart(word: string, meaning: string, data: WordTags): string[][] {
+  const groups = data.homonyms?.[word.trim().toLowerCase()] ?? [];
+  const parts = meaningParts(meaning);
+  const meant = (g: string[]) => g.some((s) => parts.some((p) => closeness(s, p) > 0));
+  return groups.some(meant) ? groups.filter((g) => !meant(g)) : [];
+}
+
 function tagsOfPart(key: string, part: string, own: Sense[], data: WordTags, word: string): PosTag[] {
   const pos = posOf(part, own, word);
   // "none": a sense that takes no tag (may 〜かもしれない, so だから).
@@ -131,7 +144,7 @@ export interface TaggedMeaning {
  */
 export function tagMeaning(word: string, meaning: string, data: WordTags): TaggedMeaning {
   const key = word.trim().toLowerCase();
-  const own = sensesOf(key, data);
+  const own = sensesOf(key, data, true);
   if (!own) return { groups: [{ tags: [], ja: meaning }], others: [] };
   const groups: TagSense[] = [];
   const parts = meaningParts(meaning);
@@ -141,11 +154,14 @@ export function tagMeaning(word: string, meaning: string, data: WordTags): Tagge
     if (last && last.tags.join() === tags.join()) last.ja += `、${part}`;
     else groups.push({ tags, ja: part });
   }
+  // A verb sense of another word of the same spelling (spring 春: 跳ねる) is no sense left out;
+  // the explanation shows it apart, as a word of its own (`homonymsApart`).
+  const apart = homonymsApart(word, meaning, data).flat();
   const type = data.verbTypes[key];
   const others: TagSense[] =
     typeof type === "object"
       ? type
-          .filter(([, ja]) => !parts.some((p) => closeness(ja, p) > 0))
+          .filter(([, ja]) => !parts.some((p) => closeness(ja, p) > 0) && !apart.some((s) => closeness(ja, s) > 0))
           .map(([t, ja]) => ({ tags: typeTags(t), ja }))
       : [];
   return { groups, others };

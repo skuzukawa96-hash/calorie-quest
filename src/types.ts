@@ -294,13 +294,17 @@ export type VerbType = "自" | "他" | "自他" | Array<["自" | "他" | "自他
 
 /** What the tags are worked out from (commands::get_word_tags). */
 export interface WordTags {
-  /** English (lowercase) → [part of speech, Japanese] of each word question with it */
+  /** English (lowercase) → [part of speech, Japanese] of each word question with it (sense by sense where sense-pos.json writes them) */
   words: Record<string, Array<[PartOfSpeech, string]>>;
+  /** English (lowercase) of a word question → [part of speech, sense] of each sense only the glossary adds ("none": no tag) */
+  added: Record<string, Array<[PartOfSpeech, string]>>;
   /** English (lowercase) → [part of speech, sense] of each sense of each word only the glossary has; empty: no tag */
   glossary: Record<string, Array<[PartOfSpeech, string]>>;
   verbTypes: Record<string, VerbType>;
   /** English (lowercase) → [group, nuance as a cue ("" when none)] of every 類似表現 group it is in */
   cues: Record<string, Array<[number, string]>>;
+  /** English (lowercase) → its words of the same spelling, each as the senses that are its (bark: 樹皮 / ほえる) */
+  homonyms: Record<string, string[][]>;
 }
 
 /** Tags with the sense they are for (none when they are for the whole word). */

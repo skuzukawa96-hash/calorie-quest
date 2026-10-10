@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useRef, useState } from "react";
 import GlossedText from "./GlossedText";
-import { MeaningWithTags, SlotText, WordTagsOnly } from "./PosTags";
+import { MeaningWithTags, SlotText, useWordTags, WordTagsOnly } from "./PosTags";
+import { homonymsApart } from "../lib/pos";
 import type { Dictionary } from "../lib/dictionary";
 import { useAddToRecipe } from "../lib/recipe";
 import { isTtsSupported, speak, speakInTurn } from "../lib/speech";
@@ -264,6 +265,28 @@ function PartFamilyList({ piece, family, dict }: { piece: WordPart; family: Part
  * English an English voice could read. Shown under a study answer and under a recipe
  * review answer alike.
  */
+/**
+ * 同じつづりの別の語: the other words spelt like the one asked (bark 樹皮: [自] ほえる; fine 元気な:
+ * [名] 罰金), each with its tags, so a sense of another word is not taken for this one's.
+ */
+function Homonyms({ word, meaning }: { word: string; meaning: string }) {
+  const data = useWordTags();
+  const apart = data ? homonymsApart(word, meaning, data) : [];
+  if (!apart.length) return null;
+  return (
+    <div className="homonym-line">
+      <span className="label">同じつづりの別の語</span>
+      <span className="homonym-words">
+        {apart.map((senses, i) => (
+          <span key={i} className="homonym">
+            <b>{word}</b> <MeaningWithTags word={word} meaning={senses.join("、")} others={false} />
+          </span>
+        ))}
+      </span>
+    </div>
+  );
+}
+
 export default function WordNotesPanel({
   notes,
   word,
@@ -284,6 +307,7 @@ export default function WordNotesPanel({
   const relatedOpen = openFor === word;
   return (
     <>
+      <Homonyms word={word} meaning={meaning} />
       {irregular.length > 0 && (
         <div className="irregular-line">
           <div className="usage-title">
