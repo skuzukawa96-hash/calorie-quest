@@ -2351,9 +2351,10 @@ function recipePoses(word: string, meaning: string): RecipePos[] {
 const withPos = (w: StoredRecipeWord): RecipeWord => ({
   ...w,
   kind: w.kind ?? "word",
-  // Words saved before misses and 除外中 existed have neither.
+  // Words saved before misses, 除外 and ★ existed have none of them.
   misses: w.misses ?? 0,
   excludedAt: w.excludedAt ?? null,
+  favoritedAt: w.favoritedAt ?? null,
   // Mirrors recipe::row_to_word: a pattern is sorted as a pattern.
   ...(() => {
     const poses: RecipePos[] = w.kind === "usage" ? ["usage"] : recipePoses(w.word, w.meaning);
@@ -2400,6 +2401,7 @@ function addRecipeWord(input: RecipeWordInput): RecipeAddResult {
     masteredAt: null,
     misses: 0,
     excludedAt: null,
+    favoritedAt: null,
     kind: input.kind === "usage" ? "usage" : "word",
   };
   state.recipe.push(entry);
@@ -2667,11 +2669,11 @@ export async function mockInvoke<T>(cmd: string, args: Record<string, unknown>):
       const full = args.mode === "choice" ? 2 : args.mode === "typing" ? 4 : 0;
       if (!full) throw new Error(`unknown review mode ${String(args.mode)}`);
       const target = String(args.target);
-      if (!["all", "learning", "mastered", "excluded"].includes(target)) throw new Error(`unknown review target ${target}`);
+      if (!["all", "favorite", "learning", "mastered", "excluded"].includes(target)) throw new Error(`unknown review target ${target}`);
       const w = recipeWord(Number(args.id));
       const now = nowTs();
-      // Mirrors recipe::review: in すべて / 復習中 right makes the word learned; wrong puts it back
-      // into review from any tab, and is a miss.
+      // Mirrors recipe::review: in すべて / 復習 right makes the word learned (★ stays until 習得);
+      // wrong puts it back into review from any tab, and is a miss.
       const repeat = state.recipePaid[w.id] === t;
       w.reviews += 1;
       w.lastReviewedAt = now;
@@ -2696,9 +2698,22 @@ export async function mockInvoke<T>(cmd: string, args: Record<string, unknown>):
       } as T;
     }
     case "set_recipe_mastered": {
+      // Mirrors recipe::set_mastered: learned, the word is no longer starred.
       const w = recipeWord(Number(args.id));
       w.masteredAt = args.mastered ? (w.masteredAt ?? nowTs()) : null;
+      if (args.mastered) w.favoritedAt = null;
       w.excludedAt = null;
+      save();
+      return withPos(w) as T;
+    }
+    case "set_recipe_favorite": {
+      // Mirrors recipe::set_favorite: a starred word is in review.
+      const w = recipeWord(Number(args.id));
+      if (args.favorite) {
+        w.favoritedAt = w.favoritedAt ?? nowTs();
+        w.masteredAt = null;
+        w.excludedAt = null;
+      } else w.favoritedAt = null;
       save();
       return withPos(w) as T;
     }
@@ -2710,6 +2725,7 @@ export async function mockInvoke<T>(cmd: string, args: Record<string, unknown>):
       for (const w of state.recipe) {
         if (!ids.has(w.id)) continue;
         w.masteredAt = args.mastered ? (w.masteredAt ?? now) : null;
+        if (args.mastered) w.favoritedAt = null;
         w.excludedAt = null;
         changed += 1;
       }
@@ -2724,6 +2740,7 @@ export async function mockInvoke<T>(cmd: string, args: Record<string, unknown>):
       for (const w of state.recipe) {
         if (!ids.has(w.id)) continue;
         w.excludedAt = w.excludedAt ?? now;
+        w.favoritedAt = null;
         moved += 1;
       }
       save();

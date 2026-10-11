@@ -577,6 +577,9 @@ pub struct RecipeWord {
     /// Set when the word was taken off the list (×): it waits in 除外中, apart from すべて, until
     /// it is put back or deleted for good.
     pub excluded_at: Option<String>,
+    /// Set when the word was starred (☆ → ★). A starred word is in review and shows in ★ as well
+    /// as in すべて and 復習; learning it or taking it off by hand unstars it.
+    pub favorited_at: Option<String>,
     /// noun / verb / adjective / adverb / idiom (`db::recipe_poses`), or usage for a pattern: the
     /// part of speech the list sorts it under, its commonest
     pub pos: String,

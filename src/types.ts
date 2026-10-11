@@ -599,12 +599,17 @@ export interface RecipeWord {
   addedAt: string;
   reviews: number;
   lastReviewedAt?: string | null;
-  /** set once the word is learned: right in a review of すべて / 復習中, or marked so */
+  /** set once the word is learned: right in a review of すべて / 復習, or marked so */
   masteredAt?: string | null;
   /** how many times it was answered wrong in a review */
   misses: number;
-  /** set when it was taken off the list (×): it waits in 除外中, apart from すべて */
+  /** set when it was taken off the list (×): it waits in 除外, apart from すべて */
   excludedAt?: string | null;
+  /**
+   * set when it was starred (☆ → ★): a starred word in review shows in ★ as well as in すべて and
+   * 復習; learning it or taking it off by hand unstars it
+   */
+  favoritedAt?: string | null;
   /** the part of speech it is sorted under, its commonest, or idiom, or usage for a pattern (db::recipe_poses) */
   pos: RecipePos;
   /** every part of speech it has, `pos` first: figure (a noun and a verb) shows under either */
@@ -640,10 +645,10 @@ export interface RecipeAddResult {
 export type RecipeReviewMode = "choice" | "typing";
 
 /**
- * The tab a recipe review goes over: すべて (every word not taken off), 復習中, 習得済み or 除外中.
- * It decides where an answer moves the word (recipe::review).
+ * The tab a recipe review goes over: すべて (every word not taken off), ★ (the starred words in
+ * review), 復習, 習得 or 除外. It decides where an answer moves the word (recipe::review).
  */
-export type RecipeTab = "all" | "learning" | "mastered" | "excluded";
+export type RecipeTab = "all" | "favorite" | "learning" | "mastered" | "excluded";
 
 export interface RecipeReviewResult {
   entry: RecipeWord;

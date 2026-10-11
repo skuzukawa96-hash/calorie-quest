@@ -51,9 +51,9 @@ export default function RecipeProvider({ children }: { children: ReactNode }) {
           r.status === "added"
             ? `📖 ${w}をレシピに追加しました`
             : r.status === "restored"
-              ? `📖 ${w}を習得済みから復習に戻しました`
+              ? `📖 ${w}を習得から復習に戻しました`
               : r.status === "unexcluded"
-                ? `📖 ${w}を除外中から復習に戻しました`
+                ? `📖 ${w}を除外から復習に戻しました`
                 : `${w}はもうレシピに入っています`;
         if (r.status !== "exists") playPop();
         // Even a word already listed may have just gained its example sentence.

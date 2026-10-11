@@ -1,10 +1,11 @@
 //! お菓子作りレシピ: the learner's own word list. Words arrive by right-clicking English in a
 //! question or an explanation and are reviewed by picking the meaning or typing the English. A
-//! word is in review (復習中), learned (習得済み) or taken off the list (除外中, by ×); すべて is
-//! every word not taken off. A correct review pays 0.5 kcal (picked) or 1 kcal (typed).
+//! word is in review (復習), learned (習得) or taken off the list (除外, by ×); すべて is every word
+//! not taken off. A word in review can be starred (★): it shows in ★ too, until it is learned or
+//! taken off by hand. A correct review pays 0.5 kcal (picked) or 1 kcal (typed).
 
-/// The tabs a review can go over: すべて, 復習中, 習得済み, 除外中.
-pub const REVIEW_TARGETS: [&str; 4] = ["all", "learning", "mastered", "excluded"];
+/// The tabs a review can go over: すべて, ★, 復習, 習得, 除外.
+pub const REVIEW_TARGETS: [&str; 5] = ["all", "favorite", "learning", "mastered", "excluded"];
 
 use crate::models::{RecipeAddResult, RecipeAddStatus, RecipeReviewResult, RecipeWord, RecipeWordInput};
 use crate::srs;
@@ -23,7 +24,7 @@ fn err<E: std::fmt::Display>(e: E) -> String {
 const USER_ID: i64 = 1;
 
 const COLS: &str = "id, word, meaning, form, example, example_ja, added_at, reviews, last_reviewed_at, mastered_at, kind, \
-                    misses, excluded_at";
+                    misses, excluded_at, favorited_at";
 
 /// Long enough for any expression in the bank ("keep your fingers crossed"), short enough that a
 /// stray selection of a whole paragraph is refused rather than saved as one "word".
@@ -51,6 +52,7 @@ fn row_to_word(r: &Row) -> rusqlite::Result<RecipeWord> {
         mastered_at: r.get(9)?,
         misses: r.get(11)?,
         excluded_at: r.get(12)?,
+        favorited_at: r.get(13)?,
     })
 }
 
@@ -255,11 +257,11 @@ pub fn usage_meanings() -> Vec<String> {
 }
 
 /// One word reviewed in `mode` ("choice": its meaning picked from four, "typing": the English
-/// written from the meaning) from the tab `target`. A right answer in すべて / 復習中 makes the
+/// written from the meaning) from the tab `target`. A right answer in すべて / 復習 makes the
 /// word learned, though the learner can still say まだ, which puts it back into review
-/// (`set_mastered`); in 習得済み / 除外中 it leaves the word where it is. A wrong answer puts it
-/// back into review (復習中, and so すべて) from any tab, learned or taken off, and counts as a
-/// miss. Pay is counted in quarters per day, so two meanings picked make a whole calorie; whatever fraction is left when the day ends is dropped. A
+/// (`set_mastered`); its star stays until 習得 says it is learned (`set_mastered` again). In ★ /
+/// 習得 / 除外 a right answer leaves the word where it is. A wrong answer puts it back into review
+/// (復習, and so すべて) from any tab, learned or taken off, and counts as a miss. Pay is counted in quarters per day, so two meanings picked make a whole calorie; whatever fraction is left when the day ends is dropped. A
 /// word pays in full the first time it is right in a day and half after that.
 pub fn review(conn: &mut Connection, id: i64, remembered: bool, mode: &str, target: &str) -> CmdResult<RecipeReviewResult> {
     srs::recipe_quarter_kcal(mode, true).ok_or_else(|| format!("unknown review mode {mode}"))?;
@@ -309,12 +311,14 @@ pub fn review(conn: &mut Connection, id: i64, remembered: bool, mode: &str, targ
     })
 }
 
-/// Marks a word as learned (✓ 覚えた) or puts it back into review (復習に戻す) from the list,
-/// without counting it as a review. Either way it leaves 除外中.
+/// Marks a word as learned (✓ 覚えた, 習得 after a review) or puts it back into review (復習に
+/// 戻す) from the list, without counting it as a review. Either way it leaves 除外; learned, it
+/// is no longer starred.
 pub fn set_mastered(conn: &Connection, id: i64, mastered: bool) -> CmdResult<RecipeWord> {
     let changed = conn
         .execute(
             "UPDATE recipe_words SET mastered_at = CASE WHEN ?2 THEN COALESCE(mastered_at, ?3) ELSE NULL END,
+             favorited_at = CASE WHEN ?2 THEN NULL ELSE favorited_at END,
              excluded_at = NULL WHERE id = ?1",
             params![id, mastered, now_ts()],
         )
@@ -325,13 +329,14 @@ pub fn set_mastered(conn: &Connection, id: i64, mastered: bool) -> CmdResult<Rec
     load(conn, id)
 }
 
-/// Marks every word of `ids` learned, or puts them all back into review (すべて習得済みへ in 復習中,
-/// すべて復習中へ in 習得済み), as ✓ 覚えた / 復習に戻す does for one word. Returns how many there were.
+/// Marks every word of `ids` learned, or puts them all back into review (すべて習得へ in 復習 and ★,
+/// すべて復習へ in 習得), as ✓ 覚えた / 復習に戻す does for one word. Returns how many there were.
 pub fn set_mastered_all(conn: &Connection, ids: &[i64], mastered: bool) -> CmdResult<usize> {
     let now = now_ts();
     let mut stmt = conn
         .prepare(
             "UPDATE recipe_words SET mastered_at = CASE WHEN ?2 THEN COALESCE(mastered_at, ?3) ELSE NULL END,
+             favorited_at = CASE WHEN ?2 THEN NULL ELSE favorited_at END,
              excluded_at = NULL WHERE id = ?1",
         )
         .map_err(err)?;
@@ -342,16 +347,35 @@ pub fn set_mastered_all(conn: &Connection, ids: &[i64], mastered: bool) -> CmdRe
     Ok(changed)
 }
 
-/// Takes words off the list (× outside 除外中): they wait in 除外中 and leave すべて.
+/// Takes words off the list (× outside 除外): they wait in 除外, leave すべて and are unstarred.
 pub fn exclude(conn: &Connection, ids: &[i64]) -> CmdResult<usize> {
     let now = now_ts();
-    let mut stmt =
-        conn.prepare("UPDATE recipe_words SET excluded_at = COALESCE(excluded_at, ?2) WHERE id = ?1").map_err(err)?;
+    let mut stmt = conn
+        .prepare("UPDATE recipe_words SET excluded_at = COALESCE(excluded_at, ?2), favorited_at = NULL WHERE id = ?1")
+        .map_err(err)?;
     let mut moved = 0;
     for id in ids {
         moved += stmt.execute(params![id, now]).map_err(err)?;
     }
     Ok(moved)
+}
+
+/// Stars a word (☆ → ★) or unstars it. A starred word is in review: one learned or taken off comes
+/// back into 復習 with its star.
+pub fn set_favorite(conn: &Connection, id: i64, favorite: bool) -> CmdResult<RecipeWord> {
+    let changed = conn
+        .execute(
+            "UPDATE recipe_words SET favorited_at = CASE WHEN ?2 THEN COALESCE(favorited_at, ?3) ELSE NULL END,
+             mastered_at = CASE WHEN ?2 THEN NULL ELSE mastered_at END,
+             excluded_at = CASE WHEN ?2 THEN NULL ELSE excluded_at END
+             WHERE id = ?1",
+            params![id, favorite, now_ts()],
+        )
+        .map_err(err)?;
+    if changed == 0 {
+        return Err("その単語はレシピにありません".into());
+    }
+    load(conn, id)
 }
 
 /// Deletes words for good (× in 除外中).
@@ -400,6 +424,12 @@ pub fn set_recipe_mastered(state: State<'_, AppState>, id: i64, mastered: bool) 
 pub fn set_recipe_words_mastered(state: State<'_, AppState>, ids: Vec<i64>, mastered: bool) -> CmdResult<usize> {
     let conn = state.db.lock().map_err(err)?;
     set_mastered_all(&conn, &ids, mastered)
+}
+
+#[tauri::command]
+pub fn set_recipe_favorite(state: State<'_, AppState>, id: i64, favorite: bool) -> CmdResult<RecipeWord> {
+    let conn = state.db.lock().map_err(err)?;
+    set_favorite(&conn, id, favorite)
 }
 
 #[tauri::command]
@@ -588,6 +618,52 @@ mod tests {
         assert!(saved.contains(&("look forward to A／-ing".to_string(), "A／-ingを楽しみに待つ".to_string())), "{saved:?}");
         assert!(saved.iter().any(|(w, _)| w == "no such ～"));
         assert_eq!(migrate_usage_notation(&c).unwrap(), 0, "nothing left to move");
+    }
+
+    /// ★: a starred word is in review and stays starred through its reviews, right or wrong, and
+    /// through まだ; it is unstarred once learned or taken off by hand, and starring a learned or
+    /// taken-off word brings it back into review.
+    #[test]
+    fn a_starred_word_stays_in_review_until_it_is_learned_or_taken_off_by_hand() {
+        let mut c = db::init_in_memory().unwrap();
+        let hear = add(&c, &input("hear", "")).unwrap().entry.id;
+        let bag = add(&c, &input("doggy bag", "")).unwrap().entry.id;
+        let apple = add(&c, &input("apple", "")).unwrap().entry.id;
+        assert!(add(&c, &input("hear", "")).unwrap().entry.favorited_at.is_none(), "not starred when saved");
+
+        let starred = set_favorite(&c, hear, true).unwrap();
+        let since = starred.favorited_at.clone().expect("starred");
+        assert!(starred.mastered_at.is_none() && starred.excluded_at.is_none());
+
+        // In ★ a right answer does not make it learned, and a wrong one is a miss; it stays starred.
+        let right = review(&mut c, hear, true, "choice", "favorite").unwrap().entry;
+        assert!(right.mastered_at.is_none());
+        assert_eq!(right.favorited_at.as_deref(), Some(since.as_str()));
+        let wrong = review(&mut c, hear, false, "typing", "favorite").unwrap().entry;
+        assert_eq!((wrong.misses, wrong.favorited_at.is_some()), (1, true));
+
+        // In 復習 a right answer learns it for now; まだ keeps the star, 習得 takes it off.
+        let right = review(&mut c, hear, true, "choice", "learning").unwrap().entry;
+        assert!(right.mastered_at.is_some() && right.favorited_at.is_some());
+        assert!(set_mastered(&c, hear, false).unwrap().favorited_at.is_some(), "まだ");
+        review(&mut c, hear, true, "choice", "learning").unwrap();
+        assert!(set_mastered(&c, hear, true).unwrap().favorited_at.is_none(), "習得");
+
+        // Starring a learned or taken-off word brings it back into review.
+        let back = set_favorite(&c, hear, true).unwrap();
+        assert!(back.mastered_at.is_none() && back.favorited_at.is_some());
+        exclude(&c, &[bag]).unwrap();
+        let back = set_favorite(&c, bag, true).unwrap();
+        assert!(back.excluded_at.is_none() && back.favorited_at.is_some());
+
+        // ✓ 覚えた for many (すべて習得へ) and × unstar; unstarring leaves the word in review.
+        set_favorite(&c, apple, true).unwrap();
+        assert_eq!(set_mastered_all(&c, &[hear], true).unwrap(), 1);
+        assert_eq!(exclude(&c, &[bag]).unwrap(), 1);
+        let unstarred = set_favorite(&c, apple, false).unwrap();
+        assert!(unstarred.favorited_at.is_none() && unstarred.mastered_at.is_none());
+        assert!(list(&c).unwrap().iter().all(|w| w.favorited_at.is_none()));
+        assert!(set_favorite(&c, 9999, true).is_err());
     }
 
     /// The tabs' bulk buttons: every word of 復習中 learned, every word of 習得済み back in review.

@@ -280,7 +280,8 @@ CREATE TABLE IF NOT EXISTS recipe_words (
   paid_on TEXT,
   kind TEXT NOT NULL DEFAULT 'word',
   misses INTEGER NOT NULL DEFAULT 0,
-  excluded_at TEXT
+  excluded_at TEXT,
+  favorited_at TEXT
 );
 -- 試験: one row per exam handed in, and the exam questions missed and not yet put right in its review.
 CREATE TABLE IF NOT EXISTS exam_attempts (
@@ -457,6 +458,8 @@ fn setup(conn: Connection) -> rusqlite::Result<Connection> {
     // 復習で間違えた回数と、除外中（×で外した）になった日時。
     ensure_column(&conn, "recipe_words", "misses", "INTEGER NOT NULL DEFAULT 0")?;
     ensure_column(&conn, "recipe_words", "excluded_at", "TEXT")?;
+    // ★（お気に入り）にした日時。
+    ensure_column(&conn, "recipe_words", "favorited_at", "TEXT")?;
     // Words right-clicked in an exam passage once kept the whole passage as their example.
     crate::recipe::trim_passage_examples(&conn)?;
     // 用法 saved before the slots were written A／B, 節, 形容詞 (be afraid of ～ → be afraid of A).

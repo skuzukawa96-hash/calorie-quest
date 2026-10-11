@@ -1417,6 +1417,32 @@ button.recipe-bulk:hover:not(:disabled) {
   background: var(--berry-bg);
   color: var(--berry);
 }
+.pill.recipe-tab-pill.favorite {
+  background: #fff6d6;
+  color: #9a6b00;
+}
+/* ★: the tab, its count at the top, and ☆ / ★ in a row's actions, the review card's top left
+   corner (the other is × 除外) and the word card's top right (the left has its ring hole) */
+.recipe-star-mark {
+  color: #f0b400;
+}
+.recipe-count-star {
+  color: #9a6b00;
+}
+.recipe-actions .recipe-star {
+  font-size: 18px;
+  padding: 1px 4px;
+}
+.recipe-review-star {
+  position: absolute;
+  top: 2px;
+  left: 0;
+}
+.word-card-star {
+  position: absolute;
+  top: 8px;
+  right: 10px;
+}
 /* 間違いやすい語を優先: an on/off switch beside 選択式 / 記入式 */
 .recipe-priority {
   display: inline-flex;
