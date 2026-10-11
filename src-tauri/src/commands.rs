@@ -1253,16 +1253,23 @@ pub fn list_snacks(state: State<'_, AppState>) -> CmdResult<Vec<Snack>> {
     list_snacks_inner(&conn).map_err(err)
 }
 
-#[tauri::command]
-pub fn add_snack(state: State<'_, AppState>, name: String, calories: i64, icon: String) -> CmdResult<Snack> {
-    let name = name.trim().to_string();
+/// A snack's name and icon as they are kept: the name trimmed and not empty, an empty icon made 🍬,
+/// and the kcal 1〜5000.
+fn checked_snack(name: &str, calories: i64, icon: &str) -> CmdResult<(String, String)> {
+    let name = name.trim();
     if name.is_empty() {
         return Err("お菓子の名前を入力してください".into());
     }
     if !(1..=5000).contains(&calories) {
         return Err("カロリーは1〜5000の範囲で入力してください".into());
     }
-    let icon = if icon.trim().is_empty() { "🍬".to_string() } else { icon };
+    let icon = if icon.trim().is_empty() { "🍬" } else { icon };
+    Ok((name.to_string(), icon.to_string()))
+}
+
+#[tauri::command]
+pub fn add_snack(state: State<'_, AppState>, name: String, calories: i64, icon: String) -> CmdResult<Snack> {
+    let (name, icon) = checked_snack(&name, calories, &icon)?;
     let conn = state.db.lock().map_err(err)?;
     conn.execute(
         "INSERT INTO snacks (name, calories, icon, is_builtin, created_at) VALUES (?1, ?2, ?3, 0, ?4)",
@@ -1279,14 +1286,7 @@ pub fn add_snack(state: State<'_, AppState>, name: String, calories: i64, icon: 
 /// eat is not always what the book first said. Goals follow it; what was eaten keeps the name and
 /// kcal it had then.
 pub fn update_snack_in(conn: &Connection, id: i64, name: &str, calories: i64, icon: &str) -> CmdResult<Snack> {
-    let name = name.trim();
-    if name.is_empty() {
-        return Err("お菓子の名前を入力してください".into());
-    }
-    if !(1..=5000).contains(&calories) {
-        return Err("カロリーは1〜5000の範囲で入力してください".into());
-    }
-    let icon = if icon.trim().is_empty() { "🍬" } else { icon };
+    let (name, icon) = checked_snack(name, calories, icon)?;
     let changed = conn
         .execute("UPDATE snacks SET name = ?2, calories = ?3, icon = ?4 WHERE id = ?1", params![id, name, calories, icon])
         .map_err(err)?;
@@ -1329,21 +1329,41 @@ pub fn log_snack_eaten(state: State<'_, AppState>, snack_id: i64) -> CmdResult<D
     log_eaten(&conn, snack_id)
 }
 
+#[tauri::command]
+pub fn log_one_off_snack(state: State<'_, AppState>, name: String, calories: i64, icon: String) -> CmdResult<DailyStats> {
+    let conn = state.db.lock().map_err(err)?;
+    log_one_off(&conn, &name, calories, &icon)
+}
+
 /// Records a snack eaten today and spends its kcal from today's budget.
 pub fn log_eaten(conn: &Connection, snack_id: i64) -> CmdResult<DailyStats> {
     let snack = load_snack(conn, snack_id)
         .map_err(err)?
         .ok_or_else(|| "snack not found".to_string())?;
+    spend_on(conn, Some(snack.id), &snack.name, &snack.icon, snack.calories)
+}
+
+/// Records a snack eaten today without putting it in the book or the goals (the 🍴 of ＋ 目標追加):
+/// a snack eaten only once would just pile up in the book. The entry has no snack, so it counts for
+/// no snack's 食べた回数 or ✓ 今日食べた, but it spends today's kcal, can be undone from the log
+/// and is listed under the chart's 消費 like any other.
+pub fn log_one_off(conn: &Connection, name: &str, calories: i64, icon: &str) -> CmdResult<DailyStats> {
+    let (name, icon) = checked_snack(name, calories, icon)?;
+    spend_on(conn, None, &name, &icon, calories)
+}
+
+/// Puts a snack eaten now in the log and takes its kcal from today's budget.
+fn spend_on(conn: &Connection, snack_id: Option<i64>, name: &str, icon: &str, calories: i64) -> CmdResult<DailyStats> {
     let today = today();
     conn.execute(
         "INSERT INTO consumption_log (user_id, snack_id, snack_name, snack_icon, calories, date, eaten_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-        params![USER_ID, snack.id, snack.name, snack.icon, snack.calories, today, now_ts()],
+        params![USER_ID, snack_id, name, icon, calories, today, now_ts()],
     )
     .map_err(err)?;
     conn.execute(
         "INSERT INTO daily_stats (user_id, date, kcal_consumed) VALUES (?1, ?2, ?3)
          ON CONFLICT(user_id, date) DO UPDATE SET kcal_consumed = kcal_consumed + excluded.kcal_consumed",
-        params![USER_ID, today, snack.calories],
+        params![USER_ID, today, calories],
     )
     .map_err(err)?;
     load_daily(conn, &today).map_err(err)
@@ -2167,6 +2187,37 @@ mod tests {
         assert_eq!(goals.iter().map(|s| s.id).collect::<Vec<_>>(), vec![cake]);
         assert!(load_snack(&c, pudding).unwrap().is_some());
         assert!(set_goal(&c, 999_999, true).is_err(), "no goal for a snack that does not exist");
+    }
+
+    /// The 🍴 of ＋ 目標追加 spends the kcal and shows under the chart's 消費, but adds nothing to the
+    /// book or the goals and counts for no snack of the book, even one of the same name.
+    #[test]
+    fn a_snack_eaten_once_stays_out_of_the_book() {
+        let c = conn();
+        let pudding = snack_id(&c, "プリン");
+        let book = list_snacks_inner(&c).unwrap().len();
+        let d = log_one_off(&c, "  旅先の大判焼き ", 230, "").unwrap();
+        assert_eq!(d.kcal_consumed, 230);
+        log_one_off(&c, "プリン", 150, "🍮").unwrap();
+        assert_eq!(list_snacks_inner(&c).unwrap().len(), book, "the book is as it was");
+        assert!(goal_snacks_inner(&c).unwrap().is_empty(), "no goal either");
+        assert_eq!(load_snack(&c, pudding).unwrap().unwrap().eaten_count, 0, "not the book's プリン");
+        assert!(load_dashboard(&c).unwrap().eaten_today.is_empty());
+
+        let today = load_stats(&c).unwrap().last_14_days.pop().unwrap();
+        assert_eq!(today.kcal_consumed, 380);
+        let eaten: Vec<_> = today.eaten.iter().map(|e| (e.icon.as_str(), e.name.as_str(), e.kcal)).collect();
+        assert_eq!(eaten, vec![("🍬", "旅先の大判焼き", 230), ("🍮", "プリン", 150)]);
+
+        // It is undone from the log like any other.
+        let id: i64 = c
+            .query_row("SELECT id FROM consumption_log WHERE snack_name = '旅先の大判焼き'", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(delete_consumption_inner(&c, id).unwrap().kcal_consumed, 150);
+
+        assert!(log_one_off(&c, " ", 100, "🍰").is_err(), "a name is needed");
+        assert!(log_one_off(&c, "ケーキ", 0, "🍰").is_err());
+        assert!(log_one_off(&c, "ケーキ", 5001, "🍰").is_err());
     }
 
     /// The book can be sorted by how often each snack is eaten, tickets included.

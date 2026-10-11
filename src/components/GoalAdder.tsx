@@ -1,13 +1,15 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { api } from "../lib/api";
+import { playCrunch } from "../lib/sfx";
 import { SNACK_ICONS } from "../lib/snackIcons";
+import { EatButton } from "./IconButtons";
 import type { Snack } from "../types";
 
 interface Props {
   /** the whole snack book, searched as the name is typed */
   snacks: Snack[];
   goalIds: Set<number>;
-  /** called after a goal was added, so the home screen reloads */
+  /** called after a goal was added or a snack eaten, so the home screen reloads */
   onAdded: () => void;
   onClose: () => void;
   toast: (msg: string) => void;
@@ -54,10 +56,11 @@ function marked(name: string, typed: string): ReactNode {
 }
 
 /**
- * ＋ 目標追加: one line of 名前 / カロリー / アイコン / 追加. Typing a name lists the snacks of the book
- * that contain it, like a browser's search history; picking one fills in its name, kcal and icon
- * and 追加 makes it a goal. A snack the book does not have is registered in the book and made a
- * goal in one go.
+ * ＋ 目標追加: one line of 名前 / カロリー / アイコン / 🍴 / 追加. Typing a name lists the snacks of the
+ * book that contain it, like a browser's search history; picking one fills in its name, kcal and
+ * icon and 追加 makes it a goal. A snack the book does not have is registered in the book and made a
+ * goal in one go. The knife and fork eats it now instead and adds it to neither, so a snack eaten
+ * once does not pile up in the book (one the book has is eaten as that snack).
  */
 export default function GoalAdder({ snacks, goalIds, onAdded, onClose, toast }: Props) {
   const [name, setName] = useState("");
@@ -92,7 +95,8 @@ export default function GoalAdder({ snacks, goalIds, onAdded, onClose, toast }: 
   const existing = sameName && sameName.calories === kcal && sameName.icon === icon ? sameName : null;
   const clash = sameName && !existing ? sameName : null;
   const alreadyGoal = existing ? goalIds.has(existing.id) : false;
-  const valid = name.trim() !== "" && Number.isInteger(kcal) && kcal >= 1 && kcal <= 5000 && !clash && !alreadyGoal;
+  const filled = name.trim() !== "" && Number.isInteger(kcal) && kcal >= 1 && kcal <= 5000;
+  const valid = filled && !clash && !alreadyGoal;
 
   const pick = (s: Snack) => {
     setName(s.name);
@@ -114,6 +118,28 @@ export default function GoalAdder({ snacks, goalIds, onAdded, onClose, toast }: 
         await api.setGoalSnack(s.id, true);
         toast(`${s.icon} ${s.name}（${s.calories} kcal）を図鑑に登録して、目標に追加しました`);
       }
+      onAdded();
+      onClose();
+    } catch (e) {
+      toast(String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // Eating adds nothing, so a name the book has with other kcal or a goal already set is no hindrance.
+  const eat = async () => {
+    if (!filled || busy) return;
+    setBusy(true);
+    try {
+      if (existing) {
+        await api.logSnackEaten(existing.id);
+        toast(`${existing.icon} ${existing.name}（${existing.calories} kcal）を食べました。取り消しはお菓子図鑑から`);
+      } else {
+        await api.logOneOffSnack(name.trim(), kcal, icon);
+        toast(`${icon} ${name.trim()}（${kcal} kcal）を食べました（図鑑と目標には追加していません）。取り消しはお菓子図鑑から`);
+      }
+      playCrunch();
       onAdded();
       onClose();
     } catch (e) {
@@ -253,6 +279,7 @@ export default function GoalAdder({ snacks, goalIds, onAdded, onClose, toast }: 
             </div>
           )}
         </div>
+        <EatButton affordable label="図鑑と目標に追加せず消費する" disabled={busy || !filled} onClick={() => void eat()} />
         <button type="submit" className="btn btn-primary goal-adder-submit" disabled={busy || !valid}>
           追加
         </button>

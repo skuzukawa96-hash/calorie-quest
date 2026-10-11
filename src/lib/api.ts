@@ -66,6 +66,9 @@ export const api = {
   /** 目標に加える（goal: true）/ 目標から外す。お菓子自体は図鑑に残る */
   setGoalSnack: (id: number, goal: boolean) => call<Snack[]>("set_goal_snack", { id, goal }),
   logSnackEaten: (snackId: number) => call<DailyStats>("log_snack_eaten", { snackId }),
+  /** 食べた記録とカロリーの消費だけ。図鑑にも目標にも入れない（一度しか食べないお菓子で図鑑が埋まらないように） */
+  logOneOffSnack: (name: string, calories: number, icon: string) =>
+    call<DailyStats>("log_one_off_snack", { name, calories, icon }),
   eatWithTicket: (snackId: number) => call<DailyStats>("eat_with_ticket", { snackId }),
   getTodayConsumption: () => call<ConsumptionEntry[]>("get_today_consumption"),
   deleteConsumption: (id: number) => call<DailyStats>("delete_consumption", { id }),

@@ -109,7 +109,8 @@ interface Hist {
 interface StoredConsumption extends ConsumptionEntry {
   date: string;
   ticketId?: number | null;
-  snackId?: number;
+  /** null: eaten without being put in the book (log_one_off_snack) */
+  snackId?: number | null;
 }
 
 interface MockState {
@@ -498,9 +499,10 @@ function goalSnacks(): Snack[] {
     .sort((a, b) => a.calories - b.calories || state.goals.indexOf(a.id) - state.goals.indexOf(b.id));
 }
 
-/** Log entries keep the snack's id; older mock entries only have its name. */
+/** Log entries keep the snack's id (null for one eaten off the book); older mock entries only have its name. */
 function snackIdOf(c: StoredConsumption): number | null {
-  return c.snackId ?? state.snacks.find((s) => s.name === c.snackName && s.icon === c.snackIcon)?.id ?? null;
+  if (c.snackId !== undefined) return c.snackId;
+  return state.snacks.find((s) => s.name === c.snackName && s.icon === c.snackIcon)?.id ?? null;
 }
 
 /** Mirrors commands::settle_savings: finished days' leftover → savings, every 2,000 → a ticket. */
@@ -2525,6 +2527,17 @@ export async function mockInvoke<T>(cmd: string, args: Record<string, unknown>):
       if (!snack) throw new Error("snack not found");
       state.consumption.unshift({ id: state.nextId++, snackId: snack.id, snackName: snack.name, snackIcon: snack.icon, calories: snack.calories, eatenAt: nowTs(), date: t, withTicket: false });
       daily(t).kcalConsumed += snack.calories;
+      save();
+      return { ...daily(t) } as T;
+    }
+    case "log_one_off_snack": {
+      // Mirrors commands::log_one_off: spent and logged, but neither in the book nor a goal.
+      const name = String(args.name ?? "").trim();
+      const calories = Number(args.calories);
+      if (!name) throw new Error("お菓子の名前を入力してください");
+      if (!(calories >= 1 && calories <= 5000)) throw new Error("カロリーは1〜5000の範囲で入力してください");
+      state.consumption.unshift({ id: state.nextId++, snackId: null, snackName: name, snackIcon: String(args.icon || "🍬"), calories, eatenAt: nowTs(), date: t, withTicket: false });
+      daily(t).kcalConsumed += calories;
       save();
       return { ...daily(t) } as T;
     }

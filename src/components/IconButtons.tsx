@@ -9,10 +9,11 @@ interface Common {
 /**
  * 食べた！ as a knife and fork, drawn here in bold strokes: the 🍴 emoji shrinks to two grey
  * sticks at button size. A snack today's remainder does not cover is greyed out; it can still be
- * pressed, so eating over budget is recorded rather than hidden.
+ * pressed, so eating over budget is recorded rather than hidden. `label` replaces the tooltip.
  */
-export function EatButton({ affordable, disabled, onClick }: Common & { affordable: boolean }) {
-  const title = affordable ? "食べた！（今日の残りカロリーで食べられます）" : "食べた！（今日の残りを超えます。記録はできます）";
+export function EatButton({ affordable, label, disabled, onClick }: Common & { affordable: boolean; label?: string }) {
+  const title =
+    label ?? (affordable ? "食べた！（今日の残りカロリーで食べられます）" : "食べた！（今日の残りを超えます。記録はできます）");
   return (
     <button type="button" className={"icon-btn eat" + (affordable ? "" : " over")} disabled={disabled} title={title} aria-label={title} onClick={onClick}>
       <svg viewBox="0 0 24 24" aria-hidden="true">

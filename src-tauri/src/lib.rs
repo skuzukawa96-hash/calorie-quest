@@ -34,6 +34,7 @@ pub fn run() {
             commands::delete_snack,
             commands::set_goal_snack,
             commands::log_snack_eaten,
+            commands::log_one_off_snack,
             commands::get_today_consumption,
             commands::delete_consumption,
             commands::eat_with_ticket,
