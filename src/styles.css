@@ -1359,7 +1359,7 @@ button.recipe-bulk:hover:not(:disabled) {
 .recipe-review-remove {
   position: absolute;
   top: 4px;
-  right: 0;
+  left: 0;
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -1454,7 +1454,44 @@ button.recipe-bulk:hover:not(:disabled) {
 .recipe-review-star {
   position: absolute;
   top: 2px;
-  left: 0;
+  right: 0;
+}
+/* the review's head out of its card, just above it: the title in the pills' font, centred
+   against the progress */
+.review-stack {
+  display: grid;
+  gap: 10px;
+}
+.section-head.review-head {
+  margin: 0;
+  padding: 0 6px;
+  align-items: center;
+}
+.review-head h2 {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-family: var(--font);
+  font-size: 16px;
+  font-weight: 700;
+}
+.review-head h2 .pill {
+  font-family: var(--font);
+  font-weight: 600;
+}
+.review-head .study-progress {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+/* × on a word card (除外, or 削除 in 除外): in its top right, beside the ☆ (its top left has the
+   ring hole) */
+.word-card-remove {
+  position: absolute;
+  top: 4px;
+  right: 40px;
 }
 .word-card-star {
   position: absolute;

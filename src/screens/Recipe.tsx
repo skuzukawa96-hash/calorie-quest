@@ -741,9 +741,9 @@ export default function Recipe({ playMode, onProgress, toast }: Props) {
           direction={carding.direction}
           queue={carding.queue}
           dict={dict}
-          onAgain={(direction) => {
+          onAgain={(direction, words) => {
             setRound((r) => r + 1);
-            setCarding({ ...carding, direction, queue: cardQueue(carding.queue, missedFirst) });
+            setCarding({ ...carding, direction, queue: cardQueue(words, missedFirst) });
           }}
           onDone={() => {
             stopSpeaking();
@@ -1595,8 +1595,8 @@ function RecipeReview({
   ) : null;
 
   return (
-    <section className="card recipe-review">
-      <div className="section-head">
+    <div className="review-stack">
+      <div className="section-head review-head">
         <h2>
           {REVIEW_ICON[mode]} {REVIEW_TITLE[mode]} <span className={"pill recipe-tab-pill " + target}>{TAB_LABEL[target]}</span>{" "}
           <span className="pill" title={`同じ日に同じ単語を2回目以降に正解すると ${REPEAT_KCAL[mode]} kcal`}>
@@ -1614,154 +1614,156 @@ function RecipeReview({
         </button>
       </div>
 
-      {mode === "choice" ? (
-        <div className="flash" key={current.id}>
-          {starButton}
-          {removeButton}
-          <div className="prompt-label">この英語の意味は？</div>
-          <button
-            className="flash-word"
-            onClick={() => sayEntry(current)}
-            title="クリックで発音"
-          >
-            <EntryText w={current} text={current.word} />
-          </button>
-          {example}
-          <div className="options recipe-options">
-            {options.map((opt, i) => {
-              let cls = "option";
-              if (answered) {
-                if (opt === current.meaning) cls += " correct";
-                else if (opt === answered.given) cls += " wrong";
-              }
-              return (
-                <button
-                  key={opt + i}
-                  className={cls}
-                  disabled={!!answered || saving}
-                  onClick={() => void answer(opt === current.meaning, opt)}
-                >
-                  <span className="option-num">{i + 1}</span>
-                  <span>
-                    <EntryText w={current} text={labels[i] ?? opt} />
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-          {!answered && <div className="muted small">キーボードの 1〜4 でも回答できます</div>}
-        </div>
-      ) : (
-        <form
-          className="flash"
-          key={current.id}
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (typed.trim()) void answer(typedRight(current, typed, dict), typed.trim());
-          }}
-        >
-          {starButton}
-          {removeButton}
-          <div className="prompt-label">この意味の英語は？</div>
-          <div className="flash-meaning">
-            <EntryText w={current} text={asked ?? current.meaning} />
-          </div>
-          {current.kind === "usage" && (
-            <div className="muted small">
-              <SlotText text="用法の A・B・人・-ing・原形・形容詞・節 の部分は書かなくてもかまいません" />
-            </div>
-          )}
-          {answered ? example : gapped && <div className="flash-example">{gapped}</div>}
-          {current.exampleJa && <div className="muted">{current.exampleJa}</div>}
-          <input
-            ref={input}
-            className="answer-input recipe-input"
-            value={typed}
-            disabled={!!answered || saving}
-            onChange={(e) => setTyped(e.target.value)}
-            placeholder="英語で入力して Enter"
-            autoComplete="off"
-            autoCapitalize="off"
-            spellCheck={false}
-            lang="en"
-          />
-          {!answered && (
-            <div className="row flash-actions">
-              <button type="submit" className="btn btn-primary" disabled={saving || !typed.trim()}>
-                回答する
-              </button>
-              <button type="button" className="btn-link" disabled={saving} onClick={() => void answer(false, "")}>
-                わからない
-              </button>
-            </div>
-          )}
-        </form>
-      )}
-
-      {answered && (
-        <div className={"feedback " + (answered.correct ? "ok" : "ng")}>
-          <div className="feedback-main">
-            <div className="feedback-title">{answered.correct ? "正解！ サクサク🍪" : "ざんねん…"}</div>
-            <div className="feedback-kcal">
-              +{formatKcal(answered.points)} kcal
-              {answered.points > 0 && <PlayModeTag mode={playMode} />}
-            </div>
-          </div>
-          <div className="feedback-detail">
-            {mode === "typing" && !answered.correct && answered.given && (
-              <div>
-                <span className="label">あなたの答え</span> <span className="typed-wrong">{answered.given}</span>
-              </div>
-            )}
-            <div>
-              <span className="label">正解</span>{" "}
-              <strong>
-                <EntryText w={current} text={current.word} />
-              </strong>
-              {shownForm(current) && <span className="muted">（{shownForm(current)}）</span>}　<EntryMeaning w={current} dict={dict} />
-              <button className="btn-link" onClick={() => sayEntry(current)} disabled={!isTtsSupported()}>
-                🔊 もう一度聞く
-              </button>
-            </div>
-            {notes?.word === current.word && notes.notes && (
-              <WordNotesPanel notes={notes.notes} word={current.word} meaning={current.meaning} dict={dict} gloss />
-            )}
-            {(answered.correct ? answered.decideHint || answered.starredHint || answered.repeatNote : true) && (
-              <div className="muted">
-                {answered.correct
-                  ? [
-                      answered.decideHint && DECIDE_HINT,
-                      answered.starredHint && STARRED_HINT,
-                      answered.repeatNote &&
-                        `この単語は今日2回目以降の正解なので、カロリーは半分（${REPEAT_KCAL[mode]} kcal${playMode === "normal" ? "" : `、${PLAY_MODE_INFO[playMode].label} ×${PLAY_MODE_INFO[playMode].multiplier} の前`}）です。`,
-                    ]
-                      .filter(Boolean)
-                      .join(" ")
-                  : answered.movedBack
-                    ? "復習に戻しました。最後にもう一度挑戦できます。"
-                    : answered.starred
-                      ? "★のまま残ります。最後にもう一度挑戦できます。"
-                      : "復習のまま残ります。最後にもう一度挑戦できます。"}
-              </div>
-            )}
-          </div>
-          {answered.decides ? (
-            <div className="row decide-buttons">
-              <button className="btn decide-learned" disabled={saving} onClick={() => void decide(true)} autoFocus>
-                習得
-              </button>
-              <button className="btn decide-not-yet" disabled={saving} onClick={() => void decide(false)}>
-                まだ
-              </button>
-            </div>
-          ) : (
-            <button className="btn btn-primary" onClick={next} autoFocus>
-              {idx + 1 >= queue.length ? "結果を見る" : "次へ（Enter）"}
+      <section className="card recipe-review">
+        {mode === "choice" ? (
+          <div className="flash" key={current.id}>
+            {starButton}
+            {removeButton}
+            <div className="prompt-label">この英語の意味は？</div>
+            <button
+              className="flash-word"
+              onClick={() => sayEntry(current)}
+              title="クリックで発音"
+            >
+              <EntryText w={current} text={current.word} />
             </button>
-          )}
-        </div>
-      )}
-    </section>
+            {example}
+            <div className="options recipe-options">
+              {options.map((opt, i) => {
+                let cls = "option";
+                if (answered) {
+                  if (opt === current.meaning) cls += " correct";
+                  else if (opt === answered.given) cls += " wrong";
+                }
+                return (
+                  <button
+                    key={opt + i}
+                    className={cls}
+                    disabled={!!answered || saving}
+                    onClick={() => void answer(opt === current.meaning, opt)}
+                  >
+                    <span className="option-num">{i + 1}</span>
+                    <span>
+                      <EntryText w={current} text={labels[i] ?? opt} />
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+            {!answered && <div className="muted small">キーボードの 1〜4 でも回答できます</div>}
+          </div>
+        ) : (
+          <form
+            className="flash"
+            key={current.id}
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (typed.trim()) void answer(typedRight(current, typed, dict), typed.trim());
+            }}
+          >
+            {starButton}
+            {removeButton}
+            <div className="prompt-label">この意味の英語は？</div>
+            <div className="flash-meaning">
+              <EntryText w={current} text={asked ?? current.meaning} />
+            </div>
+            {current.kind === "usage" && (
+              <div className="muted small">
+                <SlotText text="用法の A・B・人・-ing・原形・形容詞・節 の部分は書かなくてもかまいません" />
+              </div>
+            )}
+            {answered ? example : gapped && <div className="flash-example">{gapped}</div>}
+            {current.exampleJa && <div className="muted">{current.exampleJa}</div>}
+            <input
+              ref={input}
+              className="answer-input recipe-input"
+              value={typed}
+              disabled={!!answered || saving}
+              onChange={(e) => setTyped(e.target.value)}
+              placeholder="英語で入力して Enter"
+              autoComplete="off"
+              autoCapitalize="off"
+              spellCheck={false}
+              lang="en"
+            />
+            {!answered && (
+              <div className="row flash-actions">
+                <button type="submit" className="btn btn-primary" disabled={saving || !typed.trim()}>
+                  回答する
+                </button>
+                <button type="button" className="btn-link" disabled={saving} onClick={() => void answer(false, "")}>
+                  わからない
+                </button>
+              </div>
+            )}
+          </form>
+        )}
+
+        {answered && (
+          <div className={"feedback " + (answered.correct ? "ok" : "ng")}>
+            <div className="feedback-main">
+              <div className="feedback-title">{answered.correct ? "正解！ サクサク🍪" : "ざんねん…"}</div>
+              <div className="feedback-kcal">
+                +{formatKcal(answered.points)} kcal
+                {answered.points > 0 && <PlayModeTag mode={playMode} />}
+              </div>
+            </div>
+            <div className="feedback-detail">
+              {mode === "typing" && !answered.correct && answered.given && (
+                <div>
+                  <span className="label">あなたの答え</span> <span className="typed-wrong">{answered.given}</span>
+                </div>
+              )}
+              <div>
+                <span className="label">正解</span>{" "}
+                <strong>
+                  <EntryText w={current} text={current.word} />
+                </strong>
+                {shownForm(current) && <span className="muted">（{shownForm(current)}）</span>}　<EntryMeaning w={current} dict={dict} />
+                <button className="btn-link" onClick={() => sayEntry(current)} disabled={!isTtsSupported()}>
+                  🔊 もう一度聞く
+                </button>
+              </div>
+              {notes?.word === current.word && notes.notes && (
+                <WordNotesPanel notes={notes.notes} word={current.word} meaning={current.meaning} dict={dict} gloss />
+              )}
+              {(answered.correct ? answered.decideHint || answered.starredHint || answered.repeatNote : true) && (
+                <div className="muted">
+                  {answered.correct
+                    ? [
+                        answered.decideHint && DECIDE_HINT,
+                        answered.starredHint && STARRED_HINT,
+                        answered.repeatNote &&
+                          `この単語は今日2回目以降の正解なので、カロリーは半分（${REPEAT_KCAL[mode]} kcal${playMode === "normal" ? "" : `、${PLAY_MODE_INFO[playMode].label} ×${PLAY_MODE_INFO[playMode].multiplier} の前`}）です。`,
+                      ]
+                        .filter(Boolean)
+                        .join(" ")
+                    : answered.movedBack
+                      ? "復習に戻しました。最後にもう一度挑戦できます。"
+                      : answered.starred
+                        ? "★のまま残ります。最後にもう一度挑戦できます。"
+                        : "復習のまま残ります。最後にもう一度挑戦できます。"}
+                </div>
+              )}
+            </div>
+            {answered.decides ? (
+              <div className="row decide-buttons">
+                <button className="btn decide-learned" disabled={saving} onClick={() => void decide(true)} autoFocus>
+                  習得
+                </button>
+                <button className="btn decide-not-yet" disabled={saving} onClick={() => void decide(false)}>
+                  まだ
+                </button>
+              </div>
+            ) : (
+              <button className="btn btn-primary" onClick={next} autoFocus>
+                {idx + 1 >= queue.length ? "結果を見る" : "次へ（Enter）"}
+              </button>
+            )}
+          </div>
+        )}
+      </section>
+    </div>
   );
 }
 
@@ -1792,13 +1794,17 @@ function RecipeCards({
   queue: RecipeWord[];
   dict: Dictionary | null;
   /** once more, shuffled again, the same way round or turned */
-  onAgain: (direction: CardDirection) => void;
+  onAgain: (direction: CardDirection, words: RecipeWord[]) => void;
   onDone: () => void;
   toast: (msg: string) => void;
 }) {
   const [idx, setIdx] = useState(0);
   const [turned, setTurned] = useState(false);
   const stars = useStars(queue, toast);
+  /** words taken out with × on their card: to 除外, or out of the recipe from 除外 */
+  const [removed, setRemoved] = useState<ReadonlySet<number>>(() => new Set());
+  const [saving, setSaving] = useState(false);
+  const deletes = target === "excluded";
   const current = queue[idx];
   const finished = idx >= queue.length;
   const cues = useWordTags()?.cues ?? null;
@@ -1850,6 +1856,26 @@ function RecipeCards({
     };
   }, [finished, flip]);
 
+  // × on a card: the word goes at once, as in a review, and the next card shows.
+  const remove = async () => {
+    if (!current || saving) return;
+    setSaving(true);
+    try {
+      if (deletes) await api.deleteRecipeWords([current.id]);
+      else await api.excludeRecipeWords([current.id]);
+      stars.unstar(current.id);
+      setRemoved((r) => new Set(r).add(current.id));
+      toast(deletes ? `「${current.word}」をレシピから削除しました` : `「${current.word}」を除外に移しました`);
+      stopSpeaking();
+      setTurned(false);
+      setIdx((i) => i + 1);
+    } catch (e) {
+      toast(String(e));
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const head = (
     <h2>
       <WordCardIcon /> 単語カード <span className={"pill recipe-tab-pill " + target}>{TAB_LABEL[target]}</span>{" "}
@@ -1859,19 +1885,26 @@ function RecipeCards({
 
   if (finished) {
     const turnedDirection: CardDirection = direction === "ja-en" ? "en-ja" : "ja-en";
+    // Once more without the words taken out on the way.
+    const left = queue.filter((w) => !removed.has(w.id));
     return (
       <section className="card recipe-review recipe-cards done">
-        <div className="section-head">{head}</div>
+        <div className="section-head review-head">{head}</div>
         <p className="recipe-cards-done">
           📖 {queue.length}語のカードをめくり終えました！
+          {removed.size > 0 && `（${deletes ? "削除した" : "除外した"} ${removed.size}語）`}
         </p>
         <div className="row recipe-actions">
-          <button className="btn btn-primary" onClick={() => onAgain(direction)}>
-            もう一度（並びを変えて）
-          </button>
-          <button className="btn" onClick={() => onAgain(turnedDirection)}>
-            {CARD_DIRECTION_LABEL[turnedDirection]}でもう一度
-          </button>
+          {left.length > 0 && (
+            <>
+              <button className="btn btn-primary" onClick={() => onAgain(direction, left)}>
+                もう一度（並びを変えて）
+              </button>
+              <button className="btn" onClick={() => onAgain(turnedDirection, left)}>
+                {CARD_DIRECTION_LABEL[turnedDirection]}でもう一度
+              </button>
+            </>
+          )}
           <button className="btn" onClick={onDone}>
             レシピに戻る
           </button>
@@ -1901,8 +1934,8 @@ function RecipeCards({
   );
 
   return (
-    <section className="card recipe-review recipe-cards">
-      <div className="section-head">
+    <div className="review-stack">
+      <div className="section-head review-head">
         {head}
         <div className="study-progress">
           {idx + 1} / {queue.length}
@@ -1915,40 +1948,49 @@ function RecipeCards({
         </button>
       </div>
 
-      <div className={"word-card" + (turned ? " turned" : "")} key={current.id}>
-        <StarButton className="word-card-star" on={stars.has(current.id)} onToggle={() => void stars.toggle(current)} />
-        {direction === "ja-en" ? (
-          <div className="flash-meaning">
-            <EntryMeaning w={current} dict={dict} cued lines />
-          </div>
-        ) : (
-          english
-        )}
-        {turned && (
-          <div className="word-card-back">
-            {direction === "ja-en" ? (
-              <>
-                {english}
-                {cued && (
-                  <div className="muted">
-                    <EntryMeaning w={current} dict={dict} lines />
-                  </div>
-                )}
-              </>
-            ) : (
-              <div className="flash-meaning">
-                <EntryMeaning w={current} dict={dict} lines />
-              </div>
-            )}
-            {current.example && <div className="flash-example">{current.example}</div>}
-            {current.exampleJa && <div className="muted">{current.exampleJa}</div>}
-          </div>
-        )}
-      </div>
-      <p className="word-card-hint">
-        クリック・右クリック・Enter で
-        {turned ? (idx + 1 >= queue.length ? "おしまい" : "次の単語へ") : direction === "ja-en" ? "英語を表示" : "意味を表示"}
-      </p>
-    </section>
+      <section className="card recipe-review recipe-cards">
+        <div className={"word-card" + (turned ? " turned" : "")} key={current.id}>
+          <span className="word-card-remove">
+            <DeleteButton
+              label={deletes ? "この単語をレシピから完全に削除" : "この単語をレシピから除外（もう復習しない）"}
+              disabled={saving}
+              onClick={() => void remove()}
+            />
+          </span>
+          <StarButton className="word-card-star" on={stars.has(current.id)} onToggle={() => void stars.toggle(current)} />
+          {direction === "ja-en" ? (
+            <div className="flash-meaning">
+              <EntryMeaning w={current} dict={dict} cued lines />
+            </div>
+          ) : (
+            english
+          )}
+          {turned && (
+            <div className="word-card-back">
+              {direction === "ja-en" ? (
+                <>
+                  {english}
+                  {cued && (
+                    <div className="muted">
+                      <EntryMeaning w={current} dict={dict} lines />
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div className="flash-meaning">
+                  <EntryMeaning w={current} dict={dict} lines />
+                </div>
+              )}
+              {current.example && <div className="flash-example">{current.example}</div>}
+              {current.exampleJa && <div className="muted">{current.exampleJa}</div>}
+            </div>
+          )}
+        </div>
+        <p className="word-card-hint">
+          クリック・右クリック・Enter で
+          {turned ? (idx + 1 >= queue.length ? "おしまい" : "次の単語へ") : direction === "ja-en" ? "英語を表示" : "意味を表示"}
+        </p>
+      </section>
+    </div>
   );
 }
