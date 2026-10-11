@@ -89,8 +89,24 @@ export function pickEnglishVoice(voices: SpeechSynthesisVoice[]): SpeechSynthesi
 
 let currentAudio: HTMLAudioElement | null = null;
 
+/** Counts the requests to speak. */
+let speakRequests = 0;
+
+/**
+ * Takes a request to speak, and says later whether it is still wanted once its voice is ready: not
+ * when something else was asked to be said meanwhile, nor when speaking was stopped (the learner
+ * moved on to the next question while the voice was being made, which would else play over it).
+ */
+function speakRequest(): () => boolean {
+  const asked = ++speakRequests;
+  const stopsThen = stops;
+  return () => asked === speakRequests && stops === stopsThen;
+}
+
 async function speakNative(text: string): Promise<void> {
+  const wanted = speakRequest();
   const buf = await api.nativeSynthesize(text, -2);
+  if (!wanted()) return;
   const blob = new Blob([buf], { type: "audio/wav" });
   const url = URL.createObjectURL(blob);
   stopSpeaking();
@@ -111,7 +127,9 @@ async function speakNative(text: string): Promise<void> {
 
 async function speakWeb(text: string, rate: number): Promise<void> {
   if (!("speechSynthesis" in window)) throw new Error("tts-unsupported");
+  const wanted = speakRequest();
   const voices = await loadVoices();
+  if (!wanted()) return;
   const u = new SpeechSynthesisUtterance(text);
   u.lang = "en-US";
   u.rate = rate;
@@ -213,7 +231,10 @@ function splitWavs(buf: ArrayBuffer): ArrayBuffer[] {
  * synthesizer in between.
  */
 async function speakJoinedNative(words: string[], gapMs: number, onStep: (i: number) => void): Promise<void> {
-  const clips = splitWavs(await api.nativeSynthesizeAll(words, -2)).map(wavSamples);
+  const wanted = speakRequest();
+  const made = await api.nativeSynthesizeAll(words, -2);
+  if (!wanted()) return;
+  const clips = splitWavs(made).map(wavSamples);
   const rate = clips[0]?.rate ?? 22050;
   const parts = clips.map((c) => trimSilence(c.samples, c.rate));
   // The edges kept on either side count towards the pause, so the words are gapMs apart.
