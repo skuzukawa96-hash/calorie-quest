@@ -93,7 +93,7 @@ pub fn set_play_mode_in(conn: &Connection, mode: &str) -> Result<String, String>
 pub(crate) fn load_daily(conn: &Connection, date: &str) -> rusqlite::Result<DailyStats> {
     let found = conn
         .query_row(
-            "SELECT kcal_earned, kcal_consumed, answered, correct FROM daily_stats WHERE user_id = ?1 AND date = ?2",
+            "SELECT kcal_earned, kcal_consumed, answered, correct, carried_kcal FROM daily_stats WHERE user_id = ?1 AND date = ?2",
             params![USER_ID, date],
             |r| {
                 Ok(DailyStats {
@@ -102,6 +102,7 @@ pub(crate) fn load_daily(conn: &Connection, date: &str) -> rusqlite::Result<Dail
                     kcal_consumed: r.get(1)?,
                     answered: r.get(2)?,
                     correct: r.get(3)?,
+                    carried_kcal: r.get(4)?,
                 })
             },
         )
@@ -193,31 +194,53 @@ fn tickets_available(conn: &Connection) -> rusqlite::Result<i64> {
 
 /* ---------- savings: yesterday's leftover kcal, and the snack tickets it becomes ---------- */
 
-/// Moves the leftover of every finished day into savings, once per day, and turns each full
-/// 2,000 kcal into an お菓子引換券. Runs lazily whenever the dashboard is loaded, so a day the
-/// app was not opened is still counted the next time it is. Returns (kcal saved, tickets issued)
-/// by this call; both are 0 once the past is settled.
-pub fn settle_savings(conn: &Connection) -> rusqlite::Result<(i64, i64)> {
+/// What settling the finished days did: kcal saved, tickets issued, and what over-eaten days left
+/// to today (0 or less). All are 0 once the past is settled.
+#[derive(Debug, Default, PartialEq, Eq)]
+pub struct Settled {
+    pub saved: i64,
+    pub issued: i64,
+    pub carried: i64,
+}
+
+/// Settles every finished day, once, in order: what is left of it (earned − eaten, less what an
+/// earlier over-eaten day carried into it) goes into savings, every full 2,000 kcal of which is an
+/// お菓子引換券; a day that ends below zero carries that to the next day settled, or to today,
+/// whose budget starts with it. Runs lazily whenever the dashboard is loaded, so a day the app was
+/// not opened is still counted the next time it is.
+pub fn settle_savings(conn: &Connection) -> rusqlite::Result<Settled> {
     let tx = conn.unchecked_transaction()?;
-    let days: Vec<(String, i64, i64)> = {
+    let days: Vec<(String, i64, i64, i64)> = {
         let mut stmt = tx.prepare(
-            "SELECT date, kcal_earned, kcal_consumed FROM daily_stats
+            "SELECT date, kcal_earned, kcal_consumed, carried_kcal FROM daily_stats
              WHERE user_id = ?1 AND date < ?2 AND saved_kcal IS NULL ORDER BY date",
         )?;
-        let rows = stmt.query_map(params![USER_ID, today()], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
+        let rows = stmt.query_map(params![USER_ID, today()], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?;
         rows.collect::<Result<_, _>>()?
     };
     if days.is_empty() {
-        return Ok((0, 0));
+        return Ok(Settled::default());
     }
     let mut saved = 0;
-    for (date, earned, consumed) in &days {
-        let leftover = srs::leftover_kcal(*earned, *consumed);
+    // What the day settled last left owing (0 or less), carried into the next.
+    let mut owed = 0;
+    for (date, earned, consumed, carried) in &days {
+        let carried = carried + owed;
+        let (leftover, left_owing) = srs::settle_day(*earned, *consumed, carried);
         tx.execute(
-            "UPDATE daily_stats SET saved_kcal = ?1 WHERE user_id = ?2 AND date = ?3",
-            params![leftover, USER_ID, date],
+            "UPDATE daily_stats SET saved_kcal = ?1, carried_kcal = ?2 WHERE user_id = ?3 AND date = ?4",
+            params![leftover, carried, USER_ID, date],
         )?;
         saved += leftover;
+        owed = left_owing;
+    }
+    if owed < 0 {
+        let today = today();
+        tx.execute("INSERT OR IGNORE INTO daily_stats (user_id, date) VALUES (?1, ?2)", params![USER_ID, today])?;
+        tx.execute(
+            "UPDATE daily_stats SET carried_kcal = carried_kcal + ?1 WHERE user_id = ?2 AND date = ?3",
+            params![owed, USER_ID, today],
+        )?;
     }
     let balance: i64 =
         tx.query_row("SELECT savings_kcal FROM users WHERE id = ?1", params![USER_ID], |r| r.get(0))?;
@@ -228,7 +251,7 @@ pub fn settle_savings(conn: &Connection) -> rusqlite::Result<(i64, i64)> {
         tx.execute("INSERT INTO snack_tickets (user_id, issued_at) VALUES (?1, ?2)", params![USER_ID, now])?;
     }
     tx.commit()?;
-    Ok((saved, issued))
+    Ok(Settled { saved, issued, carried: owed })
 }
 
 fn snack_tickets_available(conn: &Connection) -> rusqlite::Result<i64> {
@@ -239,13 +262,14 @@ fn snack_tickets_available(conn: &Connection) -> rusqlite::Result<i64> {
     )
 }
 
-fn savings_info(conn: &Connection, just_saved: i64, just_issued: i64) -> rusqlite::Result<SavingsInfo> {
+fn savings_info(conn: &Connection, settled: &Settled) -> rusqlite::Result<SavingsInfo> {
     Ok(SavingsInfo {
         balance: conn.query_row("SELECT savings_kcal FROM users WHERE id = ?1", params![USER_ID], |r| r.get(0))?,
         per_ticket: srs::SAVINGS_PER_TICKET,
         snack_tickets: snack_tickets_available(conn)?,
-        just_saved,
-        just_issued,
+        just_saved: settled.saved,
+        just_issued: settled.issued,
+        just_carried: settled.carried,
     })
 }
 
@@ -1168,7 +1192,7 @@ pub fn get_dashboard(state: State<'_, AppState>) -> CmdResult<Dashboard> {
 }
 
 pub fn load_dashboard(conn: &Connection) -> CmdResult<Dashboard> {
-    let (just_saved, just_issued) = settle_savings(conn).map_err(err)?;
+    let settled = settle_savings(conn).map_err(err)?;
     release_stale_reviews(conn).map_err(err)?;
     let user = load_user(conn).map_err(err)?;
     let today_stats = load_daily(conn, &today()).map_err(err)?;
@@ -1182,7 +1206,7 @@ pub fn load_dashboard(conn: &Connection) -> CmdResult<Dashboard> {
         due_review_count: due_review_count(conn).map_err(err)?,
         tickets_available: tickets_available(conn).map_err(err)?,
         kcal_rates: kcal_rates(),
-        savings: savings_info(conn, just_saved, just_issued).map_err(err)?,
+        savings: savings_info(conn, &settled).map_err(err)?,
         exam: crate::exam::overview(conn).map_err(err)?,
         user,
     })
@@ -2160,18 +2184,39 @@ mod tests {
     fn a_finished_days_leftover_goes_to_savings_once() {
         let c = conn();
         day(&c, &date_plus(-2), 600, 400); // 200 left over
-        day(&c, &date_plus(-1), 100, 300); // ate more than earned: nothing to save
+        day(&c, &date_plus(-1), 100, 300); // ate more than earned: nothing to save, 200 owed
         day(&c, &today(), 500, 0); // today is not over yet
 
-        assert_eq!(settle_savings(&c).unwrap(), (200, 0));
+        assert_eq!(settle_savings(&c).unwrap(), Settled { saved: 200, issued: 0, carried: -200 });
         assert_eq!(saved_on(&c, &date_plus(-2)), Some(200));
         assert_eq!(saved_on(&c, &date_plus(-1)), Some(0));
         assert_eq!(saved_on(&c, &today()), None);
         let d = load_dashboard(&c).unwrap();
         assert_eq!(d.savings.balance, 200);
-        assert_eq!((d.savings.just_saved, d.savings.just_issued), (0, 0), "already settled");
+        assert_eq!((d.savings.just_saved, d.savings.just_issued, d.savings.just_carried), (0, 0, 0), "already settled");
         assert_eq!(d.savings.per_ticket, 2000);
-        assert_eq!(d.today.kcal_earned, 500, "savings are a separate pot: today's budget is untouched");
+        assert_eq!(d.today.kcal_earned, 500, "savings are a separate pot: what was earned stays");
+        assert_eq!(d.today.carried_kcal, -200, "but yesterday's over-eating comes off today's budget");
+    }
+
+    /// A day that ends below zero carries it to the next day settled, through days not opened, and
+    /// it is earned back before anything is saved.
+    #[test]
+    fn an_over_eaten_day_carries_its_minus_to_the_next() {
+        let c = conn();
+        day(&c, &date_plus(-5), 100, 400); // −300
+        day(&c, &date_plus(-3), 500, 100); // 400 − 300: 100 saved
+        day(&c, &date_plus(-2), 0, 250); // −250, and no day after it but today
+        let s = settle_savings(&c).unwrap();
+        assert_eq!(s, Settled { saved: 100, issued: 0, carried: -250 });
+        let carried_on = |date: &str| -> i64 {
+            c.query_row("SELECT carried_kcal FROM daily_stats WHERE date = ?1", params![date], |r| r.get(0)).unwrap()
+        };
+        assert_eq!(carried_on(&date_plus(-3)), -300);
+        assert_eq!(carried_on(&today()), -250, "today starts 250 down, though it had no row yet");
+        let d = load_dashboard(&c).unwrap();
+        assert_eq!((d.today.kcal_earned, d.today.carried_kcal), (0, -250));
+        assert_eq!(d.savings.balance, 100);
     }
 
     #[test]
@@ -2180,7 +2225,7 @@ mod tests {
         c.execute("UPDATE users SET savings_kcal = 1900 WHERE id = 1", []).unwrap();
         day(&c, &date_plus(-1), 2350, 100);
         let d = load_dashboard(&c).unwrap();
-        assert_eq!((d.savings.just_saved, d.savings.just_issued), (2250, 2));
+        assert_eq!((d.savings.just_saved, d.savings.just_issued, d.savings.just_carried), (2250, 2, 0));
         assert_eq!(d.savings.balance, 150);
         assert_eq!(d.savings.snack_tickets, 2);
     }

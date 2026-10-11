@@ -198,6 +198,13 @@ export interface DailyStats {
   kcalConsumed: number;
   answered: number;
   correct: number;
+  /** what days over-eaten carried into this one (0 or less), taken off its budget */
+  carriedKcal: number;
+}
+
+/** What is left to eat on a day: earned − eaten, less what an over-eaten day before carried in. */
+export function remainingKcal(day: DailyStats): number {
+  return day.kcalEarned - day.kcalConsumed + Math.min(0, day.carriedKcal ?? 0);
 }
 
 export interface Snack {
@@ -475,6 +482,8 @@ export interface SavingsInfo {
   /** この読み込みで締めた前日までの残り（日付が変わって最初の1回だけ 0 以外） */
   justSaved: number;
   justIssued: number;
+  /** この読み込みで今日に持ち越した、食べすぎて終わった日のマイナス（0 以下） */
+  justCarried: number;
 }
 
 export interface AnswerPayload {

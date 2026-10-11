@@ -11,6 +11,7 @@ import {
   PLAY_MODE_INFO,
   POS_LABEL,
   posCategory,
+  remainingKcal,
   TIER_LABEL,
   TIERS,
   type CategoryInfo,
@@ -71,7 +72,7 @@ export default function Home({
   const { today, user, goalSnacks, eatenToday, kcalRates, savings } = dash;
 
   // What is still left to spend today; a goal is within reach once it fits in there.
-  const budget = today.kcalEarned - today.kcalConsumed;
+  const budget = remainingKcal(today);
   // Questions to go at the play mode's rate: がんばり halves what each pays.
   const modeRate = PLAY_MODE_INFO[user.playMode].multiplier;
   const need = (remaining: number, rate: number) => Math.ceil(remaining / (rate * modeRate));
@@ -178,6 +179,7 @@ export default function Home({
         <CalorieBar
           earned={today.kcalEarned}
           consumed={today.kcalConsumed}
+          carried={today.carriedKcal}
           goals={goalSnacks}
           snacks={dash.snacks}
           eatenToday={eatenToday}

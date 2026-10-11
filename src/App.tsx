@@ -11,7 +11,7 @@ import Recipe from "./screens/Recipe";
 import Snacks from "./screens/Snacks";
 import Stats from "./screens/Stats";
 import Study from "./screens/Study";
-import type { Dashboard, ExamLevel, PlayMode, SessionMode, TierChoice } from "./types";
+import { remainingKcal, type Dashboard, type ExamLevel, type PlayMode, type SessionMode, type TierChoice } from "./types";
 
 type Tab = "home" | "snacks" | "favorites" | "recipe" | "stats";
 
@@ -59,13 +59,20 @@ export default function App() {
       const d = await api.getDashboard();
       setDash(d);
       setError(null);
-      // The first load after the date changes moves the earlier days' leftover into savings.
-      const { justSaved, justIssued, balance, perTicket } = d.savings;
+      // The first load after the date changes moves the earlier days' leftover into savings, and
+      // what an over-eaten day ended below zero into today.
+      const { justSaved, justIssued, justCarried, balance, perTicket } = d.savings;
+      const carried = justCarried < 0 ? `前日までに食べすぎた ${-justCarried} kcal を今日に持ち越しました` : "";
       if (justIssued > 0) {
         playFanfare();
         showToast(`🎟 貯蓄が ${perTicket.toLocaleString()} kcal に達しました！お菓子引換券を ${justIssued} 枚獲得`, 5000);
       } else if (justSaved > 0) {
-        showToast(`🐷 前日の残り ${justSaved} kcal を貯蓄しました（${balance.toLocaleString()} / ${perTicket.toLocaleString()} kcal）`, 4000);
+        showToast(
+          `🐷 前日の残り ${justSaved} kcal を貯蓄しました（${balance.toLocaleString()} / ${perTicket.toLocaleString()} kcal）${carried ? `。${carried}` : ""}`,
+          4000,
+        );
+      } else if (carried) {
+        showToast(`🍩 ${carried}`, 4000);
       }
     } catch (e) {
       setError(String(e));
@@ -124,12 +131,12 @@ export default function App() {
                 <span title="連続学習日数">🔥 {dash.user.currentStreak}日</span>
                 {/* What is left to eat today (earned minus eaten) over what was earned. */}
                 <span
-                  title={`今日の残りカロリー / 獲得カロリー（消費 ${dash.today.kcalConsumed} kcal）`}
+                  title={`今日の残りカロリー / 獲得カロリー（消費 ${dash.today.kcalConsumed} kcal${
+                    dash.today.carriedKcal < 0 ? `、前日からの持ち越し ${dash.today.carriedKcal} kcal` : ""
+                  }）`}
                 >
                   🍩{" "}
-                  <span className={dash.today.kcalEarned - dash.today.kcalConsumed < 0 ? "negative" : "positive"}>
-                    {dash.today.kcalEarned - dash.today.kcalConsumed}
-                  </span>
+                  <span className={remainingKcal(dash.today) < 0 ? "negative" : "positive"}>{remainingKcal(dash.today)}</span>
                   /{dash.today.kcalEarned}kcal
                 </span>
               </>

@@ -3,6 +3,8 @@ import type { Snack } from "../types";
 interface Props {
   earned: number;
   consumed: number;
+  /** what an over-eaten day before carried into today (0 or less) */
+  carried: number;
   /** goal snacks; the bar runs up to the dearest of them */
   goals: Snack[];
   snacks: Snack[];
@@ -19,10 +21,11 @@ const MIN_GAP = 9;
  * Today's calorie progress with snack icons as milestones along the bar. Every goal snack sits at
  * its own calorie mark, and a few built-in snacks fill the gaps. Clicking an icon eats that snack.
  * The bar shows what is left to spend, not what was earned: after 500 kcal earned and a 300 kcal
- * snack eaten it stands at 200, and only snacks that still fit are marked within reach.
+ * snack eaten it stands at 200, and only snacks that still fit are marked within reach. A day
+ * before that ended below zero takes its minus off too (持ち越し).
  */
-export default function CalorieBar({ earned, consumed, goals, snacks, eatenToday, onEat }: Props) {
-  const budget = earned - consumed;
+export default function CalorieBar({ earned, consumed, carried, goals, snacks, eatenToday, onEat }: Props) {
+  const budget = earned - consumed + Math.min(0, carried);
   const left = Math.max(0, budget);
   const max = goals.length > 0 ? Math.max(...goals.map((g) => g.calories)) : Math.max(250, Math.ceil((earned + 1) / 100) * 100);
   const pct = Math.min(100, (left / max) * 100);
@@ -55,6 +58,11 @@ export default function CalorieBar({ earned, consumed, goals, snacks, eatenToday
         </div>
         <div className="kcal-split">
           <div className="negative">消費 {consumed} kcal</div>
+          {carried < 0 && (
+            <div className="negative" title="前日までに食べすぎた分。今日の残りから引かれます">
+              持ち越し {carried} kcal
+            </div>
+          )}
           <div className={budget < 0 ? "negative" : "positive"}>残り {budget} kcal</div>
         </div>
       </div>

@@ -227,6 +227,7 @@ CREATE TABLE IF NOT EXISTS daily_stats (
   correct INTEGER NOT NULL DEFAULT 0,
   saved_kcal INTEGER,
   kcal_eighths INTEGER NOT NULL DEFAULT 0,
+  carried_kcal INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (user_id, date)
 );
 CREATE TABLE IF NOT EXISTS snacks (
@@ -452,6 +453,8 @@ fn setup(conn: Connection) -> rusqlite::Result<Connection> {
         )?;
     }
     ensure_column(&conn, "daily_stats", "kcal_eighths", "INTEGER NOT NULL DEFAULT 0")?;
+    // 食べすぎて終わった日から持ち越したマイナス（0 以下）。
+    ensure_column(&conn, "daily_stats", "carried_kcal", "INTEGER NOT NULL DEFAULT 0")?;
     // がんばり（×0.5）/ 通常 / お気軽（×1.5）。
     ensure_column(&conn, "users", "play_mode", "TEXT NOT NULL DEFAULT 'normal'")?;
     // レシピの単語がその日はじめて正解した日（同じ日の2回目からは半分を払う）。

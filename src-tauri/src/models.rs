@@ -218,6 +218,8 @@ pub struct DailyStats {
     pub kcal_consumed: i64,
     pub answered: i64,
     pub correct: i64,
+    /// 食べすぎて終わった日から持ち越したマイナス（0 以下）。今日の残りは 獲得 − 消費 + これ。
+    pub carried_kcal: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -465,6 +467,8 @@ pub struct SavingsInfo {
     /// 0 でなければ画面で知らせる。
     pub just_saved: i64,
     pub just_issued: i64,
+    /// この呼び出しで今日に持ち越した、食べすぎて終わった日のマイナス（0 以下）。
+    pub just_carried: i64,
 }
 
 #[derive(Debug, Deserialize)]

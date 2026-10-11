@@ -3,7 +3,7 @@ import { DeleteButton, EatButton, EditButton, UndoButton } from "../components/I
 import { api } from "../lib/api";
 import { SNACK_ICONS } from "../lib/snackIcons";
 import { playCrunch } from "../lib/sfx";
-import type { ConsumptionEntry, Dashboard, Snack } from "../types";
+import { remainingKcal, type ConsumptionEntry, type Dashboard, type Snack } from "../types";
 
 interface Props {
   dash: Dashboard;
@@ -106,7 +106,7 @@ export default function Snacks({ dash, onChanged, ticketMode, onTicketMode, toas
 
   const goalIds = new Set(dash.goalSnacks.map((g) => g.id));
   const { today, savings } = dash;
-  const budget = today.kcalEarned - today.kcalConsumed;
+  const budget = remainingKcal(today);
   const tickets = savings.snackTickets;
   const showTickets = ticketMode && tickets > 0;
 
@@ -164,6 +164,11 @@ export default function Snacks({ dash, onChanged, ticketMode, onTicketMode, toas
           <div className="ledger-totals">
             <span>獲得 <b>{today.kcalEarned}</b></span>
             <span>食べた <b>{today.kcalConsumed}</b></span>
+            {today.carriedKcal < 0 && (
+              <span className="negative" title="前日までに食べすぎた分。今日の残りから引かれます">
+                持ち越し <b>{today.carriedKcal}</b>
+              </span>
+            )}
             <span className={budget < 0 ? "negative" : "positive"}>
               残り <b>{budget}</b> kcal
             </span>
@@ -193,7 +198,7 @@ export default function Snacks({ dash, onChanged, ticketMode, onTicketMode, toas
             <div style={{ width: `${Math.min(100, (savings.balance / savings.perTicket) * 100)}%` }} />
           </div>
           <div className="muted small">
-            今日使わなかったカロリー（今は {Math.max(0, budget)} kcal）は、明日になると貯蓄に入ります。
+            今日使わなかったカロリー（今は {Math.max(0, budget)} kcal）は、明日になると貯蓄に入ります。マイナスで終わった日は、そのマイナスが次の日に持ち越されます。
             {savings.perTicket.toLocaleString()} kcal たまるごとに、好きなお菓子をカロリーを使わずに1つ食べられる引換券になります。
           </div>
         </div>

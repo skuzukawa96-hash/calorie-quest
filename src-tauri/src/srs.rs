@@ -175,9 +175,12 @@ pub fn split_kcal(pending: i64, gained: i64) -> (i64, i64) {
     (total / EIGHTHS, total % EIGHTHS)
 }
 
-/// その日に使わずに残ったカロリー。食べすぎた日（マイナス）は貯蓄を減らさず 0 とする。
-pub fn leftover_kcal(earned: i64, consumed: i64) -> i64 {
-    (earned - consumed).max(0)
+/// 終わった日の締め: (貯蓄に入れる分, 次の日に持ち越す分)。獲得 − 消費 + その日に持ち越されてきた分
+/// （0 以下）がプラスなら貯蓄へ、マイナスなら次の日の予算から引く（食べすぎた分は次の日に取り返す。
+/// 貯蓄は減らさない）。
+pub fn settle_day(earned: i64, consumed: i64, carried: i64) -> (i64, i64) {
+    let net = earned - consumed + carried.min(0);
+    (net.max(0), net.min(0))
 }
 
 /// 貯蓄に `saved` kcal を足したあとの (残高, 新しく発行する引換券の枚数)。
@@ -344,8 +347,11 @@ mod tests {
 
     #[test]
     fn leftovers_fill_savings_and_every_2000_becomes_a_ticket() {
-        assert_eq!(leftover_kcal(600, 400), 200);
-        assert_eq!(leftover_kcal(100, 300), 0, "an over-eaten day takes nothing out of savings");
+        assert_eq!(settle_day(600, 400, 0), (200, 0));
+        assert_eq!(settle_day(100, 300, 0), (0, -200), "an over-eaten day carries the rest to the next");
+        assert_eq!(settle_day(500, 100, -300), (100, 0), "what was carried in is earned back first");
+        assert_eq!(settle_day(200, 0, -300), (0, -100), "and what is not yet, carries on");
+        assert_eq!(settle_day(100, 0, 50), (100, 0), "nothing above zero is ever carried");
         assert_eq!(add_to_savings(0, 200), (200, 0));
         assert_eq!(add_to_savings(1900, 100), (0, 1));
         assert_eq!(add_to_savings(1900, 2250), (150, 2));

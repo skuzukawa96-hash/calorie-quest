@@ -519,26 +519,37 @@ function snackIdOf(c: StoredConsumption): number | null {
 
 /** Mirrors commands::settle_savings: finished days' leftover → savings, every 2,000 → a ticket. */
 const SAVINGS_PER_TICKET = 2000;
-function settleSavings(): { saved: number; issued: number } {
+/**
+ * Mirrors commands::settle_savings: every finished day in order, its leftover into savings, a day
+ * ended below zero carrying that into the next day settled, or into today.
+ */
+function settleSavings(): { saved: number; issued: number; carried: number } {
   const t = today();
   let saved = 0;
-  for (const [date, d] of Object.entries(state.daily)) {
-    if (date >= t || state.saved[date] !== undefined) continue;
-    const leftover = Math.max(0, d.kcalEarned - d.kcalConsumed);
-    state.saved[date] = leftover;
-    saved += leftover;
+  let owed = 0;
+  const days = Object.keys(state.daily)
+    .filter((date) => date < t && state.saved[date] === undefined)
+    .sort();
+  for (const date of days) {
+    const d = state.daily[date];
+    d.carriedKcal = Math.min(0, d.carriedKcal ?? 0) + owed;
+    const net = d.kcalEarned - d.kcalConsumed + d.carriedKcal;
+    state.saved[date] = Math.max(0, net);
+    saved += Math.max(0, net);
+    owed = Math.min(0, net);
   }
+  if (owed < 0) daily(t).carriedKcal = Math.min(0, daily(t).carriedKcal ?? 0) + owed;
   const total = state.savings + saved;
   const issued = Math.floor(total / SAVINGS_PER_TICKET);
   state.savings = total % SAVINGS_PER_TICKET;
   for (let i = 0; i < issued; i++) state.snackTickets.push({ id: state.nextId++, issuedAt: nowTs(), usedAt: null, consumptionId: null });
-  if (saved > 0 || issued > 0) save();
-  return { saved, issued };
+  if (days.length > 0) save();
+  return { saved, issued, carried: owed };
 }
 
 function daily(date: string): DailyStats {
   if (!state.daily[date]) {
-    state.daily[date] = { date, kcalEarned: 0, kcalConsumed: 0, answered: 0, correct: 0 };
+    state.daily[date] = { date, kcalEarned: 0, kcalConsumed: 0, answered: 0, correct: 0, carriedKcal: 0 };
   }
   return state.daily[date];
 }
@@ -2477,6 +2488,7 @@ export async function mockInvoke<T>(cmd: string, args: Record<string, unknown>):
           snackTickets: state.snackTickets.filter((x) => !x.usedAt).length,
           justSaved: settled.saved,
           justIssued: settled.issued,
+          justCarried: settled.carried,
         },
         exam: examOverview(),
       };
