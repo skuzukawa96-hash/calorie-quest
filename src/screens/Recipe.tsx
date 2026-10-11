@@ -79,10 +79,7 @@ const BULK: Partial<Record<RecipeTab, { label: string; ask: (n: number) => strin
 };
 const REVIEW_ICON: Record<RecipeReviewMode, ReactNode> = { choice: "👆", typing: <PencilIcon /> };
 
-/**
- * In ★: starred and in review. A word answered right in a review of すべて / 復習 is learned for
- * now and keeps its star until 習得 or まだ settles it; it is not in ★ meanwhile.
- */
+/** In ★: starred and in review (recipe::review never makes a starred word learned). */
 function isStarred(w: RecipeWord): boolean {
   return !!w.favoritedAt && !w.masteredAt && !w.excludedAt;
 }
@@ -347,7 +344,7 @@ function startingWith(words: RecipeWord[], query: string): RecipeWord[] {
  * 復習中), and
  * that a word right again the same day pays half. Each is shown the first time it comes up in a day.
  */
-type Hint = "decide" | "repeat";
+type Hint = "decide" | "repeat" | "starred";
 const HINT_STORAGE = "cq-recipe-hints";
 
 function localDay(): string {
@@ -1208,20 +1205,29 @@ interface Answered {
   given: string;
   /** what it paid after the play mode, in kcal: full the first time the word is right today, half after */
   points: number;
-  /** wrong: whether the word went back into review from 習得済み / 除外中, or was there already */
+  /** wrong: whether the word went back into review from 習得 / 除外, or was there already */
   movedBack: boolean;
-  /** right in すべて / 復習中, and the first time today: explain 習得 / まだ */
+  /** right in すべて / 復習 and not starred: 習得 / まだ are asked (a starred word stays in review) */
+  decides: boolean;
+  /** the word is starred: it stays in ★ whatever the answer */
+  starred: boolean;
+  /** right in すべて / 復習, and the first time today: explain 習得 / まだ */
   decideHint: boolean;
+  /** right in すべて / 復習 but starred, the first time today: say why there is no 習得 / まだ */
+  starredHint: boolean;
   /** right again the same day, the first time this happens today: say why it paid half */
   repeatNote: boolean;
 }
 
 /** How 習得 / まだ work after a right answer in すべて / 復習中. */
-const DECIDE_HINT = "覚えたなら「習得」で習得に（★の単語は★から外れます）。なんとなく当たっただけなら「まだ」で復習に残します。";
+const DECIDE_HINT = "覚えたなら「習得」で習得に。なんとなく当たっただけなら「まだ」で復習に残します。";
+/** Why a starred word answered right in すべて / 復習 has no 習得 / まだ. */
+const STARRED_HINT = "★の単語は、正解しても★のまま復習に残ります（習得にするなら一覧の「✓ 覚えた」）。";
 
 /**
  * Whether a right answer in this tab asks 習得 / まだ: only where it would make the word learned
- * (すべて / 復習中). In 習得済み / 除外中 a right answer leaves the word where it is.
+ * (すべて / 復習), and not for a starred word, which stays in review. In ★ / 習得 / 除外 a right
+ * answer leaves the word where it is.
  */
 const asksDecision = (tab: RecipeTab) => tab === "all" || tab === "learning";
 
@@ -1269,7 +1275,7 @@ function RecipeReview({
 
   const current = queue[idx];
   const finished = idx >= queue.length;
-  const decides = asksDecision(target);
+  const tabDecides = asksDecision(target);
   // × after an answer: to 除外 from すべて / ★ / 復習 / 習得, out of the recipe from 除外.
   const deletes = target === "excluded";
   // Drawn once per card: a word saved mid-review reloads the recipe, and that must not reshuffle
@@ -1322,9 +1328,12 @@ function RecipeReview({
       setSaving(true);
       try {
         const r: RecipeReviewResult = await api.reviewRecipeWord(current.id, correct, mode, target);
+        // Starred as the answer was saved (it may have been starred or unstarred on this card).
+        const starred = !!r.entry.favoritedAt && !r.entry.excludedAt;
+        const decides = correct && tabDecides && !starred;
         if (correct) {
           // Right in すべて / 復習 has made the word learned already; 習得 keeps that, まだ takes it
-          // back into review (see `decide`). In ★ / 習得 / 除外 it stays where it is.
+          // back into review (see `decide`). A starred word, and any in ★ / 習得 / 除外, stays where it is.
           playCrunch();
           if (!decides) setRemembered((w) => [...w, current]);
         } else {
@@ -1338,7 +1347,10 @@ function RecipeReview({
           given,
           points: r.points,
           movedBack: !correct && !!(current.masteredAt || current.excludedAt),
-          decideHint: correct && decides && firstToday("decide"),
+          decides,
+          starred,
+          decideHint: decides && firstToday("decide"),
+          starredHint: correct && tabDecides && starred && firstToday("starred"),
           repeatNote: correct && r.repeat && firstToday("repeat"),
         });
         if (r.kcalEarned > 0) onProgress();
@@ -1349,7 +1361,7 @@ function RecipeReview({
         setSaving(false);
       }
     },
-    [current, saving, answered, mode, target, decides, onProgress, toast],
+    [current, saving, answered, mode, target, tabDecides, onProgress, toast],
   );
 
   const next = useCallback(() => {
@@ -1364,7 +1376,7 @@ function RecipeReview({
   // star and all, so a lucky guess does not make a word learned.
   const decide = useCallback(
     async (learned: boolean) => {
-      if (!current || !answered?.correct || saving) return;
+      if (!current || !answered?.decides || saving) return;
       setSaving(true);
       try {
         if (learned) {
@@ -1409,8 +1421,8 @@ function RecipeReview({
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (finished) return;
-      // A right answer in すべて / 復習中 waits for 習得 / まだ; any other answer moves on with Enter.
-      if (answered && (!answered.correct || !decides) && (e.key === "Enter" || e.key === " ")) {
+      // A right answer in すべて / 復習 waits for 習得 / まだ; any other answer moves on with Enter.
+      if (answered && !answered.decides && (e.key === "Enter" || e.key === " ")) {
         e.preventDefault();
         next();
       } else if (!answered && mode === "choice") {
@@ -1420,11 +1432,11 @@ function RecipeReview({
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [finished, answered, decides, mode, options, current, answer, next]);
+  }, [finished, answered, mode, options, current, answer, next]);
 
   if (finished) {
     // Without 習得 / まだ (★, 習得, 除外), a right answer was remembered and a wrong one forgotten.
-    const again = !decides;
+    const again = !tabDecides;
     const clearRemembered = async () => {
       setSaving(true);
       try {
@@ -1444,7 +1456,7 @@ function RecipeReview({
           ? "正解した単語は除外のまま、間違えた単語は復習に戻しました。"
           : target === "favorite"
             ? "★の単語は、正解しても間違えても★のまま（復習）です。覚えた単語は一覧の「✓ 覚えた」で習得に移せます。"
-            : "「習得」にした単語は習得になりました。間違えた単語と「まだ」にした単語は復習です。";
+            : "「習得」にした単語は習得になりました。間違えた単語と「まだ」にした単語、★の単語は復習です。";
     return (
       <section className="card recipe-review done">
         <h2>📖 復習おしまい！</h2>
@@ -1659,11 +1671,12 @@ function RecipeReview({
             {notes?.word === current.word && notes.notes && (
               <WordNotesPanel notes={notes.notes} word={current.word} meaning={current.meaning} dict={dict} gloss />
             )}
-            {(answered.correct ? answered.decideHint || answered.repeatNote : true) && (
+            {(answered.correct ? answered.decideHint || answered.starredHint || answered.repeatNote : true) && (
               <div className="muted">
                 {answered.correct
                   ? [
                       answered.decideHint && DECIDE_HINT,
+                      answered.starredHint && STARRED_HINT,
                       answered.repeatNote &&
                         `この単語は今日2回目以降の正解なので、カロリーは半分（${REPEAT_KCAL[mode]} kcal${playMode === "normal" ? "" : `、${PLAY_MODE_INFO[playMode].label} ×${PLAY_MODE_INFO[playMode].multiplier} の前`}）です。`,
                     ]
@@ -1671,13 +1684,13 @@ function RecipeReview({
                       .join(" ")
                   : answered.movedBack
                     ? "復習に戻しました。最後にもう一度挑戦できます。"
-                    : target === "favorite"
+                    : answered.starred
                       ? "★のまま残ります。最後にもう一度挑戦できます。"
                       : "復習のまま残ります。最後にもう一度挑戦できます。"}
               </div>
             )}
           </div>
-          {answered.correct && decides ? (
+          {answered.decides ? (
             <div className="row decide-buttons">
               <button className="btn decide-learned" disabled={saving} onClick={() => void decide(true)} autoFocus>
                 習得

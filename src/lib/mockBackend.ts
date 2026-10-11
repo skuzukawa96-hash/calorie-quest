@@ -2672,14 +2672,14 @@ export async function mockInvoke<T>(cmd: string, args: Record<string, unknown>):
       if (!["all", "favorite", "learning", "mastered", "excluded"].includes(target)) throw new Error(`unknown review target ${target}`);
       const w = recipeWord(Number(args.id));
       const now = nowTs();
-      // Mirrors recipe::review: in すべて / 復習 right makes the word learned (★ stays until 習得);
+      // Mirrors recipe::review: in すべて / 復習 right makes the word learned unless it is starred;
       // wrong puts it back into review from any tab, and is a miss.
       const repeat = state.recipePaid[w.id] === t;
       w.reviews += 1;
       w.lastReviewedAt = now;
       if (args.remembered) {
         state.recipePaid[w.id] = t;
-        if (target === "all" || target === "learning") w.masteredAt = w.masteredAt ?? now;
+        if ((target === "all" || target === "learning") && !w.favoritedAt) w.masteredAt = w.masteredAt ?? now;
       } else {
         w.misses = (w.misses ?? 0) + 1;
         w.masteredAt = null;

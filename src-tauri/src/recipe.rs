@@ -259,8 +259,8 @@ pub fn usage_meanings() -> Vec<String> {
 /// One word reviewed in `mode` ("choice": its meaning picked from four, "typing": the English
 /// written from the meaning) from the tab `target`. A right answer in すべて / 復習 makes the
 /// word learned, though the learner can still say まだ, which puts it back into review
-/// (`set_mastered`); its star stays until 習得 says it is learned (`set_mastered` again). In ★ /
-/// 習得 / 除外 a right answer leaves the word where it is. A wrong answer puts it back into review
+/// (`set_mastered`), unless it is starred: a starred word stays in review, starred, whatever the
+/// tab. In ★ / 習得 / 除外 a right answer leaves the word where it is. A wrong answer puts it back into review
 /// (復習, and so すべて) from any tab, learned or taken off, and counts as a miss. Pay is counted in quarters per day, so two meanings picked make a whole calorie; whatever fraction is left when the day ends is dropped. A
 /// word pays in full the first time it is right in a day and half after that.
 pub fn review(conn: &mut Connection, id: i64, remembered: bool, mode: &str, target: &str) -> CmdResult<RecipeReviewResult> {
@@ -282,7 +282,7 @@ pub fn review(conn: &mut Connection, id: i64, remembered: bool, mode: &str, targ
     tx.execute(
         "UPDATE recipe_words SET reviews = reviews + 1, last_reviewed_at = ?2,
          misses = misses + CASE WHEN ?3 THEN 0 ELSE 1 END,
-         mastered_at = CASE WHEN ?5 THEN COALESCE(mastered_at, ?2) WHEN ?6 THEN NULL ELSE mastered_at END,
+         mastered_at = CASE WHEN ?5 AND favorited_at IS NULL THEN COALESCE(mastered_at, ?2) WHEN ?6 THEN NULL ELSE mastered_at END,
          excluded_at = CASE WHEN ?6 THEN NULL ELSE excluded_at END,
          paid_on = CASE WHEN ?3 THEN ?4 ELSE paid_on END
          WHERE id = ?1",
@@ -620,8 +620,8 @@ mod tests {
         assert_eq!(migrate_usage_notation(&c).unwrap(), 0, "nothing left to move");
     }
 
-    /// ★: a starred word is in review and stays starred through its reviews, right or wrong, and
-    /// through まだ; it is unstarred once learned or taken off by hand, and starring a learned or
+    /// ★: a starred word is in review and stays there, starred, through its reviews in any tab, right
+    /// or wrong; it is unstarred once learned or taken off by hand, and starring a learned or
     /// taken-off word brings it back into review.
     #[test]
     fn a_starred_word_stays_in_review_until_it_is_learned_or_taken_off_by_hand() {
@@ -642,12 +642,14 @@ mod tests {
         let wrong = review(&mut c, hear, false, "typing", "favorite").unwrap().entry;
         assert_eq!((wrong.misses, wrong.favorited_at.is_some()), (1, true));
 
-        // In 復習 a right answer learns it for now; まだ keeps the star, 習得 takes it off.
-        let right = review(&mut c, hear, true, "choice", "learning").unwrap().entry;
-        assert!(right.mastered_at.is_some() && right.favorited_at.is_some());
-        assert!(set_mastered(&c, hear, false).unwrap().favorited_at.is_some(), "まだ");
-        review(&mut c, hear, true, "choice", "learning").unwrap();
-        assert!(set_mastered(&c, hear, true).unwrap().favorited_at.is_none(), "習得");
+        // In 復習 and すべて too a right answer leaves it in review, starred; ✓ 覚えた learns it.
+        for tab in ["learning", "all"] {
+            let right = review(&mut c, hear, true, "choice", tab).unwrap().entry;
+            assert!(right.mastered_at.is_none() && right.favorited_at.is_some(), "{tab}");
+        }
+        assert!(review(&mut c, apple, true, "choice", "learning").unwrap().entry.mastered_at.is_some(), "unstarred");
+        set_mastered(&c, apple, false).unwrap();
+        assert!(set_mastered(&c, hear, true).unwrap().favorited_at.is_none(), "✓ 覚えた");
 
         // Starring a learned or taken-off word brings it back into review.
         let back = set_favorite(&c, hear, true).unwrap();
