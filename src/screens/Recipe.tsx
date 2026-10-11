@@ -12,7 +12,7 @@ import { loadDictionary, lookup, type Dictionary } from "../lib/dictionary";
 import { onRecipeChanged } from "../lib/recipe";
 import { formatKcal } from "../lib/scoring";
 import { playCrunch, playFanfare, playWrong } from "../lib/sfx";
-import { isTtsSupported, speak, stopSpeaking } from "../lib/speech";
+import { isTtsSupported, speak, speakInTurn, stopSpeaking } from "../lib/speech";
 import {
   PLAY_MODE_INFO,
   RECIPE_POS,
@@ -83,6 +83,48 @@ const CARD_DIRECTION_LABEL: Record<CardDirection, string> = { "ja-en": "日本�
 
 function say(text: string) {
   if (isTtsSupported()) speak(text).catch(() => undefined);
+}
+
+/** What no voice can read in a pattern: 人, 原形, 形容詞, 節, 過去分詞 (anything Japanese), A, B and -ing. */
+const FILLER = /[\p{sc=Han}\p{sc=Hiragana}\p{sc=Katakana}]|(?<![\w-])(?:[AB]|-ing)(?![\w-])/u;
+
+/**
+ * What is read aloud for an entry: a word as it is, a pattern without what fills it, each way of
+ * it in turn. "be confident in/about A" is "be confident in", then "be confident about"; "look
+ * forward to A／-ing" is "look forward to", "hate -ing／to 原形" "hate" and "hate to" (a side of ／
+ * not starting with the pattern's word stands for the last part before it). An English part in ( )
+ * is read ("I'm afraid that"), unless it has a filler: "It is easy (for 人) to 原形" is "It is easy to".
+ */
+function readings(w: RecipeWord): string[] {
+  if (w.kind !== "usage") return [w.word];
+  const out = new Set<string>();
+  let before = "";
+  for (const side of w.word.split(/\s*／\s*/)) {
+    const whole = !before || side.split(" ")[0] === before.split(" ")[0];
+    const written = whole ? side : before.replace(/\S+$/, () => side);
+    before = written;
+    const bare = written
+      .replace(/（[^）]*）/g, " ")
+      .replace(/\(([^()]*)\)/g, (_, inner: string) => (FILLER.test(inner) ? " " : ` ${inner} `))
+      .replace(new RegExp(FILLER.source, "gu"), " ");
+    const choices = bare
+      .split(/\s+/)
+      .filter(Boolean)
+      .map((token) => (/^[A-Za-z'-]+(\/[A-Za-z'-]+)+$/.test(token) ? token.split("/") : [token]));
+    for (const way of eachOf(choices)) if (way.length > 0) out.add(way.join(" "));
+  }
+  return [...out];
+}
+
+/** Two ways of a pattern are read this far apart. */
+const READINGS_GAP_MS = 400;
+
+/** Reads an entry aloud: a word, or a pattern's ways one after another. */
+function sayEntry(w: RecipeWord) {
+  const ways = readings(w);
+  if (!isTtsSupported() || ways.length === 0) return;
+  if (ways.length === 1) say(ways[0]);
+  else speakInTurn(ways, READINGS_GAP_MS, () => undefined).catch(() => undefined);
 }
 
 function shuffled<T>(items: T[]): T[] {
@@ -936,21 +978,18 @@ export default function Recipe({ playMode, onProgress, toast }: Props) {
                         <span className="recipe-word">
                           <EntryText w={w} text={w.word} />
                         </span>
-                        {/* A pattern (人 / 原形 / ～) has no voice to read it with. */}
-                        {w.kind !== "usage" && (
-                          <button
-                            className="btn-link speak-btn recipe-speak"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              say(w.word);
-                            }}
-                            disabled={!isTtsSupported()}
-                            title="読み上げる"
-                            aria-label={`${w.word} を読み上げる`}
-                          >
-                            🔊
-                          </button>
-                        )}
+                        <button
+                          className="btn-link speak-btn recipe-speak"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            sayEntry(w);
+                          }}
+                          disabled={!isTtsSupported()}
+                          title="読み上げる"
+                          aria-label={`${w.word} を読み上げる`}
+                        >
+                          🔊
+                        </button>
                         <span className={"recipe-meaning" + (w.meaning ? "" : " muted")}>
                           {w.meaning ? <EntryMeaning w={w} dict={dict} cued /> : NO_MEANING}
                         </span>
@@ -1160,10 +1199,7 @@ function RecipeReview({
   useEffect(() => {
     if (!current) return;
     // Writing the English: hearing it first would give the answer away.
-    // A pattern (人 / 原形 / ～) is not read aloud.
-    if (mode === "choice") {
-      if (current.kind !== "usage") say(current.word);
-    }
+    if (mode === "choice") sayEntry(current);
     else input.current?.focus();
   }, [current, mode]);
   useEffect(() => {
@@ -1196,7 +1232,7 @@ function RecipeReview({
           repeatNote: correct && r.repeat && firstToday("repeat"),
         });
         if (r.kcalEarned > 0) onProgress();
-        if (mode === "typing" && current.kind !== "usage") window.setTimeout(() => say(current.word), 380);
+        if (mode === "typing") window.setTimeout(() => sayEntry(current), 380);
       } catch (e) {
         toast(String(e));
       } finally {
@@ -1394,8 +1430,8 @@ function RecipeReview({
           <div className="prompt-label">この英語の意味は？</div>
           <button
             className="flash-word"
-            onClick={() => current.kind !== "usage" && say(current.word)}
-            title={current.kind === "usage" ? undefined : "クリックで発音"}
+            onClick={() => sayEntry(current)}
+            title="クリックで発音"
           >
             <EntryText w={current} text={current.word} />
           </button>
@@ -1491,11 +1527,9 @@ function RecipeReview({
                 <EntryText w={current} text={current.word} />
               </strong>
               {shownForm(current) && <span className="muted">（{shownForm(current)}）</span>}　<EntryMeaning w={current} dict={dict} />
-              {current.kind !== "usage" && (
-                <button className="btn-link" onClick={() => say(current.word)} disabled={!isTtsSupported()}>
-                  🔊 もう一度聞く
-                </button>
-              )}
+              <button className="btn-link" onClick={() => sayEntry(current)} disabled={!isTtsSupported()}>
+                🔊 もう一度聞く
+              </button>
             </div>
             {notes?.word === current.word && notes.notes && (
               <WordNotesPanel notes={notes.notes} word={current.word} meaning={current.meaning} dict={dict} gloss />
@@ -1545,8 +1579,8 @@ function onControl(e: Event): boolean {
  * 単語カード: a tab's words one card at a time, for remembering rather than scoring. 日本語→英語
  * shows the meaning (by its nuance, as 記入式 asks it) and then the English, 英語→日本語 the English
  * and then the meaning. A click anywhere on the screen, a right-click or Enter shows the other side,
- * and the next one goes on to the next word. The English is read aloud when it shows (a pattern is
- * not: 人 / 原形 cannot be read). A meaning has its tags, each part of speech on a line of its own
+ * and the next one goes on to the next word. The English is read aloud when it shows (a pattern
+ * without what fills it: `readings`). A meaning has its tags, each part of speech on a line of its own
  * ([名] 場所、地点 above [他] 見つける). Nothing is recorded and nothing is paid.
  */
 function RecipeCards({
@@ -1575,7 +1609,7 @@ function RecipeCards({
   const englishShown = direction === "en-ja" || turned;
 
   useEffect(() => {
-    if (current && englishShown && current.kind !== "usage") say(current.word);
+    if (current && englishShown) sayEntry(current);
   }, [current, englishShown]);
 
   const flip = useCallback(() => {
@@ -1648,19 +1682,18 @@ function RecipeCards({
     );
   }
 
-  const speakButton =
-    current.kind !== "usage" ? (
-      <button
-        type="button"
-        className="btn-link speak-btn"
-        onClick={() => say(current.word)}
-        disabled={!isTtsSupported()}
-        title="読み上げる"
-        aria-label="読み上げる"
-      >
-        🔊
-      </button>
-    ) : null;
+  const speakButton = (
+    <button
+      type="button"
+      className="btn-link speak-btn"
+      onClick={() => sayEntry(current)}
+      disabled={!isTtsSupported()}
+      title="読み上げる"
+      aria-label="読み上げる"
+    >
+      🔊
+    </button>
+  );
   const english = (
     <div className="flash-word">
       <EntryText w={current} text={current.word} />
