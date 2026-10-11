@@ -303,12 +303,14 @@ CREATE TABLE IF NOT EXISTS exam_mistakes (
   misses INTEGER NOT NULL DEFAULT 1,
   PRIMARY KEY (user_id, question_id)
 );
--- 試験: when a set (a question, or a passage and its questions) was last asked, so a new exam
--- takes the sets not asked yet, then those asked longest ago.
+-- 試験: how many exams have asked a set (a question, or a passage and its questions) and when it
+-- was last asked, so a new exam takes the sets not asked yet, then those asked fewest times, then
+-- those asked longest ago.
 CREATE TABLE IF NOT EXISTS exam_seen (
   user_id INTEGER NOT NULL,
   set_id TEXT NOT NULL,
   asked_at TEXT NOT NULL,
+  asked_count INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (user_id, set_id)
 );
 -- 試験の中断: the exam of a level left before it was handed in, to go on with (JSON: the question
@@ -460,6 +462,9 @@ fn setup(conn: Connection) -> rusqlite::Result<Connection> {
     ensure_column(&conn, "recipe_words", "excluded_at", "TEXT")?;
     // ★（お気に入り）にした日時。
     ensure_column(&conn, "recipe_words", "favorited_at", "TEXT")?;
+    // 試験のセットを出した回数。それより前に出したセットは1回と数える。
+    ensure_column(&conn, "exam_seen", "asked_count", "INTEGER NOT NULL DEFAULT 0")?;
+    conn.execute("UPDATE exam_seen SET asked_count = 1 WHERE asked_count = 0", [])?;
     // Words right-clicked in an exam passage once kept the whole passage as their example.
     crate::recipe::trim_passage_examples(&conn)?;
     // 用法 saved before the slots were written A／B, 節, 形容詞 (be afraid of ～ → be afraid of A).

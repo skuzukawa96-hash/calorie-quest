@@ -252,6 +252,9 @@ pub fn question(id: &str) -> Option<ExamQuestion> {
     Some(build_question(level, &sets()[level][si], qi))
 }
 
+/// What has been asked of a level: set id → (how many exams asked it, when it was last asked).
+pub type Seen = HashMap<String, (i64, String)>;
+
 /// A new exam of `level` drawn at random, as if nothing had been asked before.
 pub fn build_exam(level: &str) -> Result<Vec<ExamQuestion>, String> {
     build_exam_from(level, &HashMap::new())
@@ -259,15 +262,18 @@ pub fn build_exam(level: &str) -> Result<Vec<ExamQuestion>, String> {
 
 /// A new exam of `level`: 応答問題 6, 短文穴埋め to make up 30, 長文穴埋め one passage, 読解 8
 /// questions, a passage at a time, the parts in TOEIC's order. Each part takes the sets not asked
-/// yet first, then those asked longest ago (`seen`: set id → when last asked), at random among
-/// equals, so exams do not repeat a question while the bank still has some not asked.
-pub fn build_exam_from(level: &str, seen: &HashMap<String, String>) -> Result<Vec<ExamQuestion>, String> {
+/// yet first, then those asked the fewest times, then of those the ones asked longest ago, at
+/// random among equals: exams do not repeat a question while the bank still has some not asked,
+/// and once all have been, an exam is not one taken a little before, to be passed from memory.
+pub fn build_exam_from(level: &str, seen: &Seen) -> Result<Vec<ExamQuestion>, String> {
     let list = sets().get(level).ok_or_else(|| format!("unknown exam level {level}"))?;
+    let history = |i: usize| seen.get(&list[i].id).cloned().unwrap_or((0, String::new()));
     let of_part = |part: &str| -> Vec<usize> {
         let mut v: Vec<usize> = (0..list.len()).filter(|&i| list[i].part == part).collect();
         shuffle(&mut v);
-        // Stable: never asked ("") first, then the oldest, the shuffle kept among equals.
-        v.sort_by_key(|&i| seen.get(&list[i].id).cloned().unwrap_or_default());
+        // Stable: never asked (0 times) first, then the fewest times, then the oldest, the shuffle
+        // kept among equals.
+        v.sort_by_key(|&i| history(i));
         v
     };
     let listening: Vec<usize> = of_part("listening").into_iter().take(LISTENING).collect();
@@ -276,8 +282,7 @@ pub fn build_exam_from(level: &str, seen: &HashMap<String, String>) -> Result<Ve
     // 読解 comes a passage (2 to 4 questions) at a time: the passages not asked yet that come
     // closest to READING, topped up with those asked longest ago only when they make fewer than
     // READING - 2; the 短文穴埋め make up the rest.
-    let (mut fresh, asked): (Vec<usize>, Vec<usize>) =
-        of_part("reading").into_iter().partition(|&i| !seen.contains_key(&list[i].id));
+    let (mut fresh, asked): (Vec<usize>, Vec<usize>) = of_part("reading").into_iter().partition(|&i| history(i).0 == 0);
     // A passage of 3 makes READING only with another 3 and a 2 (3 + 3 + 2), while 2s and 4s go
     // together many ways: the 3s are tried first, so they are used up while the 2s last, and later
     // exams are not left with 3s that only make 6 (and take more 短文穴埋め).
@@ -357,9 +362,12 @@ pub fn finish(conn: &mut Connection, level: &str, answers: &[ExamAnswer]) -> Res
     let (today, now) = (today(), now_ts());
 
     let tx = conn.transaction().map_err(err)?;
-    // Handed in: nothing of this level is left part-way any more, and every question was asked.
+    // Every question was asked; the sets its progress counted already are not counted again.
+    let ids: Vec<&str> = answers.iter().map(|a| a.id.as_str()).collect();
+    let counted = counted_sets(&tx, level, &ids).map_err(err)?;
+    mark_seen(&tx, ids, &counted).map_err(err)?;
+    // Handed in: nothing of this level is left part-way any more.
     tx.execute("DELETE FROM exam_progress WHERE user_id = ?1 AND level = ?2", params![USER_ID, level]).map_err(err)?;
-    mark_seen(&tx, answers.iter().map(|a| a.id.as_str())).map_err(err)?;
     let kcal = if passed { reward(level) } else { EFFORT_KCAL };
     tx.execute(
         "INSERT INTO exam_attempts (user_id, level, date, total, correct, passed, kcal, finished_at)
@@ -406,30 +414,52 @@ pub fn finish(conn: &mut Connection, level: &str, answers: &[ExamAnswer]) -> Res
     })
 }
 
-/// When each set of `level` was last asked: set id → time.
-pub fn seen_sets(conn: &Connection, level: &str) -> rusqlite::Result<HashMap<String, String>> {
+/// How often and when each set of `level` was asked: set id → (exams that asked it, last time).
+pub fn seen_sets(conn: &Connection, level: &str) -> rusqlite::Result<Seen> {
     let ids: HashSet<&str> = sets().get(level).map(|l| l.iter().map(|s| s.id.as_str()).collect()).unwrap_or_default();
-    let mut stmt = conn.prepare("SELECT set_id, asked_at FROM exam_seen WHERE user_id = ?1")?;
-    let rows = stmt.query_map(params![USER_ID], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?;
+    let mut stmt = conn.prepare("SELECT set_id, asked_count, asked_at FROM exam_seen WHERE user_id = ?1")?;
+    let rows = stmt.query_map(params![USER_ID], |r| {
+        Ok((r.get::<_, String>(0)?, (r.get::<_, i64>(1)?, r.get::<_, String>(2)?)))
+    })?;
     let mut out = HashMap::new();
     for row in rows {
-        let (id, at) = row?;
+        let (id, asked) = row?;
         if ids.contains(id.as_str()) {
-            out.insert(id, at);
+            out.insert(id, asked);
         }
     }
     Ok(out)
 }
 
-/// Marks the sets of the questions answered (`ids`, question ids) as asked now.
-fn mark_seen<'a>(conn: &Connection, ids: impl IntoIterator<Item = &'a str>) -> rusqlite::Result<()> {
+/// The sets of the exam questions `ids`.
+fn set_ids<'a>(ids: impl IntoIterator<Item = &'a str>) -> HashSet<String> {
+    ids.into_iter()
+        .filter_map(|id| index().get(id).map(|&(level, si, _)| sets()[level][si].id.clone()))
+        .collect()
+}
+
+/// The sets the exam of `level` under way has counted already: those of the answers kept in its
+/// progress, if the questions `ids` being answered are of that exam.
+fn counted_sets(conn: &Connection, level: &str, ids: &[&str]) -> rusqlite::Result<HashSet<String>> {
+    Ok(match stored_progress(conn, level)? {
+        Some((questions, kept, _)) if ids.iter().all(|id| questions.iter().any(|q| q == id)) => {
+            set_ids(kept.iter().map(|a| a.id.as_str()))
+        }
+        _ => HashSet::new(),
+    })
+}
+
+/// Marks the sets of the questions answered (`ids`, question ids) as asked now, and counts them as
+/// asked once more, but for those in `counted`: an exam counts a set once, however many of its
+/// questions are answered and however often the exam is saved on the way.
+fn mark_seen<'a>(conn: &Connection, ids: impl IntoIterator<Item = &'a str>, counted: &HashSet<String>) -> rusqlite::Result<()> {
     let now = now_ts();
-    for id in ids {
-        let Some(&(level, si, _)) = index().get(id) else { continue };
+    for set in set_ids(ids) {
+        let more = i64::from(!counted.contains(&set));
         conn.execute(
-            "INSERT INTO exam_seen (user_id, set_id, asked_at) VALUES (?1, ?2, ?3)
-             ON CONFLICT(user_id, set_id) DO UPDATE SET asked_at = excluded.asked_at",
-            params![USER_ID, sets()[level][si].id, now],
+            "INSERT INTO exam_seen (user_id, set_id, asked_at, asked_count) VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(user_id, set_id) DO UPDATE SET asked_at = excluded.asked_at, asked_count = asked_count + ?4",
+            params![USER_ID, set, now, more],
         )?;
     }
     Ok(())
@@ -447,8 +477,11 @@ pub fn save_progress(conn: &Connection, level: &str, question_ids: &[String], an
     if answers.is_empty() {
         return discard_progress(conn, level);
     }
-    // A question answered has been asked, even if the exam is given up afterwards.
-    mark_seen(conn, answers.iter().map(|a| a.id.as_str())).map_err(err)?;
+    // A question answered has been asked, even if the exam is given up afterwards; its set counts
+    // once for this exam, the first time one of its questions is saved.
+    let ids: Vec<&str> = answers.iter().map(|a| a.id.as_str()).collect();
+    let counted = counted_sets(conn, level, &ids).map_err(err)?;
+    mark_seen(conn, ids, &counted).map_err(err)?;
     let ids = serde_json::to_string(question_ids).map_err(err)?;
     let answers = serde_json::to_string(answers).map_err(err)?;
     conn.execute(
@@ -844,6 +877,52 @@ mod tests {
                 finish(&mut c, level, &answers(&exam, 30)).unwrap();
             }
         }
+    }
+
+    /// Once every set has been asked, an exam takes those asked the fewest times, and of those the
+    /// ones asked longest ago.
+    #[test]
+    fn after_a_round_the_sets_asked_fewest_times_and_longest_ago_come_first() {
+        let level = "toeic600";
+        let listening: Vec<&SetSeed> = sets()[level].iter().filter(|s| s.part == "listening").collect();
+        let ids = |exam: &[ExamQuestion]| -> HashSet<String> {
+            exam.iter().filter(|q| q.part == "listening").map(|q| q.set_id.clone()).collect()
+        };
+        // Every set asked twice but six, asked once: those six.
+        let mut seen: Seen = sets()[level].iter().map(|s| (s.id.clone(), (2, "2026-01-01T00:00:00".to_string()))).collect();
+        let once: HashSet<String> = listening.iter().rev().take(LISTENING).map(|s| s.id.clone()).collect();
+        for id in &once {
+            seen.insert(id.clone(), (1, "2026-09-30T00:00:00".to_string()));
+        }
+        assert_eq!(ids(&build_exam_from(level, &seen).unwrap()), once, "fewest times first, however recent");
+        // All asked as often: the six asked longest ago.
+        let oldest: HashSet<String> = listening.iter().take(LISTENING).map(|s| s.id.clone()).collect();
+        for (i, s) in listening.iter().enumerate() {
+            let at = if oldest.contains(&s.id) { format!("2026-01-01T00:00:{i:02}") } else { "2026-06-01T00:00:00".to_string() };
+            seen.insert(s.id.clone(), (2, at));
+        }
+        assert_eq!(ids(&build_exam_from(level, &seen).unwrap()), oldest, "then the oldest");
+    }
+
+    /// An exam counts each of its sets once, however often it is saved on the way.
+    #[test]
+    fn an_exam_counts_each_set_once() {
+        let mut c = conn();
+        let level = "basic";
+        let counts = |c: &Connection| -> Vec<i64> { seen_sets(c, level).unwrap().into_values().map(|(n, _)| n).collect() };
+        let exam = build_exam_from(level, &seen_sets(&c, level).unwrap()).unwrap();
+        let ids: Vec<String> = exam.iter().map(|q| q.id.clone()).collect();
+        for n in [1, 2, 3, 20, 29] {
+            save_progress(&c, level, &ids, &answers(&exam[..n], n)).unwrap();
+        }
+        finish(&mut c, level, &answers(&exam, 30)).unwrap();
+        let sets_asked = exam.iter().map(|q| q.set_id.clone()).collect::<HashSet<_>>().len();
+        assert_eq!(counts(&c).len(), sets_asked);
+        assert!(counts(&c).iter().all(|&n| n == 1), "{:?}", counts(&c));
+        // Another exam handed in straight away counts its sets once more, the first ones not again.
+        let next = build_exam_from(level, &seen_sets(&c, level).unwrap()).unwrap();
+        finish(&mut c, level, &answers(&next, 30)).unwrap();
+        assert!(counts(&c).iter().all(|&n| n == 1), "a second exam asks other sets");
     }
 
     /// An exam left part-way is kept with its answers until it is handed in or given up, and only

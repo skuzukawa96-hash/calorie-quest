@@ -113,6 +113,12 @@ interface StoredConsumption extends ConsumptionEntry {
   snackId?: number | null;
 }
 
+/** An exam set as asked: how many exams asked it, and when it was last asked (mirrors exam_seen). */
+interface ExamSeen {
+  count: number;
+  at: string;
+}
+
 interface MockState {
   user: UserInfo;
   /**
@@ -146,8 +152,8 @@ interface MockState {
   examAttempts: ExamAttempt[];
   /** exam question id → missed and not yet put right in the exam review (mirrors exam_mistakes) */
   examMistakes: Record<string, { level: ExamLevel; addedAt: string; misses: number }>;
-  /** exam set id → when it was last asked (mirrors exam_seen) */
-  examSeen: Record<string, string>;
+  /** exam set id → how many exams asked it and when it was last asked (mirrors exam_seen) */
+  examSeen: Record<string, ExamSeen>;
   /** the exam of a level left part-way (mirrors exam_progress) */
   examProgress: Partial<Record<ExamLevel, { questionIds: string[]; answers: ExamAnswer[]; savedAt: string }>>;
   /** お気に入り (mirrors favorites); a study question by its `key`, as `history` is */
@@ -410,7 +416,13 @@ function load(): MockState {
         recipePaid: stored.recipePaid ?? {},
         examAttempts: stored.examAttempts ?? [],
         examMistakes: stored.examMistakes ?? {},
-        examSeen: stored.examSeen ?? {},
+        // Kept as the time alone before the count: a set asked before was asked once.
+        examSeen: Object.fromEntries(
+          Object.entries((stored.examSeen ?? {}) as Record<string, ExamSeen | string>).map(([id, v]) => [
+            id,
+            typeof v === "string" ? { count: 1, at: v } : v,
+          ]),
+        ),
         examProgress: stored.examProgress ?? {},
         favorites: stored.favorites ?? [],
         // Mirrors the Rust migration: a review done once (level above 0) waits no more, once.
@@ -1808,14 +1820,17 @@ function fullest(items: number[], size: (i: number) => number, room: number): nu
   return best.chosen;
 }
 
-/** Mirrors exam::build_exam_from: each part takes the sets not asked yet, then those asked longest ago. */
+/**
+ * Mirrors exam::build_exam_from: each part takes the sets not asked yet, then those asked the
+ * fewest times, then of those the ones asked longest ago.
+ */
 function buildExam(level: ExamLevel): ExamQuestion[] {
   const list = EXAM_SETS[level];
   if (!list) throw new Error(`unknown exam level ${level}`);
-  const askedAt = (i: number) => state.examSeen[list[i].id] ?? "";
+  const history = (i: number): ExamSeen => state.examSeen[list[i].id] ?? { count: 0, at: "" };
   const ofPart = (part: ExamPart) =>
-    shuffle(list.map((s, i) => [s, i] as const).filter(([s]) => s.part === part).map(([, i]) => i)).sort((a, b) =>
-      askedAt(a).localeCompare(askedAt(b)),
+    shuffle(list.map((s, i) => [s, i] as const).filter(([s]) => s.part === part).map(([, i]) => i)).sort(
+      (a, b) => history(a).count - history(b).count || history(a).at.localeCompare(history(b).at),
     );
   const listening = ofPart("listening").slice(0, EXAM.listening);
   const text = ofPart("text").slice(0, EXAM.textSets);
@@ -1824,9 +1839,9 @@ function buildExam(level: ExamLevel): ExamQuestion[] {
   const readingOrder = ofPart("reading");
   // Mirrors build_exam_from: passages of 3 first (3 + 3 + 2 is their only way to 8), so the 2s last.
   const fresh = readingOrder
-    .filter((i) => !state.examSeen[list[i].id])
+    .filter((i) => history(i).count === 0)
     .sort((a, b) => Number(list[a].questions.length % 2 === 0) - Number(list[b].questions.length % 2 === 0));
-  const asked = readingOrder.filter((i) => !!state.examSeen[list[i].id]);
+  const asked = readingOrder.filter((i) => history(i).count > 0);
   const reading = fullest(fresh, (i) => list[i].questions.length, EXAM.reading);
   if (count(reading) < EXAM.reading - 2) reading.push(...fullest(asked, (i) => list[i].questions.length, EXAM.reading - count(reading)));
   const readingCount = count(reading);
@@ -1836,12 +1851,24 @@ function buildExam(level: ExamLevel): ExamQuestion[] {
   );
 }
 
-/** Mirrors exam::mark_seen: the sets of the questions answered were asked now. */
-function markExamSeen(answers: ExamAnswer[]) {
+/** Mirrors exam::set_ids: the sets of the exam questions `answers`. */
+function examSetIds(answers: ExamAnswer[]): Set<string> {
+  return new Set(answers.map((a) => examQuestion(a.id)?.setId).filter((id): id is string => !!id));
+}
+
+/** Mirrors exam::counted_sets: the sets the exam of `level` under way has counted already. */
+function countedExamSets(level: ExamLevel, answers: ExamAnswer[]): Set<string> {
+  const kept = state.examProgress[level];
+  if (!kept || !answers.every((a) => kept.questionIds.includes(a.id))) return new Set();
+  return examSetIds(kept.answers);
+}
+
+/** Mirrors exam::mark_seen: the sets of the questions answered were asked now, counted once an exam. */
+function markExamSeen(answers: ExamAnswer[], counted: Set<string>) {
   const now = nowTs();
-  for (const a of answers) {
-    const q = examQuestion(a.id);
-    if (q) state.examSeen[q.setId] = now;
+  for (const id of examSetIds(answers)) {
+    const was = state.examSeen[id] ?? { count: 0, at: now };
+    state.examSeen[id] = { count: was.count + (counted.has(id) ? 0 : 1), at: now };
   }
 }
 
@@ -1864,9 +1891,9 @@ function finishExam(level: ExamLevel, answers: ExamAnswer[]): ExamResult {
   const now = nowTs();
   // Every exam handed in pays (mirrors exam::finish).
   const kcal = passed ? EXAM_REWARD[level] : EXAM.effortKcal;
-  // Handed in: nothing of this level is left part-way any more, and every question was asked.
+  // Every question was asked, its sets counted once for this exam; nothing is left part-way.
+  markExamSeen(answers, countedExamSets(level, answers));
   delete state.examProgress[level];
-  markExamSeen(answers);
   state.examAttempts.push({ level, date: t, total, correct, passed, kcal, finishedAt: now });
   let reviewAdded = 0;
   for (const g of graded) {
@@ -1988,7 +2015,7 @@ function answerExamReview(id: string, chosen: string): ExamReviewResult {
 function saveExamProgress(level: ExamLevel, questionIds: string[], answers: ExamAnswer[]) {
   if (!EXAM_LEVELS.includes(level)) throw new Error(`unknown exam level ${level}`);
   if (answers.length) {
-    markExamSeen(answers);
+    markExamSeen(answers, countedExamSets(level, answers));
     state.examProgress[level] = { questionIds, answers, savedAt: nowTs() };
   } else delete state.examProgress[level];
   save();
