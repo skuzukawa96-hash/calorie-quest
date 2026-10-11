@@ -336,12 +336,19 @@ pub fn finish(conn: &mut Connection, level: &str, answers: &[ExamAnswer]) -> Res
     if !LEVELS.contains(&level) {
         return Err(format!("unknown exam level {level}"));
     }
-    if answers.is_empty() {
-        return Err("回答がありません".into());
+    // Graded out of what was answered, an exam handed in part-way would pass on a few answers.
+    if answers.len() != EXAM_SIZE {
+        return Err(format!("{EXAM_SIZE}問すべてに答えてから提出してください"));
+    }
+    if answers.iter().map(|a| a.id.as_str()).collect::<HashSet<_>>().len() != answers.len() {
+        return Err("同じ問題の答えが2つあります".into());
     }
     let mut graded = Vec::new();
     for a in answers {
         let q = question(&a.id).ok_or_else(|| format!("unknown exam question {}", a.id))?;
+        if q.level != level {
+            return Err(format!("exam question {} is not of {level}", a.id));
+        }
         graded.push((a.id.as_str(), q.level, q.answer == a.chosen));
     }
     let total = graded.len() as i64;
@@ -802,10 +809,21 @@ mod tests {
         let twice = answer_review(&mut c, &review[0].id, &review[0].answer.clone()).unwrap();
         assert_eq!(twice.kcal_earned, 0, "a question already put right pays no more");
         // Answered right in a later exam, a question leaves the review too.
-        let redo: Vec<ExamAnswer> =
-            review[1..].iter().map(|q| ExamAnswer { id: q.id.clone(), chosen: q.answer.clone() }).collect();
-        finish(&mut c, "toeic800", &redo).unwrap();
+        finish(&mut c, "toeic800", &answers(&exam, 30)).unwrap();
         assert_eq!(overview(&c).unwrap().review_count, 0);
+    }
+
+    /// An exam is handed in whole: every question once, all of its level.
+    #[test]
+    fn only_a_whole_exam_can_be_handed_in() {
+        let mut c = conn();
+        let exam = build_exam("toeic600").unwrap();
+        assert!(finish(&mut c, "toeic600", &answers(&exam[..5], 5)).is_err(), "five answers out of thirty");
+        let mut twice = answers(&exam, 30);
+        twice[29] = twice[0].clone();
+        assert!(finish(&mut c, "toeic600", &twice).is_err(), "a question answered twice");
+        assert!(finish(&mut c, "basic", &answers(&exam, 30)).is_err(), "another level's questions");
+        assert!(overview(&c).unwrap().levels.iter().all(|l| l.attempts == 0), "nothing was recorded");
     }
 
     /// Exams take what has not been asked yet: twenty exams in a row ask no set twice, whichever

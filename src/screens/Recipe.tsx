@@ -495,6 +495,9 @@ function meaningOptions(
 
 function normalizeAnswer(text: string): string {
   return text
+    // "café" is "cafe", as in the study's typing (scoring.ts normalizeText).
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
     .toLowerCase()
     .replace(/[’‘]/g, "'")
     .replace(/[.!?,;:"“”]+/g, " ")

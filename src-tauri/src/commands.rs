@@ -172,9 +172,12 @@ pub fn release_stale_reviews(conn: &Connection) -> rusqlite::Result<usize> {
     )
 }
 
+/// Reviews due today or before. A question taken out of the bank (a retired word) keeps its history
+/// but is no review to do: no session can ask it.
 fn due_review_count(conn: &Connection) -> rusqlite::Result<i64> {
     conn.query_row(
-        "SELECT COUNT(*) FROM learning_history WHERE user_id = ?1 AND needs_review = 1 AND next_due_at IS NOT NULL AND next_due_at <= ?2",
+        "SELECT COUNT(*) FROM learning_history h JOIN questions q ON q.id = h.question_id
+         WHERE h.user_id = ?1 AND h.needs_review = 1 AND h.next_due_at IS NOT NULL AND h.next_due_at <= ?2",
         params![USER_ID, today()],
         |r| r.get(0),
     )
@@ -1578,7 +1581,9 @@ pub fn load_stats(conn: &Connection) -> CmdResult<Stats> {
 #[tauri::command]
 pub fn reset_progress(state: State<'_, AppState>) -> CmdResult<()> {
     let conn = state.db.lock().map_err(err)?;
-    conn.execute_batch(
+    // All of it or none of it: a failure part-way must not leave half the record.
+    let tx = conn.unchecked_transaction().map_err(err)?;
+    tx.execute_batch(
         "DELETE FROM learning_history; DELETE FROM answer_log; DELETE FROM daily_stats;
          DELETE FROM consumption_log; DELETE FROM cheat_tickets; DELETE FROM snack_tickets;
          UPDATE users SET total_study_days = 0, current_streak = 0, longest_streak = 0, last_study_date = NULL,
@@ -1586,7 +1591,8 @@ pub fn reset_progress(state: State<'_, AppState>) -> CmdResult<()> {
          UPDATE recipe_words SET paid_on = NULL;
          DELETE FROM exam_attempts; DELETE FROM exam_mistakes; DELETE FROM exam_progress; DELETE FROM exam_seen;",
     )
-    .map_err(err)
+    .map_err(err)?;
+    tx.commit().map_err(err)
 }
 
 #[tauri::command]
@@ -1857,6 +1863,23 @@ mod tests {
         let r = answer(&mut c, stale, "choice", false, None);
         assert!(!r.is_review);
         assert_eq!(r.next_due.as_deref(), Some(date_plus(1).as_str()));
+    }
+
+    /// A question taken out of the bank while waiting in review keeps its history, but the home
+    /// does not count it: the review session could never ask it.
+    #[test]
+    fn a_review_of_a_question_no_longer_in_the_bank_is_not_counted() {
+        let mut c = conn();
+        let kept = question_id(&c, "w003");
+        let retired = question_id(&c, "w004");
+        for qid in [kept, retired] {
+            answer(&mut c, qid, "choice", false, None);
+        }
+        c.execute("UPDATE learning_history SET next_due_at = ?1", params![today()]).unwrap();
+        c.execute("DELETE FROM questions WHERE id = ?1", params![retired]).unwrap();
+        assert_eq!(load_dashboard(&c).unwrap().due_review_count, 1);
+        let review = session_questions(&c, REVIEW_SESSION, "mixed", "all", 10).unwrap();
+        assert_eq!(review.iter().map(|q| q.question.id).collect::<Vec<_>>(), vec![kept]);
     }
 
     #[test]

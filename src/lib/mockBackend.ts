@@ -1848,10 +1848,13 @@ function markExamSeen(answers: ExamAnswer[]) {
 /** Mirrors exam::finish. */
 function finishExam(level: ExamLevel, answers: ExamAnswer[]): ExamResult {
   if (!EXAM_LEVELS.includes(level)) throw new Error(`unknown exam level ${level}`);
-  if (!answers.length) throw new Error("回答がありません");
+  // Mirrors exam::finish: an exam is handed in whole, every question once, all of its level.
+  if (answers.length !== EXAM.size) throw new Error(`${EXAM.size}問すべてに答えてから提出してください`);
+  if (new Set(answers.map((a) => a.id)).size !== answers.length) throw new Error("同じ問題の答えが2つあります");
   const graded = answers.map((a) => {
     const q = examQuestion(a.id);
     if (!q) throw new Error(`unknown exam question ${a.id}`);
+    if (q.level !== level) throw new Error(`exam question ${a.id} is not of ${level}`);
     return { id: a.id, level: q.level, ok: q.answer === a.chosen };
   });
   const total = graded.length;

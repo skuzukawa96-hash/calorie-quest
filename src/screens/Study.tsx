@@ -268,9 +268,11 @@ export default function Study({ mode, tier, category, rates, playMode, favorites
     setIdx((i) => i + 1);
   }, []);
 
+  // Not for a session that had nothing to ask (この条件に合う問題がありません).
+  const hadQuestions = (questions?.length ?? 0) > 0;
   useEffect(() => {
-    if (finished) playFanfare();
-  }, [finished]);
+    if (finished && hadQuestions) playFanfare();
+  }, [finished, hadQuestions]);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {

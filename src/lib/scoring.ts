@@ -6,6 +6,9 @@ export const CLEAR_SCORE = 65;
 
 export function normalizeText(s: string): string {
   return s
+    // "café" is "cafe": the accent is hard to type on a Japanese keyboard and no part of the answer.
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
     .toLowerCase()
     .replace(/[’‘`´]/g, "'")
     .replace(/[^a-z0-9' ]+/g, " ")
