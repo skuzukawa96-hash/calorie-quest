@@ -2759,6 +2759,23 @@ export async function mockInvoke<T>(cmd: string, args: Record<string, unknown>):
       save();
       return withPos(w) as T;
     }
+    case "set_recipe_words_favorite": {
+      // Mirrors recipe::set_favorite_all.
+      const ids = new Set((args.ids as number[]).map(Number));
+      const now = nowTs();
+      let changed = 0;
+      for (const w of state.recipe) {
+        if (!ids.has(w.id)) continue;
+        if (args.favorite) {
+          w.favoritedAt = w.favoritedAt ?? now;
+          w.masteredAt = null;
+          w.excludedAt = null;
+        } else w.favoritedAt = null;
+        changed += 1;
+      }
+      save();
+      return changed as T;
+    }
     case "set_recipe_words_mastered": {
       // Mirrors recipe::set_mastered_all.
       const ids = new Set((args.ids as number[]).map(Number));

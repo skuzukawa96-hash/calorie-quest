@@ -1050,9 +1050,19 @@ main {
   font-weight: 600;
   color: var(--choco);
 }
-/* すべて習得済みへ / すべて復習中へ / 一括削除: small and grey, at the end of the review row */
-.recipe-bulk {
+/* すべて習得へ / すべて復習へ / すべて除外 / 一括削除: small and grey, at the end of the review row,
+   ／ between two */
+.recipe-bulks {
   margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+}
+.recipe-bulk-sep {
+  font-size: 12px;
+  color: var(--muted);
+  opacity: 0.6;
+}
+.recipe-bulk {
   border: none;
   background: none;
   padding: 2px 4px;
@@ -1067,6 +1077,7 @@ button.recipe-bulk:hover:not(:disabled) {
   text-decoration: underline;
 }
 .recipe-bulk.asking {
+  margin-left: auto;
   display: inline-flex;
   align-items: center;
   gap: 8px;

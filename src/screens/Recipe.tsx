@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 import GlossedText from "../components/GlossedText";
 import { DeleteButton } from "../components/IconButtons";
 import PencilIcon from "../components/PencilIcon";
@@ -50,32 +50,73 @@ const REPEAT_KCAL: Record<RecipeReviewMode, string> = { choice: "0.25", typing: 
 
 const REVIEW_TITLE: Record<RecipeReviewMode, string> = { choice: "選択式", typing: "記入式" };
 
-/** The bulk button at the end of the review row of ★, 復習, 習得 and 除外, asked before it acts. */
-const BULK: Partial<Record<RecipeTab, { label: string; ask: (n: number) => string; yes: string; done: (n: number) => string }>> = {
-  favorite: {
-    label: "すべて習得へ",
-    ask: (n) => `★の${n}語をすべて習得に移しますか？（★は外れます）`,
-    yes: "移す",
-    done: (n) => `${n}語を習得に移しました`,
-  },
-  learning: {
-    label: "すべて習得へ",
-    ask: (n) => `復習の${n}語をすべて習得に移しますか？`,
-    yes: "移す",
-    done: (n) => `${n}語を習得に移しました`,
-  },
-  mastered: {
-    label: "すべて復習へ",
-    ask: (n) => `習得の${n}語をすべて復習に戻しますか？`,
-    yes: "戻す",
-    done: (n) => `${n}語を復習に戻しました`,
-  },
-  excluded: {
-    label: "一括削除",
-    ask: (n) => `除外の${n}語を完全に削除しますか？（元に戻せません）`,
-    yes: "削除する",
-    done: (n) => `${n}語を削除しました`,
-  },
+/** What a bulk button does to the words of its tab. */
+type BulkKind = "learn" | "review" | "unstar" | "exclude" | "delete";
+
+interface BulkAction {
+  kind: BulkKind;
+  label: string;
+  ask: (n: number) => string;
+  yes: string;
+  done: (n: number) => string;
+}
+
+/**
+ * The bulk buttons at the end of the review row of ★, 復習, 習得 and 除外, side by side with ／
+ * between, each asked before it acts. In 復習, すべて習得へ leaves the starred words: they are kept
+ * to go on reviewing.
+ */
+const BULK: Partial<Record<RecipeTab, BulkAction[]>> = {
+  favorite: [
+    {
+      kind: "unstar",
+      label: "すべて復習へ",
+      ask: (n) => `★の${n}語をすべて★から外しますか？（復習に残ります）`,
+      yes: "外す",
+      done: (n) => `${n}語を★から外しました（復習に残っています）`,
+    },
+    {
+      kind: "learn",
+      label: "すべて習得へ",
+      ask: (n) => `★の${n}語をすべて習得に移しますか？（★は外れます）`,
+      yes: "移す",
+      done: (n) => `${n}語を習得に移しました`,
+    },
+  ],
+  learning: [
+    {
+      kind: "learn",
+      label: "すべて習得へ",
+      ask: (n) => `復習の${n}語（★の単語を除く）をすべて習得に移しますか？`,
+      yes: "移す",
+      done: (n) => `${n}語を習得に移しました`,
+    },
+  ],
+  mastered: [
+    {
+      kind: "review",
+      label: "すべて復習へ",
+      ask: (n) => `習得の${n}語をすべて復習に戻しますか？`,
+      yes: "戻す",
+      done: (n) => `${n}語を復習に戻しました`,
+    },
+    {
+      kind: "exclude",
+      label: "すべて除外",
+      ask: (n) => `習得の${n}語をすべて除外に移しますか？`,
+      yes: "移す",
+      done: (n) => `${n}語を除外に移しました`,
+    },
+  ],
+  excluded: [
+    {
+      kind: "delete",
+      label: "一括削除",
+      ask: (n) => `除外の${n}語を完全に削除しますか？（元に戻せません）`,
+      yes: "削除する",
+      done: (n) => `${n}語を削除しました`,
+    },
+  ],
 };
 const REVIEW_ICON: Record<RecipeReviewMode, ReactNode> = { choice: "👆", typing: <PencilIcon /> };
 
@@ -617,9 +658,8 @@ export default function Recipe({ playMode, onProgress, toast }: Props) {
   const [missedFirst, setMissedFirst] = useState(loadPriority);
   /** each round of review starts from a fresh component */
   const [round, setRound] = useState(0);
-  const [confirmClear, setConfirmClear] = useState(false);
-  /** the tab whose bulk button (すべて習得済みへ / すべて復習中へ / 一括削除) waits for a yes */
-  const [confirmBulk, setConfirmBulk] = useState<RecipeTab | null>(null);
+  /** the bulk button (すべて習得へ / すべて復習へ / すべて除外 / 一括削除) waiting for a yes */
+  const [confirmBulk, setConfirmBulk] = useState<BulkKind | null>(null);
   const [busy, setBusy] = useState(false);
   const [query, setQuery] = useState("");
   const [order, setOrder] = useState<Order>(() => loadListView().order);
@@ -636,7 +676,6 @@ export default function Recipe({ playMode, onProgress, toast }: Props) {
   // A question left open belongs to the tab it was asked in.
   useEffect(() => {
     setConfirmBulk(null);
-    setConfirmClear(false);
   }, [filter]);
   useEffect(() => savePriority(missedFirst), [missedFirst]);
 
@@ -794,25 +833,26 @@ export default function Recipe({ playMode, onProgress, toast }: Props) {
   };
 
   const mastered = inTab.mastered;
-  const clearMastered = () =>
-    run(async () => {
-      const n = await api.excludeRecipeWords(mastered.map((w) => w.id));
-      setConfirmClear(false);
-      toast(`📖 習得の${n}語を除外に移しました`);
-    });
 
-  // The bulk button of the tab on show: every word of it, whatever the list is narrowed to.
-  const bulk = BULK[filter];
-  const bulkWords = inTab[filter];
-  const runBulk = () =>
+  // The bulk buttons of the tab on show: every word of it, whatever the list is narrowed to, but
+  // the starred words for すべて習得へ in 復習.
+  const bulkWords = (a: BulkAction) =>
+    filter === "learning" && a.kind === "learn" ? inTab.learning.filter((w) => !isStarred(w)) : inTab[filter];
+  const bulks = (BULK[filter] ?? []).filter((a) => bulkWords(a).length > 0);
+  const asking = bulks.find((a) => a.kind === confirmBulk);
+  const runBulk = (a: BulkAction) =>
     run(async () => {
-      const ids = bulkWords.map((w) => w.id);
+      const ids = bulkWords(a).map((w) => w.id);
       const n =
-        filter === "excluded"
+        a.kind === "delete"
           ? await api.deleteRecipeWords(ids)
-          : await api.setRecipeWordsMastered(ids, filter === "learning" || filter === "favorite");
+          : a.kind === "exclude"
+            ? await api.excludeRecipeWords(ids)
+            : a.kind === "unstar"
+              ? await api.setRecipeWordsFavorite(ids, false)
+              : await api.setRecipeWordsMastered(ids, a.kind === "learn");
       setConfirmBulk(null);
-      toast(`📖 ${bulk?.done(n)}`);
+      toast(`📖 ${a.done(n)}`);
     });
 
   return (
@@ -909,40 +949,34 @@ export default function Recipe({ playMode, onProgress, toast }: Props) {
             <span className="recipe-priority-switch" aria-hidden="true" />
             間違いやすい語を優先
           </button>
-          {filter === "mastered" &&
-            mastered.length > 0 &&
-            (confirmClear ? (
-              <>
-                <span>習得の{mastered.length}語を除外に移します。</span>
-                <button className="btn btn-danger" disabled={busy} onClick={() => void clearMastered()}>
-                  移す
-                </button>
-                <button className="btn-link" onClick={() => setConfirmClear(false)}>
-                  やめる
-                </button>
-              </>
-            ) : (
-              <button className="btn-link" disabled={busy} onClick={() => setConfirmClear(true)}>
-                習得を片付ける
+          {asking ? (
+            <span className="recipe-bulk asking">
+              <span>{asking.ask(bulkWords(asking).length)}</span>
+              <button
+                className={"btn btn-small" + (asking.kind === "delete" ? " btn-danger" : "")}
+                disabled={busy}
+                onClick={() => void runBulk(asking)}
+              >
+                {asking.yes}
               </button>
-            ))}
-          {bulk &&
-            bulkWords.length > 0 &&
-            (confirmBulk === filter ? (
-              <span className="recipe-bulk asking">
-                <span>{bulk.ask(bulkWords.length)}</span>
-                <button className={"btn btn-small" + (filter === "excluded" ? " btn-danger" : "")} disabled={busy} onClick={() => void runBulk()}>
-                  {bulk.yes}
-                </button>
-                <button className="btn-link" onClick={() => setConfirmBulk(null)}>
-                  やめる
-                </button>
+              <button className="btn-link" onClick={() => setConfirmBulk(null)}>
+                やめる
+              </button>
+            </span>
+          ) : (
+            bulks.length > 0 && (
+              <span className="recipe-bulks">
+                {bulks.map((a, i) => (
+                  <Fragment key={a.kind}>
+                    {i > 0 && <span className="recipe-bulk-sep">／</span>}
+                    <button className="recipe-bulk" disabled={busy} onClick={() => setConfirmBulk(a.kind)}>
+                      {a.label}
+                    </button>
+                  </Fragment>
+                ))}
               </span>
-            ) : (
-              <button className="recipe-bulk" disabled={busy} onClick={() => setConfirmBulk(filter)}>
-                {bulk.label}
-              </button>
-            ))}
+            )
+          )}
         </div>
         {inTab[filter].length > pool.length && (
           <p className="muted small">

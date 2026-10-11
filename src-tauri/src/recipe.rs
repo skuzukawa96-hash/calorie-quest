@@ -378,6 +378,16 @@ pub fn set_favorite(conn: &Connection, id: i64, favorite: bool) -> CmdResult<Rec
     load(conn, id)
 }
 
+/// Stars or unstars every word of `ids` (すべて復習へ in ★ unstars them: they stay in 復習), as ☆ / ★
+/// does for one. Returns how many there were.
+pub fn set_favorite_all(conn: &Connection, ids: &[i64], favorite: bool) -> CmdResult<usize> {
+    let mut changed = 0;
+    for &id in ids {
+        changed += usize::from(set_favorite(conn, id, favorite).is_ok());
+    }
+    Ok(changed)
+}
+
 /// Deletes words for good (× in 除外中).
 pub fn delete(conn: &Connection, ids: &[i64]) -> CmdResult<usize> {
     let mut stmt = conn.prepare("DELETE FROM recipe_words WHERE id = ?1").map_err(err)?;
@@ -430,6 +440,12 @@ pub fn set_recipe_words_mastered(state: State<'_, AppState>, ids: Vec<i64>, mast
 pub fn set_recipe_favorite(state: State<'_, AppState>, id: i64, favorite: bool) -> CmdResult<RecipeWord> {
     let conn = state.db.lock().map_err(err)?;
     set_favorite(&conn, id, favorite)
+}
+
+#[tauri::command]
+pub fn set_recipe_words_favorite(state: State<'_, AppState>, ids: Vec<i64>, favorite: bool) -> CmdResult<usize> {
+    let conn = state.db.lock().map_err(err)?;
+    set_favorite_all(&conn, &ids, favorite)
 }
 
 #[tauri::command]
@@ -666,6 +682,11 @@ mod tests {
         assert!(unstarred.favorited_at.is_none() && unstarred.mastered_at.is_none());
         assert!(list(&c).unwrap().iter().all(|w| w.favorited_at.is_none()));
         assert!(set_favorite(&c, 9999, true).is_err());
+
+        // ★ all at once, and すべて復習へ in ★: unstarred, still in review; a word gone is skipped.
+        assert_eq!(set_favorite_all(&c, &[hear, apple, 9999], true).unwrap(), 2);
+        assert_eq!(set_favorite_all(&c, &[hear, apple], false).unwrap(), 2);
+        assert!(list(&c).unwrap().iter().filter(|w| w.id == hear || w.id == apple).all(|w| w.favorited_at.is_none() && w.mastered_at.is_none()));
     }
 
     /// The tabs' bulk buttons: every word of 復習中 learned, every word of 習得済み back in review.

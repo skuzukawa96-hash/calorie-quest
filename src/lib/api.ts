@@ -123,6 +123,9 @@ export const api = {
     call<number>("set_recipe_words_mastered", { ids, mastered }),
   /** ☆ / ★: a starred word is in review (one learned or taken off comes back into 復習) */
   setRecipeFavorite: (id: number, favorite: boolean) => call<RecipeWord>("set_recipe_favorite", { id, favorite }),
+  /** ★ / unstar many at once (すべて復習へ in ★); how many there were */
+  setRecipeWordsFavorite: (ids: number[], favorite: boolean) =>
+    call<number>("set_recipe_words_favorite", { ids, favorite }),
   /** × outside 除外中: the words wait in 除外中 */
   excludeRecipeWords: (ids: number[]) => call<number>("exclude_recipe_words", { ids }),
   /** × in 除外中: deleted for good */

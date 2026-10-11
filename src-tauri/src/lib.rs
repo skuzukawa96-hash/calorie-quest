@@ -71,6 +71,7 @@ pub fn run() {
             recipe::set_recipe_mastered,
             recipe::set_recipe_words_mastered,
             recipe::set_recipe_favorite,
+            recipe::set_recipe_words_favorite,
             recipe::exclude_recipe_words,
             recipe::delete_recipe_words,
             recipe::get_usage_meanings,
