@@ -50,13 +50,49 @@ export function similarity(a: string, b: string): number {
 }
 
 /**
- * Typing answers: case, punctuation and spacing are ignored; letters must match exactly.
+ * A word (normalized) as it may be written: as it is, or with its contraction written out. "don't"
+ * is "do not", "I'm" "I am"; "it's" is "it is" or "it has" and "I'd" "I would" or "I had", the
+ * Japanese not telling which. A noun's 's (the company's) is no contraction.
+ */
+function writtenOut(word: string): string[] {
+  const special: Record<string, string> = { "can't": "can not", cannot: "can not", "won't": "will not", "shan't": "shall not", "let's": "let us" };
+  if (special[word]) return [word, special[word]];
+  const rules: Array<[RegExp, string[]]> = [
+    [/^(\w+)n't$/, ["$1 not"]],
+    [/^(\w+)'m$/, ["$1 am"]],
+    [/^(\w+)'re$/, ["$1 are"]],
+    [/^(\w+)'ve$/, ["$1 have"]],
+    [/^(\w+)'ll$/, ["$1 will"]],
+    [/^(\w+)'d$/, ["$1 would", "$1 had"]],
+    [/^(it|he|she|that|there|here|what|where|who|how)'s$/, ["$1 is", "$1 has"]],
+  ];
+  for (const [pattern, ways] of rules) {
+    if (pattern.test(word)) return [word, ...ways.map((w) => word.replace(pattern, w))];
+  }
+  return [word];
+}
+
+/** Every way a normalized answer may be written, its contractions as they are or written out (at most 32). */
+function writings(text: string): string[] {
+  let out = [""];
+  for (const word of text.split(" ")) {
+    const ways = writtenOut(word);
+    out = out.flatMap((o) => ways.map((w) => (o ? `${o} ${w}` : w))).slice(0, 32);
+  }
+  return out;
+}
+
+/**
+ * Typing answers: case, punctuation and spacing are ignored; letters must match exactly, but a
+ * contraction may be written out or not ("I do not know" for "I don't know", and the other way).
  * Any of `accepted` counts, since the bank can teach several English renderings of one Japanese.
  */
 export function checkTyping(accepted: string | string[], input: string): boolean {
-  const strip = (s: string) => normalizeText(s).replace(/'/g, "");
-  const stripped = strip(input);
-  return (Array.isArray(accepted) ? accepted : [accepted]).some((a) => strip(a) === stripped);
+  const strip = (s: string) => s.replace(/'/g, "");
+  const typed = new Set(writings(normalizeText(input)).map(strip));
+  return (Array.isArray(accepted) ? accepted : [accepted]).some((a) =>
+    writings(normalizeText(a)).some((w) => typed.has(strip(w))),
+  );
 }
 
 /** One word of a typed answer, lined up against the expected answer. */
@@ -122,9 +158,19 @@ export function gradeTyping(accepted: string | string[], input: string): TypingG
   const list = Array.isArray(accepted) ? accepted : [accepted];
   const correct = checkTyping(list, input);
   const typed = words(input);
+  // As typed first, so a tie shows the learner's own words; then with contractions written out on
+  // either side ("do not" against "don't" is no mistake).
+  // The input as written stays in the learner's own case and punctuation where it lines up word for word.
+  const asTyped = (t: string) => (t === normalizeText(input) && words(t).length === typed.length ? typed : words(t));
+  const pairs: Array<[string[], string[]]> = list.flatMap((a) => [
+    [typed, words(a)] as [string[], string[]],
+    ...writings(normalizeText(input)).flatMap((t) =>
+      writings(normalizeText(a)).map((w) => [asTyped(t), words(w)] as [string[], string[]]),
+    ),
+  ]);
   let best: { edits: number; marks: WordMark[] } | null = null;
-  for (const a of list) {
-    const r = alignWords(typed, words(a));
+  for (const [t, a] of pairs) {
+    const r = alignWords(t, a);
     if (!best || r.edits < best.edits) best = r;
   }
   const marks = best?.marks ?? [];
