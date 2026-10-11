@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 import GlossedText from "../components/GlossedText";
 import { DeleteButton } from "../components/IconButtons";
 import PencilIcon from "../components/PencilIcon";
 import { PlayModeTag } from "../components/PlayModeSwitch";
+import WordCardIcon from "../components/WordCardIcon";
 import WordNotesPanel from "../components/WordNotes";
 import { CuedMeaningWithTags, MeaningWithTags, SlotText, useWordTags } from "../components/PosTags";
 import { cuedMeaning } from "../lib/pos";
@@ -72,6 +73,14 @@ const BULK: Partial<Record<RecipeTab, { label: string; ask: (n: number) => strin
 };
 const REVIEW_ICON: Record<RecipeReviewMode, ReactNode> = { choice: "👆", typing: <PencilIcon /> };
 
+/** 単語カード: which side of a word shows first, the meaning (日本語→英語) or the English (英語→日本語). */
+type CardDirection = "ja-en" | "en-ja";
+const CARD_DIRECTIONS: { direction: CardDirection; label: string; note: string }[] = [
+  { direction: "ja-en", label: "日本語 → 英語", note: "意味を見て英語を思い出す" },
+  { direction: "en-ja", label: "英語 → 日本語", note: "英語を見て（聞いて）意味を思い出す" },
+];
+const CARD_DIRECTION_LABEL: Record<CardDirection, string> = { "ja-en": "日本語→英語", "en-ja": "英語→日本語" };
+
 function say(text: string) {
   if (isTtsSupported()) speak(text).catch(() => undefined);
 }
@@ -100,6 +109,29 @@ function stalestFirst(words: RecipeWord[]): RecipeWord[] {
 function reviewQueue(words: RecipeWord[], tab: RecipeTab, missedFirst: boolean): RecipeWord[] {
   const base = tab === "mastered" ? stalestFirst(words) : shuffled(words);
   return missedFirst ? base.sort((a, b) => b.misses - a.misses) : base;
+}
+
+/** The order 単語カード goes through a tab's words: shuffled, or the ones missed most first. */
+function cardQueue(words: RecipeWord[], missedFirst: boolean): RecipeWord[] {
+  const base = shuffled(words);
+  return missedFirst ? base.sort((a, b) => b.misses - a.misses) : base;
+}
+
+/** Closes a menu that is `open` (`setOpen(false)`) on a click outside `box` or on Escape. */
+function useClickAway(open: boolean, box: RefObject<HTMLElement | null>, setOpen: (open: boolean) => void) {
+  useEffect(() => {
+    if (!open) return;
+    const away = (e: MouseEvent) => {
+      if (!box.current?.contains(e.target as Node)) setOpen(false);
+    };
+    const esc = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    document.addEventListener("mousedown", away);
+    document.addEventListener("keydown", esc);
+    return () => {
+      document.removeEventListener("mousedown", away);
+      document.removeEventListener("keydown", esc);
+    };
+  }, [open, box, setOpen]);
 }
 
 /** 間違いやすい語を優先, as last left. */
@@ -402,13 +434,14 @@ function EntryText({ w, text }: { w: RecipeWord; text: string }) {
 /**
  * An entry's meaning: a word's with its tags in front ([名] 腕時計, [他] 承認する, [自] 走る ／ [他]
  * 経営する), a pattern's with [原] [形] [節] boxed, an idiom's as it is. `cued`: a word with near
- * synonyms by its nuance, as the reviews ask it (admit: [他] （事実・誤りを）しぶしぶ認める).
+ * synonyms by its nuance, as the reviews ask it (admit: [他] （事実・誤りを）しぶしぶ認める). `lines`:
+ * each part of speech on a line of its own (単語カード).
  */
-function EntryMeaning({ w, dict, cued }: { w: RecipeWord; dict: Dictionary | null; cued?: boolean }) {
+function EntryMeaning({ w, dict, cued, lines }: { w: RecipeWord; dict: Dictionary | null; cued?: boolean; lines?: boolean }) {
   if (w.kind === "usage") return <SlotText text={w.meaning} />;
   if (w.pos === "idiom") return <>{w.meaning}</>;
-  if (cued) return <CuedMeaningWithTags word={w.word} meaning={w.meaning} dict={dict} />;
-  return <MeaningWithTags word={w.word} meaning={w.meaning} dict={dict} />;
+  if (cued) return <CuedMeaningWithTags word={w.word} meaning={w.meaning} dict={dict} lines={lines} />;
+  return <MeaningWithTags word={w.word} meaning={w.meaning} dict={dict} lines={lines} />;
 }
 
 function typedRight(word: RecipeWord, typed: string, dict: Dictionary | null): boolean {
@@ -472,6 +505,10 @@ export default function Recipe({ playMode, onProgress, toast }: Props) {
   const [posMenu, setPosMenu] = useState(false);
   const posBox = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState<ReadonlySet<number>>(() => new Set());
+  /** 単語カード: the menu of 日本語→英語 / 英語→日本語, and the cards gone through */
+  const [cardMenu, setCardMenu] = useState(false);
+  const cardBox = useRef<HTMLDivElement>(null);
+  const [carding, setCarding] = useState<{ target: RecipeTab; direction: CardDirection; queue: RecipeWord[] } | null>(null);
 
   useEffect(() => saveListView(order, posView !== "off"), [order, posView]);
   // A question left open belongs to the tab it was asked in.
@@ -481,20 +518,9 @@ export default function Recipe({ playMode, onProgress, toast }: Props) {
   }, [filter]);
   useEffect(() => savePriority(missedFirst), [missedFirst]);
 
-  // The part-of-speech menu closes on a click elsewhere or Escape.
-  useEffect(() => {
-    if (!posMenu) return;
-    const away = (e: MouseEvent) => {
-      if (!posBox.current?.contains(e.target as Node)) setPosMenu(false);
-    };
-    const esc = (e: KeyboardEvent) => e.key === "Escape" && setPosMenu(false);
-    document.addEventListener("mousedown", away);
-    document.addEventListener("keydown", esc);
-    return () => {
-      document.removeEventListener("mousedown", away);
-      document.removeEventListener("keydown", esc);
-    };
-  }, [posMenu]);
+  // The part-of-speech menu and the choice of 単語カード close on a click elsewhere or Escape.
+  useClickAway(posMenu, posBox, setPosMenu);
+  useClickAway(cardMenu, cardBox, setCardMenu);
 
   const reload = useCallback(async () => {
     setWords(await api.listRecipeWords());
@@ -543,6 +569,28 @@ export default function Recipe({ playMode, onProgress, toast }: Props) {
   };
   // Both kinds of review ask about the meaning, so a word without one cannot be quizzed.
   const quizzable = (tab: RecipeTab) => inTab[tab].filter((w) => w.meaning);
+
+  if (carding) {
+    return (
+      <div className="screen recipe">
+        <RecipeCards
+          key={round}
+          target={carding.target}
+          direction={carding.direction}
+          queue={carding.queue}
+          dict={dict}
+          onAgain={(direction) => {
+            setRound((r) => r + 1);
+            setCarding({ ...carding, direction, queue: cardQueue(carding.queue, missedFirst) });
+          }}
+          onDone={() => {
+            stopSpeaking();
+            setCarding(null);
+          }}
+        />
+      </div>
+    );
+  }
 
   if (reviewing) {
     return (
@@ -614,6 +662,11 @@ export default function Recipe({ playMode, onProgress, toast }: Props) {
     setRound((r) => r + 1);
     setReviewing({ target: filter, mode, queue: reviewQueue(pool, filter, missedFirst) });
   };
+  const startCards = (direction: CardDirection) => {
+    setCardMenu(false);
+    setRound((r) => r + 1);
+    setCarding({ target: filter, direction, queue: cardQueue(pool, missedFirst) });
+  };
 
   const mastered = inTab.mastered;
   const clearMastered = () =>
@@ -658,7 +711,7 @@ export default function Recipe({ playMode, onProgress, toast }: Props) {
           </div>
         </div>
         <p className="muted">
-          問題や解説の英単語を<b>右クリック</b>すると、ここに材料として集まります。復習は英単語の意味を4択で選ぶ「選択式」（1語 0.5 kcal）と、日本語から英語を書く「記入式」（1語 1 kcal）の2通り（同じ日に同じ単語を2回目以降に正解すると半分）で、下で選んでいるタブの単語から出題されます。「すべて」「復習中」では、正解したら「習得」（習得済みに）か「まだ」（復習中のまま）を選びます。「習得済み」「除外中」では、正解ならそのまま、間違えると復習中に戻ります。× で外した単語は「除外中」に入り、そこで × を押すと完全に削除されます（復習中も、答えた後に右上の「除外」（除外中では「削除」）で外せます）。獲得したカロリーは今日のおやつ予算に入ります（小数点以下は切り捨て）。
+          問題や解説の英単語を<b>右クリック</b>すると、ここに材料として集まります。復習は英単語の意味を4択で選ぶ「選択式」（1語 0.5 kcal）と、日本語から英語を書く「記入式」（1語 1 kcal）の2通り（同じ日に同じ単語を2回目以降に正解すると半分）で、下で選んでいるタブの単語から出題されます。「すべて」「復習中」では、正解したら「習得」（習得済みに）か「まだ」（復習中のまま）を選びます。「習得済み」「除外中」では、正解ならそのまま、間違えると復習中に戻ります。× で外した単語は「除外中」に入り、そこで × を押すと完全に削除されます（復習中も、答えた後に右上の「除外」（除外中では「削除」）で外せます）。獲得したカロリーは今日のおやつ予算に入ります（小数点以下は切り捨て）。「単語カード」は「日本語→英語」か「英語→日本語」を選び、画面のクリック（右クリック・Enter でも）で答えを出して次の単語へめくっていく練習です（カロリーはもらえません）。
         </p>
         <div className="row recipe-actions">
           <span className="recipe-target">
@@ -674,6 +727,28 @@ export default function Recipe({ playMode, onProgress, toast }: Props) {
               {REVIEW_ICON[mode]} {REVIEW_TITLE[mode]}
             </button>
           ))}
+          <div className="recipe-cards-pick" ref={cardBox}>
+            <button
+              className="btn recipe-mode-btn cards"
+              disabled={busy || pool.length === 0}
+              aria-haspopup="menu"
+              aria-expanded={cardMenu}
+              title="クリックでめくって覚える単語カード（カロリーはもらえません）"
+              onClick={() => setCardMenu((m) => !m)}
+            >
+              <WordCardIcon /> 単語カード
+            </button>
+            {cardMenu && (
+              <div className="recipe-pos-menu recipe-cards-menu" role="menu">
+                {CARD_DIRECTIONS.map(({ direction, label, note }) => (
+                  <button key={direction} role="menuitem" onClick={() => startCards(direction)}>
+                    <span>{label}</span>
+                    <small>{note}</small>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
           <button
             type="button"
             className={"recipe-priority" + (missedFirst ? " on" : "")}
@@ -1457,6 +1532,191 @@ function RecipeReview({
           )}
         </div>
       )}
+    </section>
+  );
+}
+
+/** Whether a click or Enter landed on something that does its own thing (🔊, やめる, the header's tabs). */
+function onControl(e: Event): boolean {
+  return e.target instanceof Element && !!e.target.closest("button, a, input, select, textarea, label");
+}
+
+/**
+ * 単語カード: a tab's words one card at a time, for remembering rather than scoring. 日本語→英語
+ * shows the meaning (by its nuance, as 記入式 asks it) and then the English, 英語→日本語 the English
+ * and then the meaning. A click anywhere on the screen, a right-click or Enter shows the other side,
+ * and the next one goes on to the next word. The English is read aloud when it shows (a pattern is
+ * not: 人 / 原形 cannot be read). A meaning has its tags, each part of speech on a line of its own
+ * ([名] 場所、地点 above [他] 見つける). Nothing is recorded and nothing is paid.
+ */
+function RecipeCards({
+  target,
+  direction,
+  queue,
+  dict,
+  onAgain,
+  onDone,
+}: {
+  target: RecipeTab;
+  direction: CardDirection;
+  queue: RecipeWord[];
+  dict: Dictionary | null;
+  /** once more, shuffled again, the same way round or turned */
+  onAgain: (direction: CardDirection) => void;
+  onDone: () => void;
+}) {
+  const [idx, setIdx] = useState(0);
+  const [turned, setTurned] = useState(false);
+  const current = queue[idx];
+  const finished = idx >= queue.length;
+  const cues = useWordTags()?.cues ?? null;
+  // The meaning asked by its nuance differs from the one in the recipe: the latter is shown with the answer.
+  const cued = !!current && current.kind !== "usage" && !!cues && (cuedMeaning(current.word, current.meaning, cues) ?? current.meaning) !== current.meaning;
+  const englishShown = direction === "en-ja" || turned;
+
+  useEffect(() => {
+    if (current && englishShown && current.kind !== "usage") say(current.word);
+  }, [current, englishShown]);
+
+  const flip = useCallback(() => {
+    if (finished) return;
+    if (!turned) {
+      setTurned(true);
+      return;
+    }
+    stopSpeaking();
+    setTurned(false);
+    setIdx((i) => i + 1);
+  }, [finished, turned]);
+
+  // Anywhere on the screen. The click that opened the cards (or turned the last one) is still on its
+  // way up to the window when this listens again, so only what happens after is taken.
+  useEffect(() => {
+    if (finished) return;
+    const since = performance.now();
+    const fresh = (e: Event) => e.timeStamp >= since;
+    const click = (e: MouseEvent) => {
+      if (e.button === 0 && fresh(e) && !onControl(e)) flip();
+    };
+    const rightClick = (e: MouseEvent) => {
+      if (!fresh(e)) return;
+      e.preventDefault();
+      flip();
+    };
+    const key = (e: KeyboardEvent) => {
+      if (e.key !== "Enter" || e.repeat || !fresh(e)) return;
+      e.preventDefault();
+      flip();
+    };
+    window.addEventListener("click", click);
+    window.addEventListener("contextmenu", rightClick);
+    window.addEventListener("keydown", key);
+    return () => {
+      window.removeEventListener("click", click);
+      window.removeEventListener("contextmenu", rightClick);
+      window.removeEventListener("keydown", key);
+    };
+  }, [finished, flip]);
+
+  const head = (
+    <h2>
+      <WordCardIcon /> 単語カード <span className={"pill recipe-tab-pill " + target}>{TAB_LABEL[target]}</span>{" "}
+      <span className="pill">{CARD_DIRECTION_LABEL[direction]}</span> <span className="pill muted">カロリーなし</span>
+    </h2>
+  );
+
+  if (finished) {
+    const turnedDirection: CardDirection = direction === "ja-en" ? "en-ja" : "ja-en";
+    return (
+      <section className="card recipe-review recipe-cards done">
+        <div className="section-head">{head}</div>
+        <p className="recipe-cards-done">
+          📖 {queue.length}語のカードをめくり終えました！
+        </p>
+        <div className="row recipe-actions">
+          <button className="btn btn-primary" onClick={() => onAgain(direction)}>
+            もう一度（並びを変えて）
+          </button>
+          <button className="btn" onClick={() => onAgain(turnedDirection)}>
+            {CARD_DIRECTION_LABEL[turnedDirection]}でもう一度
+          </button>
+          <button className="btn" onClick={onDone}>
+            レシピに戻る
+          </button>
+        </div>
+      </section>
+    );
+  }
+
+  const speakButton =
+    current.kind !== "usage" ? (
+      <button
+        type="button"
+        className="btn-link speak-btn"
+        onClick={() => say(current.word)}
+        disabled={!isTtsSupported()}
+        title="読み上げる"
+        aria-label="読み上げる"
+      >
+        🔊
+      </button>
+    ) : null;
+  const english = (
+    <div className="flash-word">
+      <EntryText w={current} text={current.word} />
+      {shownForm(current) && <span className="recipe-card-form">（{shownForm(current)}）</span>}
+      {speakButton}
+    </div>
+  );
+
+  return (
+    <section className="card recipe-review recipe-cards">
+      <div className="section-head">
+        {head}
+        <div className="study-progress">
+          {idx + 1} / {queue.length}
+          <div className="mini-bar">
+            <div style={{ width: `${((idx + (turned ? 1 : 0)) / queue.length) * 100}%` }} />
+          </div>
+        </div>
+        <button className="btn-link" onClick={onDone}>
+          やめる
+        </button>
+      </div>
+
+      <div className={"word-card" + (turned ? " turned" : "")} key={current.id}>
+        {direction === "ja-en" ? (
+          <div className="flash-meaning">
+            <EntryMeaning w={current} dict={dict} cued lines />
+          </div>
+        ) : (
+          english
+        )}
+        {turned && (
+          <div className="word-card-back">
+            {direction === "ja-en" ? (
+              <>
+                {english}
+                {cued && (
+                  <div className="muted">
+                    <EntryMeaning w={current} dict={dict} lines />
+                  </div>
+                )}
+              </>
+            ) : (
+              <div className="flash-meaning">
+                <EntryMeaning w={current} dict={dict} lines />
+              </div>
+            )}
+            {current.example && <div className="flash-example">{current.example}</div>}
+            {current.exampleJa && <div className="muted">{current.exampleJa}</div>}
+          </div>
+        )}
+      </div>
+      <p className="word-card-hint">
+        クリック・右クリック・Enter で
+        {turned ? (idx + 1 >= queue.length ? "おしまい" : "次の単語へ") : direction === "ja-en" ? "英語を表示" : "意味を表示"}
+      </p>
     </section>
   );
 }

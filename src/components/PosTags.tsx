@@ -82,18 +82,39 @@ export function MeaningWithTags({
   word,
   meaning,
   others: withOthers = true,
+  lines = false,
 }: {
   word: string;
   meaning: string;
   dict?: Dictionary | null;
   /** the verb senses the meaning leaves out, after it (off for a line that is about one word of the spelling) */
   others?: boolean;
+  /** each part of speech on a line of its own instead of after a ／ (単語カード, where one line is hard to read) */
+  lines?: boolean;
 }) {
   const data = useWordTags();
   if (!data) return <>{meaning}</>;
   const tagged = tagMeaning(word, meaning, data);
   const groups = tagged.groups;
   const others = withOthers ? tagged.others : [];
+  if (lines) {
+    return (
+      <span className="pos-sense-lines">
+        {groups.map((g, i) => (
+          <span key={i} className="pos-sense-line">
+            {g.tags.length > 0 && <PosTags tags={g.tags} />}
+            {g.ja}
+          </span>
+        ))}
+        {others.map((s, i) => (
+          <span key={`o${i}`} className="pos-sense-line pos-other-sense">
+            <PosTags tags={s.tags} />
+            {s.ja}
+          </span>
+        ))}
+      </span>
+    );
+  }
   return (
     <>
       {groups.map((g, i) => (
@@ -119,10 +140,20 @@ export function MeaningWithTags({
  * tags ([他] （事実・誤りを）しぶしぶ認める for admit 認める; [他] （丁寧に）断る ／ [自] 減少 for decline
  * 断る、減少).
  */
-export function CuedMeaningWithTags({ word, meaning, dict }: { word: string; meaning: string; dict?: Dictionary | null }) {
+export function CuedMeaningWithTags({
+  word,
+  meaning,
+  dict,
+  lines,
+}: {
+  word: string;
+  meaning: string;
+  dict?: Dictionary | null;
+  lines?: boolean;
+}) {
   const data = useWordTags();
   if (!data) return <>{meaning}</>;
-  return <MeaningWithTags word={word} meaning={cuedMeaning(word, meaning, data.cues) ?? meaning} dict={dict} />;
+  return <MeaningWithTags word={word} meaning={cuedMeaning(word, meaning, data.cues) ?? meaning} dict={dict} lines={lines} />;
 }
 
 /**
