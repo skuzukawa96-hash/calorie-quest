@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api, runningInTauri } from "./lib/api";
 import PlayModeSwitch from "./components/PlayModeSwitch";
 import RecipeProvider from "./components/RecipeProvider";
@@ -22,6 +22,13 @@ const TABS: Array<{ id: Tab; label: string }> = [
   { id: "recipe", label: "📖 レシピ" },
   { id: "stats", label: "📈 記録" },
 ];
+
+/** Today in the computer's own time, as the backend dates days (util::today). */
+function localDay(): string {
+  const d = new Date();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
 
 /** 試験: an exam of a level, or the review of exam questions missed */
 type ExamSession = { kind: "exam"; level: ExamLevel } | { kind: "review" };
@@ -98,6 +105,26 @@ export default function App() {
     if (import.meta.env.VITE_SPEECH_PROBE) {
       import("./lib/probe").then((m) => m.runSpeechProbe()).catch(() => undefined);
     }
+  }, [refresh]);
+
+  // The app left open past midnight loads the new day (which settles the one that ended): checked
+  // every minute and whenever the window comes back to the front.
+  const day = useRef(localDay());
+  useEffect(() => {
+    const check = () => {
+      const now = localDay();
+      if (now === day.current) return;
+      day.current = now;
+      void refresh();
+    };
+    const timer = window.setInterval(check, 60_000);
+    window.addEventListener("focus", check);
+    document.addEventListener("visibilitychange", check);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("focus", check);
+      document.removeEventListener("visibilitychange", check);
+    };
   }, [refresh]);
 
 

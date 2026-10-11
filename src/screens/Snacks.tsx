@@ -100,9 +100,11 @@ export default function Snacks({ dash, onChanged, ticketMode, onTicketMode, toas
     setLog(l);
   }, []);
 
+  // Again on a new day (the app left open past midnight): the log is today's.
+  const day = dash.today.date;
   useEffect(() => {
     reload().catch((e) => toast(String(e)));
-  }, [reload, toast]);
+  }, [reload, toast, day]);
 
   const goalIds = new Set(dash.goalSnacks.map((g) => g.id));
   const { today, savings } = dash;
