@@ -716,10 +716,10 @@ mod tests {
         }
     }
 
-    /// Each level has questions enough for fifteen exams in a row with nothing asked twice.
+    /// Each level has questions enough for twenty exams in a row with nothing asked twice.
     #[test]
     fn every_level_can_make_varied_exams() {
-        const EXAMS: usize = 15;
+        const EXAMS: usize = 20;
         for level in LEVELS {
             let list = &sets()[level];
             let count = |part: &str| list.iter().filter(|s| s.part == part).map(|s| s.questions.len()).sum::<usize>();
@@ -808,7 +808,7 @@ mod tests {
         assert_eq!(overview(&c).unwrap().review_count, 0);
     }
 
-    /// Exams take what has not been asked yet: fifteen exams in a row ask no set twice, whichever
+    /// Exams take what has not been asked yet: twenty exams in a row ask no set twice, whichever
     /// way the shuffles fall (the 読解 passages of 3 tried first leave each exam the same number of
     /// 短文穴埋め to take).
     #[test]
@@ -816,7 +816,7 @@ mod tests {
         for level in LEVELS {
             let mut c = conn();
             let mut asked: HashSet<String> = HashSet::new();
-            for round in 0..15 {
+            for round in 0..20 {
                 let exam = build_exam_from(level, &seen_sets(&c, level).unwrap()).unwrap();
                 assert_eq!(exam.len(), EXAM_SIZE, "{level} #{round}");
                 let sets: HashSet<String> = exam.iter().map(|q| q.set_id.clone()).collect();
