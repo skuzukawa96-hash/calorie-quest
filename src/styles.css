@@ -1486,17 +1486,17 @@ button.recipe-bulk:hover:not(:disabled) {
   flex-direction: column;
   justify-content: center;
 }
-/* × on a word card (除外, or 削除 in 除外): in its top left, as in a review, right of the ring
-   hole; the ☆ in its top right as far in, so the two mirror each other. The × is drawn as big as
-   the ☆ and a lighter red, full red under the pointer. */
+/* × on a word card (除外, or 削除 in 除外): in its top left, as in a review, just right of the
+   ring hole; the ☆ keeps the top right corner. The × is drawn about as big as the ☆, in thinner
+   strokes and a lighter red, full red under the pointer. */
 .word-card-remove {
   position: absolute;
-  top: 4px;
+  top: 8px;
   left: 30px;
 }
 .word-card-remove .icon-btn {
-  width: 32px;
-  height: 32px;
+  width: 27px;
+  height: 27px;
   color: #e8908c;
 }
 .word-card-remove .icon-btn:hover:not(:disabled) {
@@ -1504,16 +1504,16 @@ button.recipe-bulk:hover:not(:disabled) {
 }
 .word-card-remove .icon-btn svg {
   flex: none;
-  width: 30px;
-  height: 30px;
+  width: 25px;
+  height: 25px;
 }
 .word-card-remove .icon-btn svg path {
-  stroke-width: 1.6;
+  stroke-width: 1.8;
 }
 .word-card-star {
   position: absolute;
   top: 8px;
-  right: 32.5px;
+  right: 10px;
 }
 /* 間違いやすい語を優先: an on/off switch beside 選択式 / 記入式 */
 .recipe-priority {
