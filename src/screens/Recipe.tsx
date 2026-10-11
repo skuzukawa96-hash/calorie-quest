@@ -839,9 +839,27 @@ export default function Recipe({ playMode, onProgress, toast }: Props) {
             )}
           </div>
         </div>
-        <p className="muted">
-          問題や解説の英単語を<b>右クリック</b>すると、ここに材料として集まります。復習は英単語の意味を4択で選ぶ「選択式」（1語 0.5 kcal）と、日本語から英語を書く「記入式」（1語 1 kcal）の2通り（同じ日に同じ単語を2回目以降に正解すると半分）で、下で選んでいるタブの単語から出題されます。「すべて」「復習」では、正解したら「習得」（習得に移す）か「まだ」（復習のまま）を選びます。「★」「習得」「除外」では、正解ならそのまま、間違えると復習に戻ります。☆ を押した単語は「★」に入ります（復習のまま、「すべて」「復習」にも入ります。習得や除外に移すと★は外れます）。× で外した単語は「除外」に入り、そこで × を押すと完全に削除されます（復習中も、答えた後に右上の「除外」（除外タブでは「削除」）で外せます）。獲得したカロリーは今日のおやつ予算に入ります（小数点以下は切り捨て）。「単語カード」は「日本語→英語」か「英語→日本語」を選び、画面のクリック（右クリック・Enter でも）で答えを出して次の単語へめくっていく練習です（カロリーはもらえません）。
-        </p>
+        <div className="recipe-intro">
+          <p className="recipe-intro-lead">
+            問題や解説の英単語を<b>右クリック</b>すると、ここに材料として集まります。
+          </p>
+          <dl className="recipe-guide">
+            <dt>選択式・記入式</dt>
+            <dd>
+              選んでいるタブの単語を復習します。意味を4択で選ぶと 0.5 kcal、英語を書くと 1 kcal が今日のおやつ予算に入ります（同じ日の2回目からは半分）。
+            </dd>
+            <dt>習得・まだ</dt>
+            <dd>「すべて」「復習」で正解したら、覚えたかを自分で選びます。「★」「習得」「除外」では、正解ならそのまま、間違えると復習に戻ります。</dd>
+            <dt>
+              ☆ <span className="recipe-star-mark">★</span>
+            </dt>
+            <dd>☆ を押した単語は「★」に入り、正解しても★のまま復習に残ります。習得や除外に移すと★は外れます。</dd>
+            <dt>×</dt>
+            <dd>単語を「除外」に移します。「除外」のタブで × を押すと完全に削除します。</dd>
+            <dt>単語カード</dt>
+            <dd>クリック・右クリック・Enter でめくって覚えます（カロリーはもらえません）。</dd>
+          </dl>
+        </div>
         <div className="row recipe-actions">
           <span className="recipe-target">
             {TAB_LABEL[filter]} <b>{pool.length}</b>語
@@ -1099,7 +1117,7 @@ export default function Recipe({ playMode, onProgress, toast }: Props) {
                           </span>
                         )}
                         {/* At the right end of the row, open or not; a press here does not open the row. */}
-                        <span className="recipe-actions" onClick={(e) => e.stopPropagation()}>
+                        <span className="recipe-row-actions" onClick={(e) => e.stopPropagation()}>
                           <StarButton
                             on={isStarred(w)}
                             onToggle={() =>

@@ -324,7 +324,6 @@ export default function Home({
                 今日の復習が <b>{dash.dueReviewCount} 問</b> あります。間違えたときと同じ形式で出題され、正解でカロリー{" "}
                 <b>×{kcalRates.reviewMultiplier}</b>！
                 <span className="muted small review-rule">
-                  {" "}
                   間違えた復習は正解するまで今日の復習に残り、残った分だけ明日に繰り越します（{kcalRates.staleReviewDays}日を過ぎると通常の出題に戻ります）。
                 </span>
               </span>
@@ -348,7 +347,9 @@ export default function Home({
           </span>
         </div>
         <p className="muted exam-intro">
-          応答問題（リスニング）→ 短文穴埋め → 長文穴埋め → 読解問題の順に出題されます。合格すると難易度に応じたカロリー、不合格でも挑戦ボーナス {dash.exam.effortKcal} kcal（何回受けてももらえます）。
+          応答問題（リスニング）→ 短文穴埋め → 長文穴埋め → 読解問題の順に出題されます。
+          <br />
+          合格すると難易度に応じたカロリー、不合格でも挑戦ボーナス {dash.exam.effortKcal} kcal（何回受けてももらえます）。
         </p>
         <div className="mode-grid exam-grid">
           {dash.exam.levels.map((l) => {
