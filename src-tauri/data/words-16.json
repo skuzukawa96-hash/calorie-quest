@@ -5,7 +5,7 @@
   {"key":"w4160","kind":"word","difficulty":"low","category":"学校・仕事","group":"面接・採用追加","en":"background check","ja":"身元調査","modes":["choice","typing","speaking"]},
   {"key":"w4161","kind":"word","difficulty":"low","category":"学校・仕事","group":"面接・採用追加","en":"probationary period","ja":"試用期間","modes":["choice","typing","speaking"]},
   {"key":"w4162","kind":"word","difficulty":"low","category":"学校・仕事","group":"面接・採用追加","en":"recruitment agency","ja":"人材紹介会社","modes":["choice","typing","speaking"]},
-  {"key":"w4164","kind":"word","difficulty":"low","category":"学校・仕事","group":"面接・採用追加","en":"hiring manager","ja":"採用担当者","modes":["choice","typing","speaking"]},
+  {"key":"w4164","kind":"word","difficulty":"low","category":"学校・仕事","group":"面接・採用追加","en":"hiring manager","ja":"採用責任者","modes":["choice","typing","speaking"]},
   {"key":"w4165","kind":"word","difficulty":"low","category":"学校・仕事","group":"面接・採用追加","en":"job posting","ja":"求人広告","modes":["choice","typing","speaking"]},
   {"key":"w4171","kind":"word","difficulty":"low","category":"学校・仕事","group":"テスト・評価追加","en":"listening comprehension","ja":"リスニング理解","modes":["choice","typing","speaking"]},
   {"key":"w4181","kind":"word","difficulty":"low","category":"自然・天気","group":"天体・気象現象","en":"dust storm","ja":"砂嵐","modes":["choice","typing","speaking"]},

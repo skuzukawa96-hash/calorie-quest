@@ -35,7 +35,7 @@
   {"key":"w5540","kind":"word","difficulty":"mid","category":"学校・仕事","group":"調べる・見つける句動詞","en":"figure out","ja":"理解する、解き明かす","modes":["choice","typing","speaking"]},
   {"key":"w5541","kind":"word","difficulty":"mid","category":"学校・仕事","group":"調べる・見つける句動詞","en":"point out","ja":"指摘する","modes":["choice","typing","speaking"]},
   {"key":"w5542","kind":"word","difficulty":"mid","category":"学校・仕事","group":"調べる・見つける句動詞","en":"come across","ja":"偶然見つける","modes":["choice","typing","speaking"]},
-  {"key":"w5543","kind":"word","difficulty":"low","category":"学校・仕事","group":"仕事の句動詞","en":"hand in","ja":"提出する","modes":["choice","typing","speaking"]},
+  {"key":"w5543","kind":"word","difficulty":"low","category":"学校・仕事","group":"仕事の句動詞","en":"hand in","ja":"（宿題などを）提出する","modes":["choice","typing","speaking"]},
   {"key":"w5544","kind":"word","difficulty":"low","category":"学校・仕事","group":"仕事の句動詞","en":"fill in","ja":"（用紙に）記入する","modes":["choice","typing","speaking"]},
   {"key":"w5545","kind":"word","difficulty":"low","category":"学校・仕事","group":"仕事の句動詞","en":"write down","ja":"書き留める","modes":["choice","typing","speaking"]},
   {"key":"w5546","kind":"word","difficulty":"mid","category":"学校・仕事","group":"仕事の句動詞","en":"set up","ja":"設置する、立ち上げる","modes":["choice","typing","speaking"]},

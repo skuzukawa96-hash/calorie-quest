@@ -81,7 +81,7 @@
   {"key":"w402","kind":"word","difficulty":"low","category":"買い物","group":"お金・買い物","en":"receipt","ja":"レシート、領収書","modes":["choice","typing","speaking"]},
   {"key":"w403","kind":"word","difficulty":"low","category":"買い物","group":"お金・買い物","en":"size","ja":"サイズ","modes":["choice","typing","speaking"]},
   {"key":"w404","kind":"word","difficulty":"low","category":"買い物","group":"お金・買い物","en":"color","ja":"色","modes":["choice","typing","speaking"]},
-  {"key":"w405","kind":"word","difficulty":"low","category":"買い物","group":"職業","en":"customer","ja":"客","modes":["choice","typing","speaking"]},
+  {"key":"w405","kind":"word","difficulty":"low","category":"買い物","group":"職業","en":"customer","ja":"（店の）客、顧客","modes":["choice","typing","speaking"]},
   {"key":"w406","kind":"word","difficulty":"low","category":"買い物","group":"職業","en":"clerk","ja":"店員","modes":["choice","typing","speaking"]},
   {"key":"w407","kind":"word","difficulty":"low","category":"買い物","group":"お金・買い物","en":"cart","ja":"カート","modes":["choice","typing","speaking"]},
   {"key":"w408","kind":"word","difficulty":"low","category":"買い物","group":"お金・買い物","en":"discount","ja":"割引","modes":["choice","typing","speaking"]},

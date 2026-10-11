@@ -2320,6 +2320,25 @@ mod tests {
     use std::collections::{HashMap, HashSet};
 
     #[test]
+    fn no_two_word_questions_share_a_meaning() {
+        // A word question is written from its Japanese alone, so another word with the same Japanese
+        // (in another group: a group checks its own) would be right as well and be marked wrong.
+        // Near words say in （ ） how they differ: 野営地 campsite, キャンプ場 campground.
+        let seed = load_seed();
+        let mut english: HashMap<&str, HashSet<String>> = HashMap::new();
+        for q in seed.questions.iter().filter(|q| q.kind == "word") {
+            english.entry(q.ja.as_str()).or_default().insert(q.en.to_lowercase());
+        }
+        let mut shared: Vec<String> = english
+            .iter()
+            .filter(|(_, en)| en.len() > 1)
+            .map(|(ja, en)| format!("{ja}: {}", en.iter().cloned().collect::<Vec<_>>().join(" / ")))
+            .collect();
+        shared.sort();
+        assert!(shared.is_empty(), "word questions sharing a meaning:\n{}", shared.join("\n"));
+    }
+
+    #[test]
     fn seed_data_is_well_formed() {
         let seed = load_seed();
         // A floor per kind rather than one total. The total was raised in the same commit that grew
