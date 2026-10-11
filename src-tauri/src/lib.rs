@@ -1,3 +1,4 @@
+mod backup;
 mod commands;
 mod db;
 mod exam;
@@ -20,11 +21,15 @@ pub fn run() {
         .setup(|app| {
             let dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&dir)?;
-            let conn = db::init(&dir.join("calorie_quest.db"))?;
+            let conn = db::init(&dir.join(backup::DB_FILE))?;
             app.manage(AppState { db: Mutex::new(conn) });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            backup::list_backups,
+            backup::create_backup,
+            backup::restore_backup,
+            backup::open_backup_folder,
             commands::get_dashboard,
             commands::get_session_questions,
             commands::submit_answer,

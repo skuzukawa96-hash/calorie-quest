@@ -1,5 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
+  BackupInfo,
+  BackupList,
   AnswerPayload,
   AnswerResult,
   ConsumptionEntry,
@@ -76,6 +78,12 @@ export const api = {
   /** がんばり / 通常 / お気軽: what is earned from now on is scaled by it */
   setPlayMode: (mode: PlayMode) => call<PlayMode>("set_play_mode", { mode }),
   getStats: () => call<Stats>("get_stats"),
+  /** 💾 バックアップ: the backups folder and its files, newest first */
+  listBackups: () => call<BackupList>("list_backups"),
+  createBackup: () => call<BackupInfo>("create_backup"),
+  /** puts the record of backup `name` back, after backing up what is there now */
+  restoreBackup: (name: string) => call<void>("restore_backup", { name }),
+  openBackupFolder: () => call<void>("open_backup_folder"),
   getDictionary: () => call<Record<string, string>>("get_dictionary"),
   getIdioms: () => call<string[]>("get_idioms"),
   /** word → its IPA sounds separated by spaces (CMU Pronouncing Dictionary) */

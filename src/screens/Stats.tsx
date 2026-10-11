@@ -1,3 +1,4 @@
+import BackupPanel from "../components/BackupPanel";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { api } from "../lib/api";
 import {
@@ -172,6 +173,8 @@ export default function Stats({ onChanged, toast }: Props) {
           </ul>
         )}
       </section>
+
+      <BackupPanel toast={toast} />
 
       <section className="card danger-zone">
         <h2>データ</h2>

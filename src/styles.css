@@ -363,6 +363,12 @@ main {
   font-size: 13px;
   color: var(--choco);
 }
+/* small and red, for a yes that deletes or puts back (it comes after .btn-small, which would undo it) */
+.btn-small.btn-danger {
+  background: var(--berry);
+  border-color: #b8423e;
+  color: #fff;
+}
 .btn-small.active {
   background: var(--choco);
   color: #fff;
@@ -3489,6 +3495,52 @@ button.wp-link.open {
 .exam-intro {
   margin: 0 0 12px;
   line-height: 1.7;
+}
+/* 💾 バックアップ (記録): one line a backup, the newest first */
+.backup-actions {
+  margin-top: 8px;
+}
+.backup-folder {
+  margin-top: 6px;
+  word-break: break-all;
+}
+.backup-list {
+  list-style: none;
+  margin: 12px 0 4px;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+.backup-list li {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+}
+.backup-when {
+  font-weight: 600;
+  color: var(--choco);
+  font-variant-numeric: tabular-nums;
+}
+.pill.backup-auto {
+  background: var(--cream-2);
+  color: var(--choco-light);
+}
+.backup-restore,
+.backup-ask {
+  margin-left: auto;
+}
+.backup-ask {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--choco);
 }
 /* 復習: the rule of a review missed, on a line of its own */
 .review-rule {

@@ -472,6 +472,23 @@ export interface ExamReviewResult {
   remaining: number;
 }
 
+/** One backup in Documents > CalorieQuest > backups (backup.rs). */
+export interface BackupInfo {
+  /** the file name: calorie-quest_2026-10-12_153000.db */
+  name: string;
+  /** when it was written, local time (2026-10-12T15:30:00) */
+  madeAt: string;
+  bytes: number;
+  /** made by the app just before a restore, of what was there then */
+  beforeRestore: boolean;
+}
+
+/** The backups folder and what is in it, newest first. */
+export interface BackupList {
+  folder: string;
+  backups: BackupInfo[];
+}
+
 /** 使わなかったカロリーの貯蓄と、それが変わったお菓子引換券。 */
 export interface SavingsInfo {
   balance: number;

@@ -454,6 +454,27 @@ pub struct ExamReviewResult {
     pub remaining: i64,
 }
 
+/// One backup in the backups folder, Documents > CalorieQuest > backups (backup.rs).
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BackupInfo {
+    /// the file name: calorie-quest_2026-10-12_153000.db
+    pub name: String,
+    /// when it was written (local time, 2026-10-12T15:30:00)
+    pub made_at: String,
+    pub bytes: i64,
+    /// made by the app just before a restore, of what was there then
+    pub before_restore: bool,
+}
+
+/// The backups folder and what is in it, newest first.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BackupList {
+    pub folder: String,
+    pub backups: Vec<BackupInfo>,
+}
+
 /// 使わなかったカロリーの貯蓄と、それが変わったお菓子引換券。
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]

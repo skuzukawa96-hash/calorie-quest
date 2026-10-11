@@ -2788,6 +2788,12 @@ export async function mockInvoke<T>(cmd: string, args: Record<string, unknown>):
       save();
       return moved as T;
     }
+    case "list_backups":
+    case "create_backup":
+    case "restore_backup":
+    case "open_backup_folder":
+      // A backup is a file of the app's database; the browser preview keeps its data in the page.
+      throw new Error("ブラウザのプレビューではバックアップできません（アプリでは使えます）");
     case "get_usage_meanings":
       // Mirrors recipe::usage_meanings.
       return [...new Set((wordUsages as WordUsage[]).map((u) => u.ja))].sort() as T;
