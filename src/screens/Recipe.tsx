@@ -85,15 +85,28 @@ function say(text: string) {
   if (isTtsSupported()) speak(text).catch(() => undefined);
 }
 
-/** What no voice can read in a pattern: 人, 原形, 形容詞, 節, 過去分詞 (anything Japanese), A, B and -ing. */
-const FILLER = /[\p{sc=Han}\p{sc=Hiragana}\p{sc=Katakana}]|(?<![\w-])(?:[AB]|-ing)(?![\w-])/u;
+/**
+ * What fills a pattern, read as an English dictionary reads it (lend someone something, look
+ * forward to doing). 節 is left out: "I'm afraid (that) 節" is "I'm afraid that".
+ */
+const STAND_INS: [RegExp, string][] = [
+  [/過去分詞/g, "done"],
+  [/形容詞/g, "adjective"],
+  [/原形/g, "do"],
+  [/人/g, "someone"],
+  [/節/g, ""],
+  [/(?<![\w-])-ing(?![\w-])/g, "doing"],
+  [/(?<![\w-])[AB](?![\w-])/g, "something"],
+];
 
 /**
- * What is read aloud for an entry: a word as it is, a pattern without what fills it, each way of
- * it in turn. "be confident in/about A" is "be confident in", then "be confident about"; "look
- * forward to A／-ing" is "look forward to", "hate -ing／to 原形" "hate" and "hate to" (a side of ／
- * not starting with the pattern's word stands for the last part before it). An English part in ( )
- * is read ("I'm afraid that"), unless it has a filler: "It is easy (for 人) to 原形" is "It is easy to".
+ * What is read aloud for an entry: a word as it is, a pattern with what fills it in words
+ * (`STAND_INS`), each way of it in turn. "be confident in/about A" is "be confident in something",
+ * then "be confident about something"; "lend 人 A／lend A to 人" "lend someone something" and "lend
+ * something to someone". A side of ／ not starting with the pattern's word stands for the last part
+ * before it, "to 原形" as one: "look forward to A／-ing" is "look forward to doing" as well, "begin to
+ * 原形／-ing" "begin doing". The English in ( ) is read ("It is easy for someone to do"), a note in
+ * （ ） is not.
  */
 function readings(w: RecipeWord): string[] {
   if (w.kind !== "usage") return [w.word];
@@ -101,12 +114,12 @@ function readings(w: RecipeWord): string[] {
   let before = "";
   for (const side of w.word.split(/\s*／\s*/)) {
     const whole = !before || side.split(" ")[0] === before.split(" ")[0];
-    const written = whole ? side : before.replace(/\S+$/, () => side);
+    const written = whole ? side : before.replace(/(?:to )?原形$|\S+$/, () => side);
     before = written;
-    const bare = written
-      .replace(/（[^）]*）/g, " ")
-      .replace(/\(([^()]*)\)/g, (_, inner: string) => (FILLER.test(inner) ? " " : ` ${inner} `))
-      .replace(new RegExp(FILLER.source, "gu"), " ");
+    const bare = STAND_INS.reduce(
+      (text, [filler, word]) => text.replace(filler, ` ${word} `),
+      written.replace(/（[^）]*）/g, " ").replace(/[()]/g, " "),
+    ).replace(/[\p{sc=Han}\p{sc=Hiragana}\p{sc=Katakana}]/gu, " ");
     const choices = bare
       .split(/\s+/)
       .filter(Boolean)
