@@ -281,12 +281,29 @@ pub struct Dashboard {
     pub categories: Vec<CategoryInfo>,
     /// 英単語 by part of speech (noun / verb / adjective / adverb), for the chips above the genres
     pub parts_of_speech: Vec<PartOfSpeechInfo>,
+    /// how many questions each mode can ask, by tab, genre and part of speech: the home's mode
+    /// cards add up those of what is picked, and a mode with none cannot be started
+    pub mode_counts: Vec<ModeCount>,
     pub due_review_count: i64,
     pub tickets_available: i64,
     pub kcal_rates: KcalRates,
     pub savings: SavingsInfo,
     /// 試験: the levels, what they pay, and the exam questions waiting in review
     pub exam: ExamOverview,
+}
+
+/// The questions of one tab, genre and part of speech each mode can ask, counted as a session
+/// picks them (ヒアリング takes the questions with English to say as well).
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModeCount {
+    pub tier: String,
+    pub category: String,
+    pub pos: Option<String>,
+    pub choice: i64,
+    pub typing: i64,
+    pub speaking: i64,
+    pub listening: i64,
 }
 
 /// 試験の各レベル（中学～高校基礎 / TOEIC 500〜700 / TOEIC 800）。

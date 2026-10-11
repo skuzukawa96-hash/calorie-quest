@@ -286,6 +286,20 @@ export interface PartOfSpeechInfo {
   total: number;
 }
 
+/**
+ * The questions of one tab, genre and part of speech each mode can ask, counted as a session picks
+ * them (ヒアリング takes the questions with English to say as well).
+ */
+export interface ModeCount {
+  tier: Tier;
+  category: string;
+  pos?: PartOfSpeech | null;
+  choice: number;
+  typing: number;
+  speaking: number;
+  listening: number;
+}
+
 /** The category a session asks for to get the words of one part of speech. */
 export const posCategory = (pos: PartOfSpeech) => `pos:${pos}`;
 
@@ -337,6 +351,8 @@ export interface Dashboard {
   categories: CategoryInfo[];
   /** 英単語 by part of speech, for the chips above the genres */
   partsOfSpeech: PartOfSpeechInfo[];
+  /** how many questions each mode can ask, by tab, genre and part of speech */
+  modeCounts: ModeCount[];
   dueReviewCount: number;
   ticketsAvailable: number;
   kcalRates: KcalRates;

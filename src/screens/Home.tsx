@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import CalorieBar from "../components/CalorieBar";
 import GoalAdder from "../components/GoalAdder";
 import { DeleteButton, EatButton } from "../components/IconButtons";
@@ -39,6 +39,27 @@ interface Props {
 
 /** Each card: the icon beside the title, then two lines of what it is, one phrase a line. The
  * pointing finger and the pencil are the ones of the recipe's 選択式 / 記入式 reviews. */
+/** The tab and genre (or part of speech) picked to study, kept for the next time home is shown. */
+const STUDY_CHOICE_KEY = "cq-home-study";
+
+function loadStudyChoice(): { tier: TierChoice; category: string } {
+  try {
+    const v = JSON.parse(localStorage.getItem(STUDY_CHOICE_KEY) ?? "null");
+    const tier = [...TIERS, "mixed"].includes(v?.tier) ? (v.tier as TierChoice) : "word";
+    return { tier, category: typeof v?.category === "string" ? v.category : ALL_CATEGORIES };
+  } catch {
+    return { tier: "word", category: ALL_CATEGORIES };
+  }
+}
+
+function saveStudyChoice(tier: TierChoice, category: string) {
+  try {
+    localStorage.setItem(STUDY_CHOICE_KEY, JSON.stringify({ tier, category }));
+  } catch {
+    /* ignore */
+  }
+}
+
 const MODES: Array<{ mode: Mode; icon: ReactNode; title: string; desc: [string, string] }> = [
   { mode: "choice", icon: "👆", title: "選択問題", desc: ["4択でテンポよく", "単語の意味や文法の穴埋め"] },
   { mode: "typing", icon: <PencilIcon />, title: "記入問題", desc: ["日本語に合う英語をタイピング", "スペルを定着"] },
@@ -64,8 +85,10 @@ export default function Home({
   onTicketMode,
   toast,
 }: Props) {
-  const [tier, setTier] = useState<TierChoice>("word");
-  const [category, setCategory] = useState<string>(ALL_CATEGORIES);
+  // As last picked: after a session, home comes back to the same tab and genre.
+  const [tier, setTier] = useState<TierChoice>(() => loadStudyChoice().tier);
+  const [category, setCategory] = useState<string>(() => loadStudyChoice().category);
+  useEffect(() => saveStudyChoice(tier, category), [tier, category]);
   const [redeeming, setRedeeming] = useState(false);
   const [busy, setBusy] = useState(false);
   const [adding, setAdding] = useState(false);
@@ -116,6 +139,17 @@ export default function Home({
     visibleCategories.some((c) => c.name === category) || partsOfSpeech.some((p) => posCategory(p.pos) === category)
       ? category
       : ALL_CATEGORIES;
+
+  // How many questions each mode has for what is picked; a mode with none cannot be started.
+  const modeTotals = useMemo(() => {
+    const totals: Record<Mode, number> = { choice: 0, typing: 0, speaking: 0, listening: 0 };
+    for (const m of dash.modeCounts) {
+      if (tier !== "mixed" && m.tier !== tier) continue;
+      if (effectiveCategory !== ALL_CATEGORIES && m.category !== effectiveCategory && `pos:${m.pos}` !== effectiveCategory) continue;
+      for (const mode of MODES) totals[mode.mode] += m[mode.mode];
+    }
+    return totals;
+  }, [dash.modeCounts, tier, effectiveCategory]);
 
   const redeem = async () => {
     setRedeeming(true);
@@ -305,10 +339,17 @@ export default function Home({
         </div>
         <div className="mode-grid">
           {MODES.map((m) => (
-            <button key={m.mode} className="mode-card" onClick={() => onStart(m.mode, tier, effectiveCategory)}>
+            <button
+              key={m.mode}
+              className={"mode-card" + (modeTotals[m.mode] === 0 ? " empty" : "")}
+              disabled={modeTotals[m.mode] === 0}
+              title={modeTotals[m.mode] === 0 ? `この分類・ジャンルには${m.title}がありません` : undefined}
+              onClick={() => onStart(m.mode, tier, effectiveCategory)}
+            >
               <div className="mode-head">
                 <span className="mode-icon">{m.icon}</span>
                 <span className="mode-title">{m.title}</span>
+                <span className="mode-count">{modeTotals[m.mode].toLocaleString()}問</span>
               </div>
               <div className="mode-desc">
                 <span>{m.desc[0]}</span>

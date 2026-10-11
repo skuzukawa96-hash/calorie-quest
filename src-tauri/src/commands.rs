@@ -392,6 +392,29 @@ fn parts_of_speech(conn: &Connection) -> rusqlite::Result<Vec<PartOfSpeechInfo>>
         .collect()
 }
 
+/// How many questions each mode can ask, by tab, genre and part of speech, as `session_questions`
+/// picks them: a mode by its `modes`, ヒアリング also by "speaking".
+fn mode_counts(conn: &Connection) -> rusqlite::Result<Vec<ModeCount>> {
+    let mut stmt = conn.prepare(
+        "SELECT tier, category, pos,
+                SUM(modes LIKE '%\"choice\"%'), SUM(modes LIKE '%\"typing\"%'), SUM(modes LIKE '%\"speaking\"%'),
+                SUM(modes LIKE '%\"listening\"%' OR modes LIKE '%\"speaking\"%')
+         FROM questions GROUP BY tier, category, pos",
+    )?;
+    let rows = stmt.query_map([], |r| {
+        Ok(ModeCount {
+            tier: r.get(0)?,
+            category: r.get(1)?,
+            pos: r.get(2)?,
+            choice: r.get(3)?,
+            typing: r.get(4)?,
+            speaking: r.get(5)?,
+            listening: r.get(6)?,
+        })
+    })?;
+    rows.collect()
+}
+
 fn kcal_rates() -> KcalRates {
     KcalRates {
         word_choice: srs::KCAL_WORD_CHOICE,
@@ -1203,6 +1226,7 @@ pub fn load_dashboard(conn: &Connection) -> CmdResult<Dashboard> {
         snacks: list_snacks_inner(conn).map_err(err)?,
         categories: category_infos(conn).map_err(err)?,
         parts_of_speech: parts_of_speech(conn).map_err(err)?,
+        mode_counts: mode_counts(conn).map_err(err)?,
         due_review_count: due_review_count(conn).map_err(err)?,
         tickets_available: tickets_available(conn).map_err(err)?,
         kcal_rates: kcal_rates(),
@@ -1887,6 +1911,36 @@ mod tests {
         let r = answer(&mut c, stale, "choice", false, None);
         assert!(!r.is_review);
         assert_eq!(r.next_due.as_deref(), Some(date_plus(1).as_str()));
+    }
+
+    /// The home's count of a mode for a tab and a genre is what a session of them can ask: none
+    /// (フレーズ・テクノロジー has no 選択問題) and the session is empty, some and it is not.
+    #[test]
+    fn a_modes_count_says_whether_a_session_has_anything_to_ask() {
+        let c = conn();
+        let counts = mode_counts(&c).unwrap();
+        let genres: Vec<String> = category_infos(&c).unwrap().into_iter().map(|g| g.name).collect();
+        let mut empty_modes = 0;
+        for category in genres.iter().map(String::as_str).chain(["all"]) {
+            for mode in MODES {
+                let n: i64 = counts
+                    .iter()
+                    .filter(|m| m.tier == "phrase" && (category == "all" || m.category == category))
+                    .map(|m| match mode {
+                        "choice" => m.choice,
+                        "typing" => m.typing,
+                        "speaking" => m.speaking,
+                        _ => m.listening,
+                    })
+                    .sum();
+                let asked = session_questions(&c, mode, "phrase", category, 1).unwrap().len();
+                assert_eq!(asked > 0, n > 0, "フレーズ {category} {mode}: {n} counted, {asked} asked");
+                empty_modes += usize::from(n == 0);
+            }
+        }
+        assert!(empty_modes > 0, "some genre of フレーズ lacks a mode, or this checks nothing");
+        let words: i64 = counts.iter().filter(|m| m.tier == "word" && m.pos.as_deref() == Some("noun")).map(|m| m.typing).sum();
+        assert_eq!(words > 0, !session_questions(&c, "typing", "word", "pos:noun", 1).unwrap().is_empty());
     }
 
     /// A question taken out of the bank while waiting in review keeps its history, but the home

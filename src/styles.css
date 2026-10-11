@@ -2045,9 +2045,23 @@ button.recipe-bulk:hover:not(:disabled) {
   min-width: 0;
   transition: transform 0.12s ease, box-shadow 0.12s ease;
 }
-.mode-card:hover {
+.mode-card:hover:not(:disabled) {
   transform: translateY(-2px);
   box-shadow: var(--shadow);
+}
+/* a mode the tab and genre picked have no questions for: grey, and not to be started */
+.mode-card.empty {
+  background: var(--cream);
+  cursor: not-allowed;
+  filter: grayscale(1);
+  opacity: 0.5;
+}
+.mode-count {
+  margin-left: auto;
+  font-size: 12.5px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 /* the icon and the title on one line */
 .mode-head {

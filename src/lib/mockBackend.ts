@@ -32,6 +32,7 @@ import type {
   CategoryInfo,
   ConsumptionEntry,
   DailyStats,
+  ModeCount,
   Dashboard,
   DayPoint,
   EatenSnack,
@@ -2468,6 +2469,18 @@ export async function mockInvoke<T>(cmd: string, args: Record<string, unknown>):
         c.total += 1;
         c[q.tier] += 1;
       }
+      // Mirrors commands::mode_counts: a mode's questions by tab, genre and part of speech.
+      const modeCounts = new Map<string, ModeCount>();
+      for (const q of questions) {
+        const pos = q.kind === "word" ? (posOf[q.key] ?? null) : null;
+        const id = `${q.tier}|${q.category}|${pos}`;
+        let m = modeCounts.get(id);
+        if (!m) {
+          m = { tier: q.tier, category: q.category, pos, choice: 0, typing: 0, speaking: 0, listening: 0 };
+          modeCounts.set(id, m);
+        }
+        for (const mode of ["choice", "typing", "speaking", "listening"] as const) if (offersMode(q, mode)) m[mode] += 1;
+      }
       const dash: Dashboard = {
         user: { ...state.user },
         today: { ...daily(t) },
@@ -2479,6 +2492,7 @@ export async function mockInvoke<T>(cmd: string, args: Record<string, unknown>):
           pos,
           total: questions.filter((q) => q.tier === "word" && posOf[q.key] === pos).length,
         })),
+        modeCounts: [...modeCounts.values()],
         dueReviewCount: dueCount(),
         ticketsAvailable: ticketsAvailable(),
         kcalRates: { ...RATES },
