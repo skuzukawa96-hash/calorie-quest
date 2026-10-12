@@ -89,6 +89,9 @@ pub struct WordNotes {
     /// irregular verbs: the word's own forms (buy – bought – bought), or those of the verbs a
     /// sentence uses
     pub irregular: Vec<IrregularVerb>,
+    /// for a word whose meaning has moved far from its base word's (hardly from hard): how
+    /// (「やっとのことで」から「ほとんど〜ない」に)
+    pub shift: Option<String>,
 }
 
 impl WordNotes {
@@ -160,10 +163,13 @@ pub struct WordUsage {
     pub example_ja: String,
 }
 
-/// One piece of a word: a prefix ("pre"), a root ("paid") or a suffix ("ness"), with its meaning.
+/// One piece of a word: a prefix ("pre"), a root ("paid") or a suffix ("ness"), with its meaning;
+/// or the word of the dictionary it is made from, its 元の語 (accuse of accusation, in the sense it
+/// keeps), and for a base whose spelling changes beyond a suffix (speak → speech) what it becomes.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WordPart {
-    /// "prefix" / "root" / "suffix"
+    /// "prefix" / "root" / "suffix" / "base" (元の語, a word of the dictionary) / "change"
+    /// (つづりを変えて: the base made another part of speech by a change of spelling; no text)
     pub kind: String,
     pub text: String,
     pub ja: String,
@@ -171,6 +177,10 @@ pub struct WordPart {
     /// opened by clicking the piece. Only where data/word-families.json lists the word.
     #[serde(default, skip_deserializing, skip_serializing_if = "Option::is_none")]
     pub family: Option<PartFamily>,
+    /// For a base word: how it is built in turn, where data/word-parts.json has it (reimburse:
+    /// re-「元へ」+ imburse「支払う」), shown under the row
+    #[serde(default, skip_deserializing, skip_serializing_if = "Option::is_none")]
+    pub chain: Option<Vec<WordPart>>,
 }
 
 /// Words sharing a piece in one sense. A piece that means different things in different words

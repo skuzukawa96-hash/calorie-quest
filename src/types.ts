@@ -33,13 +33,19 @@ export interface Question {
   point?: string | null;
 }
 
-/** One piece of a word: pre- 「前もって」, paid 「支払った」, -ness 「〜であること」. */
+/**
+ * One piece of a word: pre- 「前もって」, paid 「支払った」, -ness 「〜であること」; or the word it is
+ * made from, its 元の語 (`base`: accuse of accusation, in the sense it keeps), and for a base
+ * whose spelling changes beyond a suffix what it becomes (`change`, no text: speak → speech).
+ */
 export interface WordPart {
-  kind: "prefix" | "root" | "suffix";
+  kind: "prefix" | "root" | "suffix" | "base" | "change";
   text: string;
   ja: string;
   /** other words with this piece in the same sense, shown when the piece is clicked */
   family?: PartFamily | null;
+  /** for a base word: how it is built in turn, where the data splits it (reimburse: re- + imburse) */
+  chain?: WordPart[] | null;
 }
 
 /**
@@ -99,6 +105,8 @@ export interface WordNotes {
   used: UsedWord[];
   /** irregular verbs: the word's own forms (buy – bought – bought), or those of the verbs a sentence uses */
   irregular: IrregularVerb[];
+  /** for a word whose meaning has moved far from its base word's (hardly from hard): how */
+  shift?: string | null;
 }
 
 /**

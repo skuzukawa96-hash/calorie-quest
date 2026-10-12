@@ -2545,6 +2545,56 @@ button.option:hover:not(:disabled) {
   background: #eef7f1;
   border-color: #c6e3cf;
 }
+/* 元の語: a word of the dictionary (read on a click, saved to the recipe on a right click) */
+.wp-base {
+  background: #eef4fb;
+  border-color: #c3d6ee;
+  align-items: center;
+}
+.wp-base .pos-tags {
+  margin: 0 -2px 0 1px;
+}
+.wp-base .pos-sense-sep {
+  color: var(--muted);
+}
+.wp-change {
+  background: #f6f1fa;
+  border-color: #dccbea;
+}
+.wp-caret-btn {
+  padding: 0 2px;
+  border: none;
+  background: none;
+  cursor: pointer;
+}
+/* The base word's own pieces, under the row: reimburse の成り立ち re- ＋ imburse */
+.wp-chain {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+  margin: 5px 0 2px 4.6em;
+  font-size: 13px;
+  color: var(--muted);
+}
+.wp-chain > b {
+  color: var(--choco-light);
+}
+.wp-chain .wp {
+  padding: 1px 7px;
+  font-size: 12.5px;
+}
+/* A meaning moved far from the base's (hardly from hard) */
+.wp-shift {
+  display: inline-block;
+  margin: 5px 0 2px 4.6em;
+  padding: 1px 10px;
+  border: 1px solid #f1d49a;
+  border-radius: 999px;
+  background: #fff4dc;
+  color: #9a5b00;
+  font-size: 12px;
+}
 .wp-sign {
   color: var(--muted);
 }

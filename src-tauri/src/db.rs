@@ -726,15 +726,28 @@ pub fn grammar_notes() -> &'static HashMap<String, GrammarNoteSeed> {
 struct WordPartsSeed {
     en: String,
     parts: Vec<crate::models::WordPart>,
+    /// for a word whose meaning has moved far from its base word's: how (hardly:
+    /// 「やっとのことで」から「ほとんど〜ない」に)
+    #[serde(default)]
+    shift: Option<String>,
+}
+
+fn word_parts_seed() -> &'static [WordPartsSeed] {
+    static LIST: std::sync::OnceLock<Vec<WordPartsSeed>> = std::sync::OnceLock::new();
+    LIST.get_or_init(|| serde_json::from_str(WORD_PARTS_JSON).expect("data/word-parts.json must be a valid JSON array"))
 }
 
 /// Word question English (lowercase) → its parts, for the explanation under a word's answer.
 pub fn word_parts() -> &'static HashMap<String, Vec<crate::models::WordPart>> {
     static TABLE: std::sync::OnceLock<HashMap<String, Vec<crate::models::WordPart>>> = std::sync::OnceLock::new();
+    TABLE.get_or_init(|| word_parts_seed().iter().map(|w| (w.en.to_lowercase(), w.parts.clone())).collect())
+}
+
+/// English (lowercase) → how far its meaning has moved from its base word's, where it has.
+fn part_shifts() -> &'static HashMap<String, String> {
+    static TABLE: std::sync::OnceLock<HashMap<String, String>> = std::sync::OnceLock::new();
     TABLE.get_or_init(|| {
-        let list: Vec<WordPartsSeed> =
-            serde_json::from_str(WORD_PARTS_JSON).expect("data/word-parts.json must be a valid JSON array");
-        list.into_iter().map(|w| (w.en.to_lowercase(), w.parts)).collect()
+        word_parts_seed().iter().filter_map(|w| Some((w.en.to_lowercase(), w.shift.clone()?))).collect()
     })
 }
 
@@ -808,14 +821,19 @@ fn part_family(word: &str, part: &crate::models::WordPart) -> Option<crate::mode
     })
 }
 
-/// A word's parts, each with the words that share it where there are some.
+/// A word's parts, each with the words that share it where there are some, and a base word with
+/// how it is built in turn (one step: the pieces of reimburse under reimbursement, not theirs).
 fn parts_with_families(key: &str) -> Vec<crate::models::WordPart> {
     word_parts()
         .get(key)
         .map(|parts| {
             parts
                 .iter()
-                .map(|p| crate::models::WordPart { family: part_family(key, p), ..p.clone() })
+                .map(|p| crate::models::WordPart {
+                    family: part_family(key, p),
+                    chain: if p.kind == "base" { word_parts().get(&p.text.to_lowercase()).cloned() } else { None },
+                    ..p.clone()
+                })
                 .collect()
         })
         .unwrap_or_default()
@@ -1490,6 +1508,7 @@ pub fn word_notes(word: &str) -> Option<crate::models::WordNotes> {
         related: related_groups(&key),
         used: Vec::new(),
         irregular: Vec::new(),
+        shift: part_shifts().get(&key).cloned(),
     };
     (!notes.is_empty()).then_some(notes)
 }
@@ -2672,7 +2691,11 @@ mod tests {
     /// Each word split into parts is a word of the dictionary (a word question, or a glossary word
     /// a related word list or the recipe can show), is split into at least two meaningful pieces,
     /// and its pieces spell the word give or take a letter or two ("beauty" + "ful" for beautiful,
-    /// "write" + "er" for writer): so no entry drifts from its word.
+    /// "write" + "er" for writer): so no entry drifts from its word. A base word (元の語) is a word
+    /// of the dictionary given in senses it has there (object 反対する, not 物体), at most one to
+    /// a word; its spelling may change a letter more as the suffix joins (receive → reception),
+    /// and one that changes beyond that (speak → speech) is a base and a つづりを変えて alone. A
+    /// shift is said only of a word with a base.
     #[test]
     fn word_parts_split_real_words_into_their_pieces() {
         fn distance(a: &str, b: &str) -> usize {
@@ -2687,22 +2710,73 @@ mod tests {
             }
             prev[b.len()]
         }
-        let list: Vec<WordPartsSeed> = serde_json::from_str(WORD_PARTS_JSON).unwrap();
+        let (words, _) = words_by_english();
+        // Every sense the dictionary gives a word: its questions', the glossary's, verb-types.json's.
+        let senses_of = |en: &str| -> Vec<String> {
+            let mut known: Vec<String> =
+                words.get(en).into_iter().flatten().flat_map(|(ja, _, _)| gloss_senses(ja)).collect();
+            known.extend(glossary_table().get(en).map(|g| gloss_senses(g)).unwrap_or_default());
+            if let Some(crate::models::VerbType::BySense(each)) = verb_types().get(en) {
+                known.extend(each.iter().flat_map(|(_, ja)| gloss_senses(ja)));
+            }
+            known
+        };
+        let list = word_parts_seed();
         assert!(list.len() >= 300, "only {} words have parts", list.len());
         let mut seen = HashSet::new();
-        for w in &list {
+        for w in list {
             let en = w.en.to_lowercase();
             assert!(seen.insert(en.clone()), "{} is split twice", w.en);
             assert!(is_known_word(&en), "{} is not in the dictionary", w.en);
-            assert!(w.parts.len() >= 2, "{} is split into fewer than two parts", w.en);
             for p in &w.parts {
-                assert!(["prefix", "root", "suffix"].contains(&p.kind.as_str()), "{}: kind {:?}", w.en, p.kind);
-                assert!(!p.text.trim().is_empty() && !p.ja.trim().is_empty(), "{}: an empty part", w.en);
+                let kinds = ["prefix", "root", "suffix", "base", "change"];
+                assert!(kinds.contains(&p.kind.as_str()), "{}: kind {:?}", w.en, p.kind);
+                assert!(!p.ja.trim().is_empty(), "{}: a part without its meaning", w.en);
+                assert_eq!(p.text.trim().is_empty(), p.kind == "change", "{}: {:?} {:?}", w.en, p.kind, p.text);
             }
-            let joined: String = w.parts.iter().map(|p| p.text.to_lowercase()).collect();
-            assert!(distance(&joined, &en) <= 2, "{}: the parts spell {joined:?}", w.en);
+            let bases: Vec<_> = w.parts.iter().filter(|p| p.kind == "base").collect();
+            assert!(bases.len() <= 1, "{}: two base words", w.en);
+            for b in &bases {
+                let base = b.text.to_lowercase();
+                assert!(base != en && is_known_word(&base), "{}: its base {} is not in the dictionary", w.en, b.text);
+                let known = senses_of(&base);
+                for s in gloss_senses(&b.ja) {
+                    assert!(known.contains(&s), "{}: {s} is none of the senses of its base {}", w.en, b.text);
+                }
+            }
+            if w.parts.iter().any(|p| p.kind == "change") {
+                let kinds: Vec<&str> = w.parts.iter().map(|p| p.kind.as_str()).collect();
+                assert_eq!(kinds, ["base", "change"], "{}: つづりを変えて follows its base alone", w.en);
+            } else {
+                assert!(w.parts.len() >= 2, "{} is split into fewer than two parts", w.en);
+                let joined: String = w.parts.iter().map(|p| p.text.to_lowercase()).collect();
+                let slack = if bases.is_empty() { 2 } else { 3 };
+                assert!(distance(&joined, &en) <= slack, "{}: the parts spell {joined:?}", w.en);
+            }
+            if let Some(shift) = &w.shift {
+                assert!(!bases.is_empty(), "{}: a shift from no base word", w.en);
+                assert!(!shift.trim().is_empty() && shift.chars().count() <= 40, "{}: shift {shift:?}", w.en);
+            }
         }
         assert_eq!(word_parts().len(), list.len());
+    }
+
+    /// A word made from another shows it as its 元の語, with the base's own pieces under it where
+    /// the data splits the base too (reimbursement: reimburse, which is re- + imburse), and a
+    /// meaning moved far from the base's says how (hardly).
+    #[test]
+    fn a_word_shows_the_word_it_is_made_from() {
+        let notes = word_notes("reimbursement").unwrap();
+        let base = notes.parts.iter().find(|p| p.kind == "base").expect("reimbursement has a base");
+        assert_eq!(base.text, "reimburse");
+        let chain = base.chain.as_ref().expect("reimburse is split too");
+        assert!(chain.iter().any(|p| p.kind == "prefix" && p.text == "re"), "{chain:?}");
+        let accusation = word_notes("accusation").unwrap();
+        assert!(accusation.parts.iter().any(|p| p.kind == "base" && p.text == "accuse"));
+        assert!(accusation.shift.is_none());
+        assert!(word_notes("hardly").unwrap().shift.is_some(), "hardly moved far from hard");
+        let speech = word_notes("speech").unwrap();
+        assert_eq!(speech.parts.iter().map(|p| p.kind.as_str()).collect::<Vec<_>>(), ["base", "change"]);
     }
 
     /// Recipe reviews used to be counted in halves of a calorie, then quarters. A database from

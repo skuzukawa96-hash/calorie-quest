@@ -971,9 +971,13 @@ function grammarNoteFor(q: Question): GrammarNote | null {
   return note ? { title: note.title, body: note.body, example: note.example } : null;
 }
 
-/** Mirrors db::word_parts: a word's prefix, root and suffix, keyed by its English. */
+/** Mirrors db::word_parts: a word's prefix, root and suffix (or base word), keyed by its English. */
 const wordPartsByWord = new Map(
   (wordPartsList as { en: string; parts: WordPart[] }[]).map((w) => [w.en.toLowerCase(), w.parts]),
+);
+/** Mirrors db::part_shifts: how far a word's meaning has moved from its base word's. */
+const partShifts = new Map(
+  (wordPartsList as { en: string; shift?: string }[]).flatMap((w) => (w.shift ? [[w.en.toLowerCase(), w.shift]] : [])),
 );
 
 interface FamilySeed {
@@ -991,7 +995,10 @@ for (const f of wordFamilies as FamilySeed[]) {
   for (const m of f.members) for (const form of f.forms) familyIndex.set(`${m.word.toLowerCase()}|${form}`, f);
 }
 
-/** Mirrors db::parts_with_families: a word's parts, each with the words sharing it, if any. */
+/**
+ * Mirrors db::parts_with_families: a word's parts, each with the words sharing it, if any, and a
+ * base word with how it is built in turn (one step).
+ */
 function partsWithFamilies(key: string): WordPart[] {
   return (wordPartsByWord.get(key) ?? []).map((p) => {
     const f = familyIndex.get(`${key}|${p.text.toLowerCase()}`);
@@ -999,7 +1006,12 @@ function partsWithFamilies(key: string): WordPart[] {
       .filter((m) => m.word.toLowerCase() !== key)
       .slice(0, f?.limit ?? 3)
       .map((m) => ({ ...m, parts: wordPartsByWord.get(m.word.toLowerCase()) ?? [] }));
-    return f && members.length ? { ...p, family: { ja: f.ja, origin: f.origin ?? null, forms: f.forms, members } } : p;
+    const chain = p.kind === "base" ? wordPartsByWord.get(p.text.toLowerCase()) : undefined;
+    return {
+      ...p,
+      ...(f && members.length ? { family: { ja: f.ja, origin: f.origin ?? null, forms: f.forms, members } } : {}),
+      ...(chain ? { chain } : {}),
+    };
   });
 }
 
@@ -1096,6 +1108,7 @@ function wordNotes(word: string): WordNotes | null {
     related: relatedGroups(key),
     used: [],
     irregular: [],
+    shift: partShifts.get(key) ?? null,
   };
   return notesAreEmpty(notes) ? null : notes;
 }
