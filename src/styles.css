@@ -2823,14 +2823,46 @@ button.wp-link.open {
   flex-direction: column;
   gap: 6px;
 }
-.log-list li {
-  display: flex;
-  align-items: center;
-  gap: 12px;
+.log-list > li {
   background: #fff;
   border: 1px solid var(--line);
   border-radius: 12px;
   padding: 8px 12px;
+}
+.log-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+/* The same snack eaten again: 飴一粒 ×8, opened by its undo into the records one by one */
+.log-count {
+  margin-left: 4px;
+  color: var(--choco);
+}
+.log-stack.open {
+  border-color: var(--caramel-light);
+}
+.icon-btn.undo.open {
+  color: var(--choco);
+  background: var(--cream-2);
+}
+.log-stack-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 4px 0 0 34px;
+  border-top: 1px dashed var(--line);
+  display: flex;
+  flex-direction: column;
+}
+.log-stack-list li + li {
+  border-top: 1px dotted var(--line);
+}
+.log-stack-list .log-row {
+  padding: 2px 0;
+  font-size: 14px;
+}
+.log-stack-list .log-icon {
+  font-size: 18px;
 }
 .log-icon {
   font-size: 22px;

@@ -75,6 +75,43 @@ function compare(key: SortKey, a: Snack, b: Snack): number {
   }
 }
 
+/** The same snack eaten again and again in a day, kept as one row: 飴一粒 ×8 −240 kcal. */
+interface LogStack {
+  key: string;
+  /** in the order eaten */
+  entries: ConsumptionEntry[];
+}
+
+/**
+ * The day's log with each snack's records stacked: the same name, icon and calories (and whether a
+ * ticket paid for it) are the same snack. A stack is placed by the time of its first record, the
+ * time it shows, newest first as the log is.
+ */
+function stackLog(log: ConsumptionEntry[]): LogStack[] {
+  const byKey = new Map<string, ConsumptionEntry[]>();
+  for (const e of log) {
+    const key = [e.snackName, e.snackIcon, e.calories, e.withTicket].join("|");
+    byKey.set(key, [...(byKey.get(key) ?? []), e]);
+  }
+  const eaten = (a: ConsumptionEntry, b: ConsumptionEntry) => a.eatenAt.localeCompare(b.eatenAt) || a.id - b.id;
+  return [...byKey]
+    .map(([key, entries]) => ({ key, entries: entries.slice().sort(eaten) }))
+    .sort((a, b) => eaten(b.entries[0], a.entries[0]));
+}
+
+/** One record of today's log: what was eaten, its calories (or the ticket) and when, with its undo. */
+function LogRow({ e, busy, onUndo }: { e: ConsumptionEntry; busy: boolean; onUndo: () => void }) {
+  return (
+    <div className="log-row">
+      <span className="log-icon">{e.snackIcon}</span>
+      <span className="log-name">{e.snackName}</span>
+      <span className="log-kcal">{e.withTicket ? "🎟 引換券" : `−${e.calories} kcal`}</span>
+      <span className="muted small">{e.eatenAt.slice(11, 16)}</span>
+      <UndoButton disabled={busy} onClick={onUndo} />
+    </div>
+  );
+}
+
 /** Ties fall back to calories and then the order added, always ascending, so rows stay put. */
 function sortSnacks(snacks: Snack[], { key, dir }: SortState): Snack[] {
   const sign = dir === "asc" ? 1 : -1;
@@ -93,6 +130,8 @@ export default function Snacks({ dash, onChanged, ticketMode, onTicketMode, toas
   const [editing, setEditing] = useState<{ id: number; name: string; calories: string; icon: string } | null>(null);
   /** the snack whose × asks "削除する / やめる" */
   const [deleting, setDeleting] = useState<number | null>(null);
+  /** the stack of today's log opened to undo its records one by one */
+  const [openStack, setOpenStack] = useState<string | null>(null);
 
   const reload = useCallback(async () => {
     const [s, l] = await Promise.all([api.listSnacks(), api.getTodayConsumption()]);
@@ -208,15 +247,47 @@ export default function Snacks({ dash, onChanged, ticketMode, onTicketMode, toas
           <div className="muted">まだ何も食べていません。食べたら図鑑のナイフとフォークのボタンで記録しましょう。</div>
         ) : (
           <ul className="log-list">
-            {log.map((e) => (
-              <li key={e.id}>
-                <span className="log-icon">{e.snackIcon}</span>
-                <span className="log-name">{e.snackName}</span>
-                <span className="log-kcal">{e.withTicket ? "🎟 引換券" : `−${e.calories} kcal`}</span>
-                <span className="muted small">{e.eatenAt.slice(11, 16)}</span>
-                <UndoButton disabled={busy} onClick={() => run(async () => { await api.deleteConsumption(e.id); })} />
-              </li>
-            ))}
+            {stackLog(log).map(({ key, entries }) => {
+              const first = entries[0];
+              if (entries.length === 1) {
+                return (
+                  <li key={key}>
+                    <LogRow e={first} busy={busy} onUndo={() => run(async () => { await api.deleteConsumption(first.id); })} />
+                  </li>
+                );
+              }
+              // A stack: one row with the count, the calories of them all and the time of the first;
+              // its undo opens the records one by one, each undone on its own.
+              const open = openStack === key;
+              const total = entries.reduce((n, e) => n + e.calories, 0);
+              return (
+                <li key={key} className={"log-stack" + (open ? " open" : "")}>
+                  <div className="log-row">
+                    <span className="log-icon">{first.snackIcon}</span>
+                    <span className="log-name">
+                      {first.snackName} <b className="log-count">×{entries.length}</b>
+                    </span>
+                    <span className="log-kcal">{first.withTicket ? "🎟 引換券" : `−${total} kcal`}</span>
+                    <span className="muted small">{first.eatenAt.slice(11, 16)}</span>
+                    <UndoButton
+                      label={open ? "一覧を閉じる" : "1つずつ取り消す（一覧を開く）"}
+                      expanded={open}
+                      disabled={busy}
+                      onClick={() => setOpenStack(open ? null : key)}
+                    />
+                  </div>
+                  {open && (
+                    <ul className="log-stack-list">
+                      {entries.map((e) => (
+                        <li key={e.id}>
+                          <LogRow e={e} busy={busy} onUndo={() => run(async () => { await api.deleteConsumption(e.id); })} />
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </li>
+              );
+            })}
           </ul>
         )}
       </section>

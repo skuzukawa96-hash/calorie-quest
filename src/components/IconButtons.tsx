@@ -57,10 +57,26 @@ export function EditButton({ label = "修正する", disabled, onClick }: Common
   );
 }
 
-/** A brown arrow curling back, the usual sign for undo. */
-export function UndoButton({ label = "取り消す", disabled, onClick }: Common & { label?: string }) {
+/**
+ * A brown arrow curling back, the usual sign for undo. `expanded` marks one that opens a list of
+ * what to undo (a stack of the same snack) rather than undoing at once.
+ */
+export function UndoButton({
+  label = "取り消す",
+  disabled,
+  onClick,
+  expanded,
+}: Common & { label?: string; expanded?: boolean }) {
   return (
-    <button type="button" className="icon-btn undo" disabled={disabled} title={label} aria-label={label} onClick={onClick}>
+    <button
+      type="button"
+      className={"icon-btn undo" + (expanded ? " open" : "")}
+      disabled={disabled}
+      title={label}
+      aria-label={label}
+      aria-expanded={expanded}
+      onClick={onClick}
+    >
       <svg viewBox="0 0 24 24" aria-hidden="true">
         <path
           d="M8.5 5.5 4 10l4.5 4.5M4.5 10H14a5.5 5.5 0 0 1 0 11h-3"
