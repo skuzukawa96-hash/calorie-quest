@@ -5,7 +5,7 @@ import { homonymsApart, tagMeaning } from "../lib/pos";
 import type { Dictionary } from "../lib/dictionary";
 import { useAddToRecipe } from "../lib/recipe";
 import { isTtsSupported, speak, speakInTurn } from "../lib/speech";
-import type { IrregularVerb, PartFamily, RelatedGroup, UsedWord, WordNotes, WordPart, WordUsage } from "../types";
+import type { Abbreviation, IrregularVerb, PartFamily, RelatedGroup, UsedWord, WordNotes, WordPart, WordUsage } from "../types";
 
 const PART_LABEL: Record<WordPart["kind"], string> = {
   prefix: "接頭辞",
@@ -387,6 +387,34 @@ function Homonyms({ word, meaning }: { word: string; meaning: string }) {
   );
 }
 
+/**
+ * 正式名称 (an acronym) or 略さない形 (a clipped word): what an abbreviation stands for, the letters
+ * it keeps marked: Magnetic Resonance Imaging, examination with exam marked. An acronym's letters
+ * are capitals, as it writes them. Read aloud unless it is not English (RSVP, a.m.).
+ */
+function AbbreviationLine({ a }: { a: Abbreviation }) {
+  const acronym = a.kind === "acronym";
+  const pieces = a.full.split(/(\[[^\]]*\])/).filter(Boolean);
+  return (
+    <div className="abbr-line">
+      <span className="label">{acronym ? "正式名称" : "略さない形"}</span>
+      <span className="abbr-full">
+        {pieces.map((p, i) =>
+          p.startsWith("[") ? (
+            <b key={i} className="abbr-kept">
+              {acronym ? p.slice(1, -1).toUpperCase() : p.slice(1, -1)}
+            </b>
+          ) : (
+            <Fragment key={i}>{p}</Fragment>
+          ),
+        )}
+      </span>
+      <span className="abbr-ja">{a.lang ? `${a.lang}で「${a.ja}」` : `「${a.ja}」`}</span>
+      {!a.lang && <SpeakButton text={a.full.replace(/[[\]]/g, "")} />}
+    </div>
+  );
+}
+
 export default function WordNotesPanel({
   notes,
   word,
@@ -401,12 +429,13 @@ export default function WordNotesPanel({
   /** show meanings on hover (the study screen's 単語の意味 toggle) */
   gloss: boolean;
 }) {
-  const { parts, examples, usages, origin, related, used, irregular = [], shift } = notes;
+  const { parts, examples, usages, origin, related, used, irregular = [], shift, abbreviation } = notes;
   // Keyed by the word, so the next question starts closed without remounting the panel.
   const [openFor, setOpenFor] = useState<string | null>(null);
   const relatedOpen = openFor === word;
   return (
     <>
+      {abbreviation && <AbbreviationLine a={abbreviation} />}
       <Homonyms word={word} meaning={meaning} />
       {irregular.length > 0 && (
         <div className="irregular-line">

@@ -2512,6 +2512,26 @@ button.option:hover:not(:disabled) {
   align-items: baseline;
   gap: 8px;
 }
+/* 正式名称 / 略さない形: MRI → Magnetic Resonance Imaging, the letters it keeps marked */
+.abbr-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+}
+.abbr-line > .label {
+  flex-shrink: 0;
+}
+.abbr-full {
+  font-size: 15.5px;
+  color: var(--choco);
+}
+.abbr-kept {
+  color: var(--caramel-dark);
+}
+.abbr-ja {
+  color: var(--choco-light);
+}
 .word-parts > .label {
   flex-shrink: 0;
 }

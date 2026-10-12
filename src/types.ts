@@ -72,6 +72,18 @@ export interface FamilyMember {
   parts: WordPart[];
 }
 
+/**
+ * What an abbreviation stands for, the letters it keeps in brackets: "[m]agnetic [r]esonance
+ * [i]maging" (an acronym, 正式名称), "[exam]ination" (a clipped word, 略さない形); `lang` names a
+ * language other than English (RSVP: フランス語).
+ */
+export interface Abbreviation {
+  kind: "acronym" | "clipping";
+  full: string;
+  ja: string;
+  lang?: string | null;
+}
+
 /** A sentence using a word, with its Japanese. */
 export interface ExampleSentence {
   en: string;
@@ -107,6 +119,8 @@ export interface WordNotes {
   irregular: IrregularVerb[];
   /** for a word whose meaning has moved far from its base word's (hardly from hard): how */
   shift?: string | null;
+  /** for an abbreviation: what it stands for (MRI: magnetic resonance imaging) */
+  abbreviation?: Abbreviation | null;
 }
 
 /**

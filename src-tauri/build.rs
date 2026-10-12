@@ -57,6 +57,7 @@ fn is_pack(name: &str) -> bool {
         && name != "pos-order.json"
         && name != "sense-pos.json"
         && name != "homonyms.json"
+        && name != "abbreviations.json"
         && !name.starts_with("exam-")
 }
 

@@ -92,6 +92,21 @@ pub struct WordNotes {
     /// for a word whose meaning has moved far from its base word's (hardly from hard): how
     /// (「やっとのことで」から「ほとんど〜ない」に)
     pub shift: Option<String>,
+    /// for an abbreviation: what it stands for (MRI: magnetic resonance imaging)
+    pub abbreviation: Option<Abbreviation>,
+}
+
+/// What an abbreviation stands for: the letters it keeps marked in brackets ("[m]agnetic
+/// [r]esonance [i]maging", "[exam]ination"), what that means, and the language when it is not
+/// English (RSVP: フランス語).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Abbreviation {
+    /// "acronym" (each letter a word, 正式名称) or "clipping" (a word cut short, 略さない形)
+    pub kind: String,
+    pub full: String,
+    pub ja: String,
+    #[serde(default)]
+    pub lang: Option<String>,
 }
 
 impl WordNotes {
@@ -103,6 +118,7 @@ impl WordNotes {
             && self.related.is_empty()
             && self.used.is_empty()
             && self.irregular.is_empty()
+            && self.abbreviation.is_none()
     }
 }
 

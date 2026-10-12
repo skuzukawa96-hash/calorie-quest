@@ -59,6 +59,8 @@ const GLOSSARY_POS_JSON: &str = include_str!("../data/glossary-pos.json");
 const SENSE_POS_JSON: &str = include_str!("../data/sense-pos.json");
 /// Words of the same spelling as a word question (bark 樹皮 / ほえる), each as the senses that are its.
 const HOMONYMS_JSON: &str = include_str!("../data/homonyms.json");
+/// What an abbreviation stands for (MRI: magnetic resonance imaging, exam: examination).
+const ABBREVIATIONS_JSON: &str = include_str!("../data/abbreviations.json");
 /// Word questions taken out of the bank (moat, kiln: words of a specialist or a rare kind, beyond
 /// what school and TOEIC ask), key → English. Their meaning stays in the glossary; the keys are
 /// never given to another question.
@@ -1509,8 +1511,18 @@ pub fn word_notes(word: &str) -> Option<crate::models::WordNotes> {
         used: Vec::new(),
         irregular: Vec::new(),
         shift: part_shifts().get(&key).cloned(),
+        // "a.m." and "a.m" alike
+        abbreviation: abbreviations().get(key.trim_end_matches('.')).cloned(),
     };
     (!notes.is_empty()).then_some(notes)
+}
+
+/// abbreviations.json: an abbreviation (lowercase, "a.m" without its last dot) → what it stands for.
+fn abbreviations() -> &'static HashMap<String, crate::models::Abbreviation> {
+    static TABLE: std::sync::OnceLock<HashMap<String, crate::models::Abbreviation>> = std::sync::OnceLock::new();
+    TABLE.get_or_init(|| {
+        serde_json::from_str(ABBREVIATIONS_JSON).expect("data/abbreviations.json must be a valid JSON object")
+    })
 }
 
 /* ---------- irregular verbs ---------- */
@@ -2493,6 +2505,7 @@ mod tests {
                     && n != "pos-order.json"
                     && n != "sense-pos.json"
                     && n != "homonyms.json"
+                    && n != "abbreviations.json"
                     && !n.starts_with("exam-")
             })
             .count();
@@ -2759,6 +2772,43 @@ mod tests {
             }
         }
         assert_eq!(word_parts().len(), list.len());
+    }
+
+    /// An abbreviation of the dictionary spells out what it stands for, the letters it keeps marked
+    /// in brackets: an acronym's marks are its letters (MRI: [m]agnetic [r]esonance [i]maging), a
+    /// clipped word's begin it (fridge: re[frig]erator); a word not shortened letter by letter
+    /// (bike: bicycle) marks none. The explanation of MRI shows it.
+    #[test]
+    fn abbreviations_spell_out_what_they_stand_for() {
+        let letters = |s: &str| s.chars().filter(|c| c.is_alphabetic()).flat_map(char::to_lowercase).collect::<String>();
+        assert!(abbreviations().len() >= 20);
+        for (key, a) in abbreviations() {
+            assert_eq!(key, &key.to_lowercase(), "{key}: keys are lowercase");
+            assert!(is_known_word(key) || is_known_word(&format!("{key}.")), "{key} is not in the dictionary");
+            assert!(["acronym", "clipping"].contains(&a.kind.as_str()), "{key}: kind {:?}", a.kind);
+            assert!(!a.full.trim().is_empty() && !a.ja.trim().is_empty(), "{key}: nothing spelled out");
+            assert!(a.lang.as_ref().is_none_or(|l| !l.trim().is_empty()), "{key}: an empty language");
+            let (mut marks, mut depth) = (String::new(), 0);
+            for c in a.full.chars() {
+                match c {
+                    '[' => depth += 1,
+                    ']' => depth -= 1,
+                    _ if depth == 1 => marks.push(c),
+                    _ => {}
+                }
+                assert!((0..=1).contains(&depth), "{key}: brackets of {:?}", a.full);
+            }
+            assert_eq!(depth, 0, "{key}: brackets of {:?}", a.full);
+            let marks = letters(&marks);
+            if a.kind == "acronym" {
+                assert_eq!(marks, letters(key), "{key}: the marks of {:?}", a.full);
+            } else {
+                assert!(letters(key).starts_with(&marks), "{key}: the marks of {:?}", a.full);
+            }
+        }
+        let mri = word_notes("MRI").and_then(|n| n.abbreviation).expect("MRI is spelled out");
+        assert_eq!(mri.full, "[m]agnetic [r]esonance [i]maging");
+        assert!(word_notes("a.m.").and_then(|n| n.abbreviation).is_some(), "a.m. with its last dot");
     }
 
     /// A word made from another shows it as its 元の語, with the base's own pieces under it where

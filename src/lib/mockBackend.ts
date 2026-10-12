@@ -19,6 +19,7 @@ import glossaryPosOverrides from "../../src-tauri/data/glossary-pos.json";
 import posOrder from "../../src-tauri/data/pos-order.json";
 import sensePos from "../../src-tauri/data/sense-pos.json";
 import homonymGroups from "../../src-tauri/data/homonyms.json";
+import abbreviationList from "../../src-tauri/data/abbreviations.json";
 import examBasic from "../../src-tauri/data/exam-basic.json";
 import exam600 from "../../src-tauri/data/exam-600.json";
 import exam800 from "../../src-tauri/data/exam-800.json";
@@ -71,6 +72,7 @@ import type {
   UserInfo,
   WeakQuestion,
   WordNotes,
+  Abbreviation,
   WordTags,
   WordPart,
   WordUsage,
@@ -249,7 +251,7 @@ const seedQuestions: SeedQuestion[] = [
   ...Object.entries(packModules)
     .filter(
       ([path]) =>
-        !/\/(questions|glossary|grammar-notes|pronunciations|word-parts|tiers|word-examples|word-usage|idiom-origins|word-related|word-pos|word-confusables|word-families|irregular-verbs|verb-types|glossary-pos|retired-words|pos-order|sense-pos|homonyms|exam-[^/]*)\.json$/.test(
+        !/\/(questions|glossary|grammar-notes|pronunciations|word-parts|tiers|word-examples|word-usage|idiom-origins|word-related|word-pos|word-confusables|word-families|irregular-verbs|verb-types|glossary-pos|retired-words|pos-order|sense-pos|homonyms|abbreviations|exam-[^/]*)\.json$/.test(
           path,
         ),
     )
@@ -1109,13 +1111,16 @@ function wordNotes(word: string): WordNotes | null {
     used: [],
     irregular: [],
     shift: partShifts.get(key) ?? null,
+    // Mirrors db::abbreviations: "a.m." and "a.m" alike.
+    abbreviation: (abbreviationList as Record<string, Abbreviation>)[key.replace(/\.$/, "")] ?? null,
   };
   return notesAreEmpty(notes) ? null : notes;
 }
 
 function notesAreEmpty(n: WordNotes): boolean {
   return (
-    !n.parts.length && !n.examples.length && !n.usages.length && !n.origin && !n.related.length && !n.used.length && !n.irregular.length
+    !n.parts.length && !n.examples.length && !n.usages.length && !n.origin && !n.related.length && !n.used.length && !n.irregular.length &&
+    !n.abbreviation
   );
 }
 
