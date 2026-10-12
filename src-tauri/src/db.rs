@@ -2776,7 +2776,7 @@ mod tests {
 
     /// An abbreviation of the dictionary spells out what it stands for, the letters it keeps marked
     /// in brackets: an acronym's marks are its letters (MRI: [m]agnetic [r]esonance [i]maging), a
-    /// clipped word's begin it (fridge: re[frig]erator); a word not shortened letter by letter
+    /// clipped word's begin it (fridge: re[fri]gerator, TV: [t]ele[v]ision); a word not shortened letter by letter
     /// (bike: bicycle) marks none. The explanation of MRI shows it.
     #[test]
     fn abbreviations_spell_out_what_they_stand_for() {

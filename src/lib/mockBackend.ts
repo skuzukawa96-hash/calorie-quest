@@ -981,6 +981,8 @@ const wordPartsByWord = new Map(
 const partShifts = new Map(
   (wordPartsList as { en: string; shift?: string }[]).flatMap((w) => (w.shift ? [[w.en.toLowerCase(), w.shift]] : [])),
 );
+/** Mirrors db::abbreviations: an abbreviation (lowercase, "a.m" without its last dot) → what it stands for. */
+const abbreviations = new Map(Object.entries(abbreviationList as Record<string, Abbreviation>));
 
 interface FamilySeed {
   id: string;
@@ -1111,8 +1113,8 @@ function wordNotes(word: string): WordNotes | null {
     used: [],
     irregular: [],
     shift: partShifts.get(key) ?? null,
-    // Mirrors db::abbreviations: "a.m." and "a.m" alike.
-    abbreviation: (abbreviationList as Record<string, Abbreviation>)[key.replace(/\.$/, "")] ?? null,
+    // "a.m." and "a.m" alike (db::word_notes trims every last dot)
+    abbreviation: abbreviations.get(key.replace(/\.+$/, "")) ?? null,
   };
   return notesAreEmpty(notes) ? null : notes;
 }

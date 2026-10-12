@@ -20,7 +20,7 @@
 "gps": {"kind": "acronym", "full": "[g]lobal [p]ositioning [s]ystem", "ja": "全地球測位システム"},
 "gym": {"kind": "clipping", "full": "[gym]nasium", "ja": "体育館"},
 "hr": {"kind": "acronym", "full": "[h]uman [r]esources", "ja": "人事（部）"},
-"id": {"kind": "acronym", "full": "[id]entification", "ja": "身分証明（書）"},
+"id": {"kind": "clipping", "full": "[id]entification", "ja": "身分証明（書）"},
 "inc": {"kind": "clipping", "full": "[inc]orporated", "ja": "法人化された（株式会社）"},
 "lab": {"kind": "clipping", "full": "[lab]oratory", "ja": "研究室、実験室"},
 "math": {"kind": "clipping", "full": "[math]ematics", "ja": "数学"},
@@ -38,7 +38,7 @@
 "specs": {"kind": "clipping", "full": "[spec]ification[s]", "ja": "仕様"},
 "stats": {"kind": "clipping", "full": "[stat]istic[s]", "ja": "統計"},
 "tech": {"kind": "clipping", "full": "[tech]nology", "ja": "技術"},
-"tv": {"kind": "acronym", "full": "[t]ele[v]ision", "ja": "テレビ"},
+"tv": {"kind": "clipping", "full": "[t]ele[v]ision", "ja": "テレビ"},
 "un": {"kind": "acronym", "full": "the [U]nited [N]ations", "ja": "国際連合"},
 "vet": {"kind": "clipping", "full": "[vet]erinarian", "ja": "獣医"},
 "zoo": {"kind": "clipping", "full": "[zoo]logical garden", "ja": "動物園"}
