@@ -250,23 +250,36 @@ fn point(date: String, weight_kg: f64, height_cm: f64) -> WeightPoint {
     WeightPoint { date, weight_kg, height_cm, bmi: bmi(weight_kg, height_cm) }
 }
 
-/// Records today's weight at the height given (which is kept for the next time), and pays
-/// [`WEIGHT_BONUS_KCAL`]. A day is weighed once: from the home or the 記録, whichever comes first.
-pub fn record_weight_in(conn: &Connection, weight_kg: f64, height_cm: f64) -> CmdResult<WeightResult> {
-    if !weight_kg.is_finite() || !WEIGHT_KG.contains(&weight_kg) {
-        return Err("体重は10〜300 kgの範囲で入力してください".into());
-    }
+/// The height BMI is worked out from: given once in the 記録 and kept (`users.height_cm`) until it
+/// is changed there; it does not change the weights already recorded.
+pub fn set_height_in(conn: &Connection, height_cm: f64) -> CmdResult<f64> {
     if !height_cm.is_finite() || !HEIGHT_CM.contains(&height_cm) {
         return Err("身長は50〜250 cmの範囲で入力してください".into());
     }
-    let (w, h) = (round1(weight_kg), round1(height_cm));
+    let h = round1(height_cm);
+    conn.execute("UPDATE users SET height_cm = ?1 WHERE id = ?2", params![h, USER_ID]).map_err(err)?;
+    Ok(h)
+}
+
+/// Records today's weight at the height kept, and pays [`WEIGHT_BONUS_KCAL`]. A day is weighed
+/// once: from the home or the 記録, whichever comes first.
+pub fn record_weight_in(conn: &Connection, weight_kg: f64) -> CmdResult<WeightResult> {
+    if !weight_kg.is_finite() || !WEIGHT_KG.contains(&weight_kg) {
+        return Err("体重は10〜300 kgの範囲で入力してください".into());
+    }
+    let h: Option<f64> = conn
+        .query_row("SELECT height_cm FROM users WHERE id = ?1", params![USER_ID], |r| r.get(0))
+        .map_err(err)?;
+    let Some(h) = h else {
+        return Err("先に記録の画面で身長を入れてください（BMI の計算に使います）".into());
+    };
+    let w = round1(weight_kg);
     let day = today();
     let now = now_ts();
     if today_weight(conn).map_err(err)?.is_some() {
         return Err("今日の体重はもう記録しました（記録できるのは1日1回です）".into());
     }
     let tx = conn.unchecked_transaction().map_err(err)?;
-    tx.execute("UPDATE users SET height_cm = ?1 WHERE id = ?2", params![h, USER_ID]).map_err(err)?;
     tx.execute(
         "INSERT INTO weight_log (user_id, date, weight_kg, height_cm, bonus_kcal, recorded_at)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
@@ -392,9 +405,15 @@ pub fn delete_task_done(state: State<'_, AppState>, id: i64) -> CmdResult<DailyS
 }
 
 #[tauri::command]
-pub fn record_weight(state: State<'_, AppState>, weight_kg: f64, height_cm: f64) -> CmdResult<WeightResult> {
+pub fn set_height(state: State<'_, AppState>, height_cm: f64) -> CmdResult<f64> {
     let conn = state.db.lock().map_err(err)?;
-    record_weight_in(&conn, weight_kg, height_cm)
+    set_height_in(&conn, height_cm)
+}
+
+#[tauri::command]
+pub fn record_weight(state: State<'_, AppState>, weight_kg: f64) -> CmdResult<WeightResult> {
+    let conn = state.db.lock().map_err(err)?;
+    record_weight_in(&conn, weight_kg)
 }
 
 /* ---------- tests ---------- */
@@ -463,28 +482,33 @@ mod tests {
         assert!(set_goal_task_in(&conn, task.id, true).is_err());
     }
 
-    /// Today's weight is recorded once, from the home or the 記録, and pays 10 kcal. The height is
-    /// kept, and the BMI is worked out from the height of the record.
+    /// The height is given once and kept; today's weight is recorded once (from the home or the
+    /// 記録) at it, pays 10 kcal and makes a BMI. A height changed later leaves the weights recorded.
     #[test]
-    fn a_weight_is_recorded_once_a_day_and_makes_a_bmi() {
+    fn a_weight_is_recorded_once_a_day_at_the_height_kept() {
         let conn = db::init_in_memory().unwrap();
-        assert!(record_weight_in(&conn, 5.0, 170.0).is_err());
-        assert!(record_weight_in(&conn, 60.0, 30.0).is_err());
-        assert!(record_weight_in(&conn, f64::NAN, 170.0).is_err());
+        assert!(record_weight_in(&conn, 60.0).is_err(), "no height yet");
+        assert!(set_height_in(&conn, 30.0).is_err());
+        assert!(set_height_in(&conn, f64::NAN).is_err());
+        assert_eq!(set_height_in(&conn, 170.04).unwrap(), 170.0);
+        assert!(record_weight_in(&conn, 5.0).is_err());
+        assert!(record_weight_in(&conn, f64::NAN).is_err());
         assert!(load_dashboard(&conn).unwrap().weight_today.is_none());
 
         set_play_mode_in(&conn, "easy").unwrap();
-        let first = record_weight_in(&conn, 63.64, 170.0).unwrap();
+        let first = record_weight_in(&conn, 63.64).unwrap();
         assert_eq!(first.bonus, WEIGHT_BONUS_KCAL);
         assert_eq!(first.today.kcal_earned, WEIGHT_BONUS_KCAL, "no ×1.5 for a weight");
-        assert_eq!((first.point.weight_kg, first.point.bmi), (63.6, 22.0));
-        assert!(record_weight_in(&conn, 63.2, 170.0).is_err(), "once a day");
+        assert_eq!((first.point.weight_kg, first.point.height_cm, first.point.bmi), (63.6, 170.0, 22.0));
+        assert!(record_weight_in(&conn, 63.2).is_err(), "once a day");
         assert_eq!(earned(&conn), WEIGHT_BONUS_KCAL);
+
+        set_height_in(&conn, 172.0).unwrap();
         let weights = weights_since(&conn, &today()).unwrap();
         assert_eq!(weights.len(), 1);
-        assert_eq!((weights[0].weight_kg, weights[0].bmi), (63.6, 22.0));
+        assert_eq!((weights[0].weight_kg, weights[0].bmi), (63.6, 22.0), "as recorded");
         let dash = load_dashboard(&conn).unwrap();
-        assert_eq!(dash.user.height_cm, Some(170.0));
+        assert_eq!(dash.user.height_cm, Some(172.0));
         assert_eq!(dash.weight_today.map(|w| w.weight_kg), Some(63.6));
     }
 
@@ -495,7 +519,8 @@ mod tests {
         let conn = db::init_in_memory().unwrap();
         let task = add_task_in(&conn, "腹筋", 40, "").unwrap();
         log_done(&conn, task.id).unwrap();
-        record_weight_in(&conn, 50.0, 160.0).unwrap();
+        set_height_in(&conn, 160.0).unwrap();
+        record_weight_in(&conn, 50.0).unwrap();
         // 7 kcal from study
         crate::commands::credit(&conn, &today(), 7 * crate::srs::EIGHTHS).unwrap();
 

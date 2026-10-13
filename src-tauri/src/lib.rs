@@ -56,6 +56,7 @@ pub fn run() {
             diet::log_one_off_task,
             diet::get_today_tasks,
             diet::delete_task_done,
+            diet::set_height,
             diet::record_weight,
             commands::get_stats,
             commands::get_dictionary,

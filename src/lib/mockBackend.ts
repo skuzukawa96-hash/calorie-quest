@@ -640,15 +640,24 @@ function weightPoint(date: string, w: StoredWeight): WeightPoint {
   return { date, weightKg: w.weightKg, heightCm: w.heightCm, bmi: bmi(w.weightKg, w.heightCm) };
 }
 
-/** Mirrors diet::record_weight_in: today's weight, once a day, paying the daily bonus. */
-function recordWeight(weightKg: number, heightCm: number): WeightResult {
-  if (!(Number.isFinite(weightKg) && weightKg >= 10 && weightKg <= 300)) throw new Error("体重は10〜300 kgの範囲で入力してください");
+const round1 = (v: number) => Math.round(v * 10) / 10;
+
+/** Mirrors diet::set_height_in: the height kept until it is changed. */
+function setHeight(heightCm: number): number {
   if (!(Number.isFinite(heightCm) && heightCm >= 50 && heightCm <= 250)) throw new Error("身長は50〜250 cmの範囲で入力してください");
-  const round1 = (v: number) => Math.round(v * 10) / 10;
+  state.user.heightCm = round1(heightCm);
+  save();
+  return state.user.heightCm;
+}
+
+/** Mirrors diet::record_weight_in: today's weight at the height kept, once a day, paying the daily bonus. */
+function recordWeight(weightKg: number): WeightResult {
+  if (!(Number.isFinite(weightKg) && weightKg >= 10 && weightKg <= 300)) throw new Error("体重は10〜300 kgの範囲で入力してください");
+  const heightCm = state.user.heightCm;
+  if (heightCm == null) throw new Error("先に記録の画面で身長を入れてください（BMI の計算に使います）");
   const t = today();
   if (state.weights[t]) throw new Error("今日の体重はもう記録しました（記録できるのは1日1回です）");
-  state.user.heightCm = round1(heightCm);
-  state.weights[t] = { weightKg: round1(weightKg), heightCm: round1(heightCm), bonus: WEIGHT_BONUS_KCAL };
+  state.weights[t] = { weightKg: round1(weightKg), heightCm, bonus: WEIGHT_BONUS_KCAL };
   daily(t).kcalEarned += WEIGHT_BONUS_KCAL;
   save();
   return { point: weightPoint(t, state.weights[t]), bonus: WEIGHT_BONUS_KCAL, today: { ...daily(t) } };
@@ -2900,8 +2909,10 @@ export async function mockInvoke<T>(cmd: string, args: Record<string, unknown>):
       }
       return { ...daily(t) } as T;
     }
+    case "set_height":
+      return setHeight(Number(args.heightCm)) as T;
     case "record_weight":
-      return recordWeight(Number(args.weightKg), Number(args.heightCm)) as T;
+      return recordWeight(Number(args.weightKg)) as T;
     case "get_stats":
       return getStats() as T;
     case "reset_progress": {

@@ -1,6 +1,6 @@
 import BackupPanel from "../components/BackupPanel";
 import { SwitchViewButton } from "../components/IconButtons";
-import WeightForm, { d1 } from "../components/WeightForm";
+import WeightForm, { d1, HeightSetting } from "../components/WeightForm";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { api } from "../lib/api";
 import {
@@ -172,17 +172,27 @@ export default function Stats({ dietMode, onChanged, toast }: Props) {
             )}
           </h2>
           {showWeight && (
-            <WeightForm
-              askHeight
-              heightCm={stats.heightCm ?? null}
-              today={todayWeight ?? null}
-              bonus={stats.weightBonusKcal}
-              onRecorded={() => {
-                load();
-                onChanged();
-              }}
-              toast={toast}
-            />
+            <div className="weight-head">
+              <HeightSetting
+                heightCm={stats.heightCm ?? null}
+                onSaved={() => {
+                  load();
+                  onChanged();
+                }}
+                toast={toast}
+              />
+              <WeightForm
+                heightCm={stats.heightCm ?? null}
+                today={todayWeight ?? null}
+                bonus={stats.weightBonusKcal}
+                noHeight="身長を入れると体重を記録できます"
+                onRecorded={() => {
+                  load();
+                  onChanged();
+                }}
+                toast={toast}
+              />
+            </div>
           )}
         </div>
         {showWeight ? (

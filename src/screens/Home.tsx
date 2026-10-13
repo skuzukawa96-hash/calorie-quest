@@ -279,6 +279,7 @@ export default function Home({
                 heightCm={user.heightCm ?? null}
                 today={dash.weightToday ?? null}
                 bonus={kcalRates.weightBonus}
+                noHeight="身長を「記録」の体重のグラフで入れると、ここで体重を記録できます"
                 onRecorded={onChanged}
                 toast={toast}
               />

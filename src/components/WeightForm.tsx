@@ -2,32 +2,33 @@ import { useState } from "react";
 import { api } from "../lib/api";
 import { playDone } from "../lib/sfx";
 import type { WeightPoint } from "../types";
+import { EditButton } from "./IconButtons";
 
 /** One decimal always (21.0, not 21). */
 export const d1 = (n: number) => n.toFixed(1);
 
 /**
- * 体重 / 記録 (ダイエット機能): today's weight, from the home's 目標の課題 or the 記録's weight chart,
- * whichever comes first, once a day; recording it pays `bonus` kcal (体重記録のデイリーボーナス).
- * The height comes from the last time (asked for here only when there is none yet, or always with
- * `askHeight`). Once recorded, today's weight and BMI stand in the form's place.
+ * 体重 / 記録 (ダイエット機能): today's weight alone, from the home's 目標の課題 or the 記録's weight
+ * chart, whichever comes first, once a day; recording it pays `bonus` kcal (体重記録のデイリーボーナス).
+ * The BMI is worked out from the height kept (`HeightSetting`); with none yet, `noHeight` says where
+ * to give it and the weight waits. Once recorded, today's weight and BMI stand in the form's place.
  */
 export default function WeightForm({
   heightCm,
   today,
   bonus,
-  askHeight = false,
+  noHeight,
   onRecorded,
   toast,
 }: {
   heightCm: number | null;
   today: WeightPoint | null;
   bonus: number;
-  askHeight?: boolean;
+  /** what to say while there is no height yet */
+  noHeight: string;
   onRecorded: () => void;
   toast: (msg: string, ms?: number) => void;
 }) {
-  const [height, setHeight] = useState(heightCm !== null ? String(heightCm) : "");
   const [weight, setWeight] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -39,12 +40,12 @@ export default function WeightForm({
       </span>
     );
   }
-  const showHeight = askHeight || heightCm === null;
+  if (heightCm === null) return <span className="weight-today">⚖️ {noHeight}</span>;
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setBusy(true);
     try {
-      const r = await api.recordWeight(Number(weight), Number(showHeight ? height : heightCm));
+      const r = await api.recordWeight(Number(weight));
       playDone();
       toast(`⚖️ 体重記録のデイリーボーナス${r.bonus}kcal獲得（${d1(r.point.weightKg)} kg・BMI ${d1(r.point.bmi)}）`, 4000);
       onRecorded();
@@ -56,13 +57,6 @@ export default function WeightForm({
   };
   return (
     <form className="weight-form" onSubmit={(e) => void submit(e)}>
-      {showHeight && (
-        <label>
-          身長
-          <input type="number" inputMode="decimal" step="0.1" min={50} max={250} value={height} onChange={(e) => setHeight(e.target.value)} />
-          cm
-        </label>
-      )}
       <label>
         体重
         <input
@@ -80,11 +74,84 @@ export default function WeightForm({
       <button
         className="btn btn-primary btn-small"
         type="submit"
-        disabled={busy || !weight || (showHeight && !height)}
+        disabled={busy || !weight}
         title={`今日の体重を記録します（1日1回、+${bonus} kcal のデイリーボーナス）`}
       >
         記録 +{bonus} kcal
       </button>
+    </form>
+  );
+}
+
+/**
+ * 身長 in the 記録: given once and kept, so it is shown, not asked for every day; the pencil changes
+ * it (the weights already recorded keep the BMI they had).
+ */
+export function HeightSetting({
+  heightCm,
+  onSaved,
+  toast,
+}: {
+  heightCm: number | null;
+  onSaved: () => void;
+  toast: (msg: string) => void;
+}) {
+  const [editing, setEditing] = useState(heightCm === null);
+  const [height, setHeight] = useState(heightCm !== null ? String(heightCm) : "");
+  const [busy, setBusy] = useState(false);
+
+  if (!editing && heightCm !== null) {
+    return (
+      <span className="height-setting">
+        身長 <b>{d1(heightCm)}</b> cm
+        <EditButton
+          label="身長を変更"
+          onClick={() => {
+            setHeight(String(heightCm));
+            setEditing(true);
+          }}
+        />
+      </span>
+    );
+  }
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    try {
+      const h = await api.setHeight(Number(height));
+      toast(`身長を ${d1(h)} cm にしました（次に変更するまでこの身長で BMI を出します）`);
+      setEditing(false);
+      onSaved();
+    } catch (err) {
+      toast(String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <form className="weight-form" onSubmit={(e) => void submit(e)}>
+      <label>
+        身長
+        <input
+          type="number"
+          inputMode="decimal"
+          step="0.1"
+          min={50}
+          max={250}
+          value={height}
+          autoFocus={heightCm !== null}
+          onChange={(e) => setHeight(e.target.value)}
+        />
+        cm
+      </label>
+      <button className="btn btn-small" type="submit" disabled={busy || !height}>
+        保存
+      </button>
+      {heightCm !== null && (
+        <button className="btn btn-small" type="button" disabled={busy} onClick={() => setEditing(false)}>
+          やめる
+        </button>
+      )}
     </form>
   );
 }

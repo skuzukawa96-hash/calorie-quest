@@ -3281,6 +3281,23 @@ button.wp-link.open {
   padding: 1px 8px;
   font-size: 11.5px;
 }
+/* 記録: the height kept (✎ to change it), then today's weight */
+.weight-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+}
+.height-setting {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.height-setting b {
+  color: var(--choco);
+}
 /* 目標の課題: the weight, then ＋ 課題追加 */
 .goal-head-right {
   display: flex;

@@ -96,8 +96,10 @@ export const api = {
     call<DailyStats>("log_one_off_task", { name, calories, icon }),
   getTodayTasks: () => call<TaskEntry[]>("get_today_tasks"),
   deleteTaskDone: (id: number) => call<DailyStats>("delete_task_done", { id }),
-  /** today's weight at the height given; the first record of a day pays */
-  recordWeight: (weightKg: number, heightCm: number) => call<WeightResult>("record_weight", { weightKg, heightCm }),
+  /** the height BMI is worked out from, kept until it is changed */
+  setHeight: (heightCm: number) => call<number>("set_height", { heightCm }),
+  /** today's weight at the height kept, once a day (it pays the daily bonus) */
+  recordWeight: (weightKg: number) => call<WeightResult>("record_weight", { weightKg }),
   /** 💾 バックアップ: the backups folder and its files, newest first */
   listBackups: () => call<BackupList>("list_backups"),
   createBackup: () => call<BackupInfo>("create_backup"),
