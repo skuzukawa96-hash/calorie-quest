@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
-import { DoneButton, EatButton, UndoButton } from "../components/IconButtons";
+import { DoneButton, EatButton, SwitchViewButton, UndoButton } from "../components/IconButtons";
+import { iconLabel, ItemIcon } from "../components/ItemIcon";
 import { AddCard, BookCard, SNACK_MAX_KCAL, SNACK_WORDS, TASK_MAX_KCAL, TASK_WORDS } from "../components/ItemBook";
 import { api } from "../lib/api";
 import { SNACK_ICONS } from "../lib/snackIcons";
-import { TASK_ICONS } from "../lib/taskIcons";
+import { DEFAULT_TASK_ICON, TASK_ICONS } from "../lib/taskIcons";
 import { playCrunch, playDone } from "../lib/sfx";
 import { remainingKcal, type ConsumptionEntry, type Dashboard, type Snack, type Task, type TaskEntry } from "../types";
 
@@ -14,6 +15,18 @@ interface Props {
   ticketMode: boolean;
   onTicketMode: (on: boolean) => void;
   toast: (msg: string) => void;
+}
+
+/** The お菓子図鑑, or (ダイエット機能) the 課題一覧 in its place: kept for the next time. */
+type Book = "snacks" | "tasks";
+const BOOK_KEY = "cq-snacks-book";
+
+function loadBook(): Book {
+  try {
+    return localStorage.getItem(BOOK_KEY) === "tasks" ? "tasks" : "snacks";
+  } catch {
+    return "snacks";
+  }
 }
 
 /** A row of today's log: a snack eaten (kcal spent) or a 課題 done (kcal earned, ダイエット機能). */
@@ -84,7 +97,9 @@ function logKcal(e: LogEntry, calories = e.calories): string {
 function LogRow({ e, busy, onUndo }: { e: LogEntry; busy: boolean; onUndo: () => void }) {
   return (
     <div className="log-row">
-      <span className="log-icon">{e.icon}</span>
+      <span className="log-icon">
+        <ItemIcon icon={e.icon} />
+      </span>
       <span className="log-name">{e.name}</span>
       <span className={"log-kcal" + (e.kind === "task" ? " earned" : "")}>{logKcal(e)}</span>
       <span className="muted small">{e.at.slice(11, 16)}</span>
@@ -101,6 +116,7 @@ export default function Snacks({ dash, onChanged, ticketMode, onTicketMode, toas
   const [busy, setBusy] = useState(false);
   /** the stack of today's log opened to undo its records one by one */
   const [openStack, setOpenStack] = useState<string | null>(null);
+  const [book, setBook] = useState<Book>(loadBook);
 
   const reload = useCallback(async () => {
     const [s, e, t, d] = await Promise.all([api.listSnacks(), api.getTodayConsumption(), api.listTasks(), api.getTodayTasks()]);
@@ -117,6 +133,20 @@ export default function Snacks({ dash, onChanged, ticketMode, onTicketMode, toas
   }, [reload, toast, day]);
 
   const diet = dash.user.dietMode;
+  // The 課題一覧 is there only with ダイエット機能 on; turned off, the card is the snacks' again.
+  const showTasks = diet && book === "tasks";
+  const switchBook = () => {
+    const next: Book = showTasks ? "snacks" : "tasks";
+    setBook(next);
+    try {
+      localStorage.setItem(BOOK_KEY, next);
+    } catch {
+      /* ignore */
+    }
+  };
+  const switcher = diet && (
+    <SwitchViewButton label={showTasks ? "お菓子図鑑に切り替える" : "課題一覧に切り替える"} onClick={switchBook} />
+  );
   const { today, savings } = dash;
   const budget = remainingKcal(today);
   const tickets = savings.snackTickets;
@@ -213,7 +243,9 @@ export default function Snacks({ dash, onChanged, ticketMode, onTicketMode, toas
               return (
                 <li key={key} className={"log-stack" + (open ? " open" : "")}>
                   <div className="log-row">
-                    <span className="log-icon">{first.icon}</span>
+                    <span className="log-icon">
+                      <ItemIcon icon={first.icon} />
+                    </span>
                     <span className="log-name">
                       {first.name} <b className="log-count">×{entries.length}</b>
                     </span>
@@ -242,84 +274,17 @@ export default function Snacks({ dash, onChanged, ticketMode, onTicketMode, toas
         )}
       </section>
 
-      <BookCard
-        title={
-          <>
-            お菓子図鑑 <span className="snack-count">{snacks.length}種</span>
-          </>
-        }
-        intro="☆ を押すと目標になり、ホームに「あと何問で食べられるか」が表示されます（いくつでも登録できます）。初めから入っているお菓子も、鉛筆で名前・カロリー・アイコンを修正したり、× で削除したりできます。"
-        note={
-          showTickets && <p className="ticket-note">🎟 引換券を使うお菓子の「引換券」を押してください。カロリーを使わずに食べられます。</p>
-        }
-        items={snacks}
-        words={SNACK_WORDS}
-        icons={SNACK_ICONS}
-        maxKcal={SNACK_MAX_KCAL}
-        sortStorage="cq-snack-sort"
-        countOf={(s) => s.eatenCount}
-        goalIds={new Set(dash.goalSnacks.map((g) => g.id))}
-        listClass={showTickets ? "with-tickets" : ""}
-        busy={busy}
-        run={run}
-        toast={toast}
-        setGoal={api.setGoalSnack}
-        update={api.updateSnack}
-        remove={api.deleteSnack}
-        actions={(s) => (
-          <>
-            <EatButton
-              affordable={budget >= s.calories}
-              disabled={busy}
-              onClick={() =>
-                run(async () => {
-                  await api.logSnackEaten(s.id);
-                  playCrunch();
-                  toast(`${s.icon} ${s.name}（${s.calories} kcal）を記録しました`);
-                })
-              }
-            />
-            {showTickets && (
-              <button
-                className="btn-small ticket"
-                disabled={busy}
-                title="お菓子引換券を1枚使って、カロリーを使わずに食べます"
-                onClick={() =>
-                  run(async () => {
-                    await api.eatWithTicket(s.id);
-                    playCrunch();
-                    toast(`🎟 引換券で ${s.icon} ${s.name} を食べました（カロリーは使っていません）`);
-                  })
-                }
-              >
-                🎟 引換券
-              </button>
-            )}
-          </>
-        )}
-      />
-
-      <AddCard
-        title="お菓子を登録する"
-        words={SNACK_WORDS}
-        icons={SNACK_ICONS}
-        defaultIcon="🍰"
-        maxKcal={SNACK_MAX_KCAL}
-        placeholder="例: 近所のケーキ屋のショートケーキ"
-        busy={busy}
-        run={run}
-        toast={toast}
-        add={api.addSnack}
-      />
-
-      {diet && (
+      {/* keyed, so each list keeps its own order and forms when the card switches */}
+      {showTasks ? (
         <>
           <BookCard
+            key="tasks"
             title={
               <>
                 課題一覧 <span className="snack-count">{tasks.length}件</span>
               </>
             }
+            switcher={switcher}
             intro="💪 を押すと達成になり、書いてあるカロリーがもらえます（遊び方モードの倍率は掛かりません。取り消しは上の家計簿から）。☆ を押すと目標になり、ホームの「目標の課題」からも達成を記録できます。初めから入っている課題も、鉛筆で修正したり、× で削除したりできます。"
             items={tasks}
             words={TASK_WORDS}
@@ -342,23 +307,98 @@ export default function Snacks({ dash, onChanged, ticketMode, onTicketMode, toas
                   run(async () => {
                     await api.logTaskDone(t.id);
                     playDone();
-                    toast(`💪 ${t.icon} ${t.name} を達成しました（+${t.calories} kcal）`);
+                    toast(`💪 ${iconLabel(t.icon, t.name)} を達成しました（+${t.calories} kcal）`);
                   })
                 }
               />
             )}
           />
           <AddCard
+            key="add-task"
             title="課題を登録する"
             words={TASK_WORDS}
             icons={TASK_ICONS}
-            defaultIcon="💪"
+            defaultIcon={DEFAULT_TASK_ICON}
             maxKcal={TASK_MAX_KCAL}
             placeholder="例: 腹筋 20回、お風呂掃除、漢字ドリル 1ページ"
             busy={busy}
             run={run}
             toast={toast}
             add={api.addTask}
+          />
+        </>
+      ) : (
+        <>
+          <BookCard
+            key="snacks"
+            title={
+              <>
+                お菓子図鑑 <span className="snack-count">{snacks.length}種</span>
+              </>
+            }
+            switcher={switcher}
+            intro="☆ を押すと目標になり、ホームに「あと何問で食べられるか」が表示されます（いくつでも登録できます）。初めから入っているお菓子も、鉛筆で名前・カロリー・アイコンを修正したり、× で削除したりできます。"
+            note={
+              showTickets && <p className="ticket-note">🎟 引換券を使うお菓子の「引換券」を押してください。カロリーを使わずに食べられます。</p>
+            }
+            items={snacks}
+            words={SNACK_WORDS}
+            icons={SNACK_ICONS}
+            maxKcal={SNACK_MAX_KCAL}
+            sortStorage="cq-snack-sort"
+            countOf={(s) => s.eatenCount}
+            goalIds={new Set(dash.goalSnacks.map((g) => g.id))}
+            listClass={showTickets ? "with-tickets" : ""}
+            busy={busy}
+            run={run}
+            toast={toast}
+            setGoal={api.setGoalSnack}
+            update={api.updateSnack}
+            remove={api.deleteSnack}
+            actions={(s) => (
+              <>
+                <EatButton
+                  affordable={budget >= s.calories}
+                  disabled={busy}
+                  onClick={() =>
+                    run(async () => {
+                      await api.logSnackEaten(s.id);
+                      playCrunch();
+                      toast(`${s.icon} ${s.name}（${s.calories} kcal）を記録しました`);
+                    })
+                  }
+                />
+                {showTickets && (
+                  <button
+                    className="btn-small ticket"
+                    disabled={busy}
+                    title="お菓子引換券を1枚使って、カロリーを使わずに食べます"
+                    onClick={() =>
+                      run(async () => {
+                        await api.eatWithTicket(s.id);
+                        playCrunch();
+                        toast(`🎟 引換券で ${s.icon} ${s.name} を食べました（カロリーは使っていません）`);
+                      })
+                    }
+                  >
+                    🎟 引換券
+                  </button>
+                )}
+              </>
+            )}
+          />
+          <AddCard
+            key="add-snack"
+            title="お菓子を登録する"
+            words={SNACK_WORDS}
+            icons={SNACK_ICONS}
+            defaultIcon="🍰"
+            maxKcal={SNACK_MAX_KCAL}
+            placeholder="例: 近所のケーキ屋のショートケーキ"
+            busy={busy}
+            run={run}
+            toast={toast}
+            add={api.addSnack}
           />
         </>
       )}

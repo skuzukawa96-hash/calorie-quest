@@ -217,7 +217,7 @@ interface SnackTicket {
   consumptionId: number | null;
 }
 
-const RATES = { wordChoice: 1, choice: 2, reviewMultiplier: 1.5, cheatDayBonus: 300, staleReviewDays: 7 };
+const RATES = { wordChoice: 1, choice: 2, reviewMultiplier: 1.5, cheatDayBonus: 300, staleReviewDays: 7, weightBonus: 10 };
 
 /**
  * Mirrors db::tier_of: the hand-sorted example sentences, else the kind decides the tab. A word of
@@ -325,6 +325,17 @@ const BUILTIN: Array<[string, number, string]> = [
 
 /** Mirrors diet::BUILTIN_TASKS. */
 const BUILTIN_TASKS: Array<[string, number, string]> = [
+  ["腕立て伏せ 10回", 30, "svg:dumbbell"],
+  ["スクワット 20回", 30, "svg:dumbbell"],
+  ["洗濯物をたたむ", 30, "🧺"],
+  ["植物の水やり", 20, "🪴"],
+  ["散歩 30分", 50, "🚶"],
+  ["自転車 30分", 60, "🚲"],
+  ["部屋の掃除機がけ", 60, "svg:vacuum"],
+  ["宿題", 100, "✏️"],
+];
+/** Mirrors diet::FORMER_BUILTIN_TASKS: the first 課題 as put in before their icons were chosen again. */
+const FORMER_BUILTIN_TASKS: Array<[string, number, string]> = [
   ["腕立て伏せ 10回", 30, "💪"],
   ["スクワット 20回", 30, "🏋️"],
   ["洗濯物をたたむ", 30, "🧺"],
@@ -335,8 +346,20 @@ const BUILTIN_TASKS: Array<[string, number, string]> = [
   ["宿題", 100, "📚"],
 ];
 /** Mirrors diet::WEIGHT_BONUS_KCAL and diet::TASK_MAX_KCAL. */
-const WEIGHT_BONUS_KCAL = 10;
+const WEIGHT_BONUS_KCAL = RATES.weightBonus;
 const TASK_MAX_KCAL = 1000;
+/** Mirrors diet::checked_task's icon for an empty one. */
+const DEFAULT_TASK_ICON = "svg:dumbbell";
+
+/** Mirrors diet::seed_tasks: a first 課題 still as it was put in takes what it is now. */
+function renewBuiltinTasks(tasks: Task[]): Task[] {
+  return tasks.map((t) => {
+    const i = FORMER_BUILTIN_TASKS.findIndex(([name, kcal, icon]) => t.isBuiltin && t.name === name && t.calories === kcal && t.icon === icon);
+    if (i < 0) return t;
+    const [name, calories, icon] = BUILTIN_TASKS[i];
+    return { ...t, name, calories, icon };
+  });
+}
 
 function builtinTasks(): Task[] {
   return BUILTIN_TASKS.map(([name, calories, icon], i) => ({ id: i + 1, name, calories, icon, isBuiltin: true, doneCount: 0 }));
@@ -488,7 +511,7 @@ function load(): MockState {
         examProgress: stored.examProgress ?? {},
         favorites: stored.favorites ?? [],
         // Mirrors diet::seed_tasks: the first 課題 come in once, with the list.
-        tasks: stored.tasks ?? builtinTasks(),
+        tasks: stored.tasks ? renewBuiltinTasks(stored.tasks) : builtinTasks(),
         goalTasks: stored.goalTasks ?? [],
         taskLog: stored.taskLog ?? [],
         weights: stored.weights ?? {},
@@ -617,18 +640,18 @@ function weightPoint(date: string, w: StoredWeight): WeightPoint {
   return { date, weightKg: w.weightKg, heightCm: w.heightCm, bmi: bmi(w.weightKg, w.heightCm) };
 }
 
-/** Mirrors diet::record_weight_in: today's weight; the first of a day pays, a correction does not. */
+/** Mirrors diet::record_weight_in: today's weight, once a day, paying the daily bonus. */
 function recordWeight(weightKg: number, heightCm: number): WeightResult {
   if (!(Number.isFinite(weightKg) && weightKg >= 10 && weightKg <= 300)) throw new Error("体重は10〜300 kgの範囲で入力してください");
   if (!(Number.isFinite(heightCm) && heightCm >= 50 && heightCm <= 250)) throw new Error("身長は50〜250 cmの範囲で入力してください");
   const round1 = (v: number) => Math.round(v * 10) / 10;
   const t = today();
-  const before = state.weights[t];
+  if (state.weights[t]) throw new Error("今日の体重はもう記録しました（記録できるのは1日1回です）");
   state.user.heightCm = round1(heightCm);
-  state.weights[t] = { weightKg: round1(weightKg), heightCm: round1(heightCm), bonus: before?.bonus ?? WEIGHT_BONUS_KCAL };
-  if (!before) daily(t).kcalEarned += WEIGHT_BONUS_KCAL;
+  state.weights[t] = { weightKg: round1(weightKg), heightCm: round1(heightCm), bonus: WEIGHT_BONUS_KCAL };
+  daily(t).kcalEarned += WEIGHT_BONUS_KCAL;
   save();
-  return { point: weightPoint(t, state.weights[t]), bonus: before ? 0 : WEIGHT_BONUS_KCAL, today: { ...daily(t) } };
+  return { point: weightPoint(t, state.weights[t]), bonus: WEIGHT_BONUS_KCAL, today: { ...daily(t) } };
 }
 
 /** Mirrors SNACK_COLS in commands.rs: every snack carries how often it has been eaten. */
@@ -2322,9 +2345,21 @@ function submitAnswer(p: AnswerPayload): AnswerResult {
   };
 }
 
+/** Mirrors diet::diet_kcal_since: what ダイエット機能 paid on a day (課題 and the weight). */
+function dietKcalOn(date: string): number {
+  return state.taskLog.filter((e) => e.date === date).reduce((n, e) => n + e.calories, 0) + (state.weights[date]?.bonus ?? 0);
+}
+
 function getStats(): Stats {
   const days = Object.values(state.daily);
-  const totalKcal = days.reduce((s, d) => s + d.kcalEarned, 0);
+  // Mirrors load_stats: ダイエット機能 off, what it paid is left out of the totals and the chart.
+  const diet = state.user.dietMode;
+  const dietKcal = {
+    tasks: state.taskLog.reduce((n, e) => n + e.calories, 0),
+    weight: Object.values(state.weights).reduce((n, w) => n + w.bonus, 0),
+  };
+  const earnedInAll = days.reduce((s, d) => s + d.kcalEarned, 0);
+  const totalKcal = diet ? earnedInAll : Math.max(0, earnedInAll - dietKcal.tasks - dietKcal.weight);
   const totalConsumed = days.reduce((s, d) => s + d.kcalConsumed, 0);
   const totalAnswered = days.reduce((s, d) => s + d.answered, 0);
   const totalCorrect = days.reduce((s, d) => s + d.correct, 0);
@@ -2344,7 +2379,7 @@ function getStats(): Stats {
     }
     last14Days.push({
       date,
-      kcalEarned: d?.kcalEarned ?? 0,
+      kcalEarned: Math.max(0, (d?.kcalEarned ?? 0) - (diet ? 0 : dietKcalOn(date))),
       kcalConsumed: d?.kcalConsumed ?? 0,
       answered: d?.answered ?? 0,
       correct: d?.correct ?? 0,
@@ -2384,6 +2419,7 @@ function getStats(): Stats {
         return { tier, mode, kcal: v.kcal ?? 0, answered: v.answered, correct: v.correct };
       })
       .sort((a, b) => a.tier.localeCompare(b.tier) || a.mode.localeCompare(b.mode)),
+    dietKcal: diet ? dietKcal : null,
     // Mirrors diet::weights_since: the last two weeks' weights, oldest first.
     weights: Object.entries(state.weights)
       .filter(([date]) => date >= datePlus(-13))
@@ -2651,6 +2687,7 @@ export async function mockInvoke<T>(cmd: string, args: Record<string, unknown>):
         goalTasks: goalTasks(),
         doneToday: [...new Set(state.taskLog.flatMap((e) => (e.date === t && e.taskId !== null ? [e.taskId] : [])))].sort((a, b) => a - b),
         tasks: listTasks(),
+        weightToday: state.weights[t] ? weightPoint(t, state.weights[t]) : null,
         categories,
         partsOfSpeech: (["noun", "verb", "adjective", "adverb"] as PartOfSpeech[]).map((pos) => ({
           pos,
@@ -2810,7 +2847,7 @@ export async function mockInvoke<T>(cmd: string, args: Record<string, unknown>):
     case "list_tasks":
       return listTasks() as T;
     case "add_task": {
-      const { name, calories, icon } = checkedItem("課題", args, TASK_MAX_KCAL, "💪");
+      const { name, calories, icon } = checkedItem("課題", args, TASK_MAX_KCAL, DEFAULT_TASK_ICON);
       const task: Task = { id: state.nextId++, name, calories, icon, isBuiltin: false, doneCount: 0 };
       state.tasks.push(task);
       save();
@@ -2819,7 +2856,7 @@ export async function mockInvoke<T>(cmd: string, args: Record<string, unknown>):
     case "update_task": {
       const task = state.tasks.find((x) => x.id === Number(args.id));
       if (!task) throw new Error("task not found");
-      Object.assign(task, checkedItem("課題", args, TASK_MAX_KCAL, "💪"));
+      Object.assign(task, checkedItem("課題", args, TASK_MAX_KCAL, DEFAULT_TASK_ICON));
       save();
       return countedTasks([task])[0] as T;
     }
@@ -2847,7 +2884,7 @@ export async function mockInvoke<T>(cmd: string, args: Record<string, unknown>):
       return earnTask(task.id, task.name, task.icon, task.calories) as T;
     }
     case "log_one_off_task": {
-      const { name, calories, icon } = checkedItem("課題", args, TASK_MAX_KCAL, "💪");
+      const { name, calories, icon } = checkedItem("課題", args, TASK_MAX_KCAL, DEFAULT_TASK_ICON);
       return earnTask(null, name, icon, calories) as T;
     }
     case "get_today_tasks":
@@ -2877,7 +2914,9 @@ export async function mockInvoke<T>(cmd: string, args: Record<string, unknown>):
       // The 課題 list, its goals and the weights stay, as tasks, goal_tasks and weight_log do in
       // Rust (only task_log goes, with the day's kcal); ids go on from where they were, so nothing
       // kept is given the id of something new.
-      Object.assign(state, { tasks, goalTasks, weights, nextId });
+      // The weights stay, but what they paid went with the days (mirrors weight_log.bonus_kcal = 0).
+      const unpaid = Object.fromEntries(Object.entries(weights).map(([d, w]) => [d, { ...w, bonus: 0 }]));
+      Object.assign(state, { tasks, goalTasks, weights: unpaid, nextId });
       Object.assign(state.user, { dietMode, heightCm });
       state.snacks = snacks;
       state.recipe = recipe;

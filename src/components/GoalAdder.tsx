@@ -2,8 +2,9 @@ import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNod
 import { api } from "../lib/api";
 import { playCrunch, playDone } from "../lib/sfx";
 import { SNACK_ICONS } from "../lib/snackIcons";
-import { TASK_ICONS } from "../lib/taskIcons";
+import { DEFAULT_TASK_ICON, TASK_ICONS } from "../lib/taskIcons";
 import { DoneButton, EatButton } from "./IconButtons";
+import { iconLabel, ItemIcon } from "./ItemIcon";
 import { SNACK_MAX_KCAL, SNACK_WORDS, TASK_MAX_KCAL, TASK_WORDS, type BookItem, type BookWords } from "./ItemBook";
 
 /**
@@ -48,7 +49,7 @@ export const SNACK_GOALS: GoalKind = {
 export const TASK_GOALS: GoalKind = {
   words: TASK_WORDS,
   icons: TASK_ICONS,
-  defaultIcon: "💪",
+  defaultIcon: DEFAULT_TASK_ICON,
   maxKcal: TASK_MAX_KCAL,
   addToBook: api.addTask,
   setGoal: api.setGoalTask,
@@ -170,11 +171,11 @@ export default function GoalAdder({ kind, items, goalIds, onAdded, onClose, toas
     try {
       if (existing) {
         await kind.setGoal(existing.id, true);
-        toast(`${existing.icon} ${existing.name} を目標に追加しました`);
+        toast(`${iconLabel(existing.icon, existing.name)} を目標に追加しました`);
       } else {
         const s = await kind.addToBook(name.trim(), kcal, icon);
         await kind.setGoal(s.id, true);
-        toast(`${s.icon} ${s.name}（${words.kcal(s.calories)}）を${words.book}に登録して、目標に追加しました`);
+        toast(`${iconLabel(s.icon, s.name)}（${words.kcal(s.calories)}）を${words.book}に登録して、目標に追加しました`);
       }
       onAdded();
       onClose();
@@ -192,11 +193,11 @@ export default function GoalAdder({ kind, items, goalIds, onAdded, onClose, toas
     try {
       if (existing) {
         await kind.doItem(existing.id);
-        toast(`${existing.icon} ${existing.name}（${words.kcal(existing.calories)}）を${kind.didVerb}。取り消しはお菓子図鑑から`);
+        toast(`${iconLabel(existing.icon, existing.name)}（${words.kcal(existing.calories)}）を${kind.didVerb}。取り消しはお菓子図鑑から`);
       } else {
         await kind.doOneOff(name.trim(), kcal, icon);
         toast(
-          `${icon} ${name.trim()}（${words.kcal(kcal)}）を${kind.didVerb}（${words.book}と目標には追加していません）。取り消しはお菓子図鑑から`,
+          `${iconLabel(icon, name.trim())}（${words.kcal(kcal)}）を${kind.didVerb}（${words.book}と目標には追加していません）。取り消しはお菓子図鑑から`,
         );
       }
       kind.sound();
@@ -229,7 +230,7 @@ export default function GoalAdder({ kind, items, goalIds, onAdded, onClose, toas
   };
 
   const note = clash
-    ? `${words.book}に同じ名前の「${clash.icon} ${clash.name}」（${words.kcal(clash.calories)}）があります。候補から選ぶか、名前を変えてください`
+    ? `${words.book}に同じ名前の「${iconLabel(clash.icon, clash.name)}」（${words.kcal(clash.calories)}）があります。候補から選ぶか、名前を変えてください`
     : alreadyGoal
       ? `この${words.what}はもう目標に入っています`
       : existing
@@ -285,7 +286,9 @@ export default function GoalAdder({ kind, items, goalIds, onAdded, onClose, toas
                     pick(s);
                   }}
                 >
-                  <span className="goal-suggest-icon">{s.icon}</span>
+                  <span className="goal-suggest-icon">
+                    <ItemIcon icon={s.icon} />
+                  </span>
                   <span className="goal-suggest-name">{marked(s.name, name)}</span>
                   {goalIds.has(s.id) && <span className="goal-suggest-goal">★ 目標中</span>}
                   <span className="goal-suggest-kcal">{words.kcal(s.calories)}</span>
@@ -312,11 +315,11 @@ export default function GoalAdder({ kind, items, goalIds, onAdded, onClose, toas
           <button
             type="button"
             className="goal-adder-icon-btn"
-            aria-label={`アイコン（${icon}）を選ぶ`}
+            aria-label="アイコンを選ぶ"
             aria-expanded={iconsOpen}
             onClick={() => setIconsOpen((o) => !o)}
           >
-            {icon}
+            <ItemIcon icon={icon} />
             <span className="goal-adder-caret">▾</span>
           </button>
           {iconsOpen && (
@@ -333,7 +336,7 @@ export default function GoalAdder({ kind, items, goalIds, onAdded, onClose, toas
                     setIconsOpen(false);
                   }}
                 >
-                  {i}
+                  <ItemIcon icon={i} />
                 </button>
               ))}
             </div>

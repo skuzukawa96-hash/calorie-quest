@@ -424,6 +424,7 @@ fn kcal_rates() -> KcalRates {
         review_multiplier: srs::REVIEW_MULTIPLIER,
         cheat_day_bonus: srs::CHEAT_DAY_BONUS,
         stale_review_days: srs::STALE_REVIEW_DAYS,
+        weight_bonus: crate::diet::WEIGHT_BONUS_KCAL,
     }
 }
 
@@ -1229,6 +1230,7 @@ pub fn load_dashboard(conn: &Connection) -> CmdResult<Dashboard> {
         goal_tasks: crate::diet::goal_tasks(conn).map_err(err)?,
         done_today: crate::diet::done_today(conn).map_err(err)?,
         tasks: crate::diet::list_tasks_in(conn).map_err(err)?,
+        weight_today: crate::diet::today_weight(conn).map_err(err)?,
         categories: category_infos(conn).map_err(err)?,
         parts_of_speech: parts_of_speech(conn).map_err(err)?,
         mode_counts: mode_counts(conn).map_err(err)?,
@@ -1494,6 +1496,10 @@ pub fn load_stats(conn: &Connection) -> CmdResult<Stats> {
             |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
         )
         .map_err(err)?;
+    // ダイエット機能 off: what the 課題 and the weight paid is left out of the 記録 (it stays in the
+    // days' budgets, which are spent and saved already).
+    let diet_total = crate::diet::diet_kcal_total(conn).map_err(err)?;
+    let total_kcal = if user.diet_mode { total_kcal } else { (total_kcal - diet_total.tasks - diet_total.weight).max(0) };
     let accuracy = if total_answered > 0 {
         total_correct as f64 / total_answered as f64
     } else {
@@ -1543,10 +1549,12 @@ pub fn load_stats(conn: &Connection) -> CmdResult<Stats> {
             eaten_by_date.entry(d).or_default().push(snack);
         }
     }
+    let diet_by_date = if user.diet_mode { HashMap::new() } else { crate::diet::diet_kcal_since(conn, &start).map_err(err)? };
     let last_14_days = (0..14)
         .map(|i| {
             let date = date_plus(i - 13);
             let (k, e, a, c) = by_date.get(&date).copied().unwrap_or((0, 0, 0, 0));
+            let k = (k - diet_by_date.get(&date).copied().unwrap_or(0)).max(0);
             let mut eaten = eaten_by_date.remove(&date).unwrap_or_default();
             eaten.sort_by(|x, y| x.with_ticket.cmp(&y.with_ticket).then(y.kcal.cmp(&x.kcal)).then(x.name.cmp(&y.name)));
             DayPoint { date, kcal_earned: k, kcal_consumed: e, answered: a, correct: c, eaten }
@@ -1641,6 +1649,7 @@ pub fn load_stats(conn: &Connection) -> CmdResult<Stats> {
         review_due: due_review_count(conn).map_err(err)?,
         review_pending,
         breakdown,
+        diet_kcal: user.diet_mode.then_some(diet_total),
         weights: crate::diet::weights_since(conn, &start).map_err(err)?,
         height_cm: user.height_cm,
         weight_bonus_kcal: crate::diet::WEIGHT_BONUS_KCAL,
@@ -1658,6 +1667,7 @@ pub fn reset_progress(state: State<'_, AppState>) -> CmdResult<()> {
          UPDATE users SET total_study_days = 0, current_streak = 0, longest_streak = 0, last_study_date = NULL,
            savings_kcal = 0;
          UPDATE recipe_words SET paid_on = NULL;
+         UPDATE weight_log SET bonus_kcal = 0;
          DELETE FROM exam_attempts; DELETE FROM exam_mistakes; DELETE FROM exam_progress; DELETE FROM exam_seen;",
     )
     .map_err(err)?;

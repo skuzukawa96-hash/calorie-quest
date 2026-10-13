@@ -4,7 +4,8 @@
 
 use crate::commands::{checked_item, err, load_daily, CmdResult, USER_ID};
 use crate::db::{meta_get, meta_set};
-use crate::models::{DailyStats, Task, TaskEntry, WeightPoint, WeightResult};
+use crate::models::{DailyStats, DietKcal, Task, TaskEntry, WeightPoint, WeightResult};
+use std::collections::HashMap;
 use crate::util::{now_ts, today};
 use crate::AppState;
 use rusqlite::{params, Connection, OptionalExtension, Row};
@@ -17,8 +18,27 @@ pub const TASK_MAX_KCAL: i64 = 1000;
 const WEIGHT_KG: std::ops::RangeInclusive<f64> = 10.0..=300.0;
 const HEIGHT_CM: std::ops::RangeInclusive<f64> = 50.0..=250.0;
 
+/// An icon of the app's own drawing, for what has no emoji: a dumbbell, a vacuum cleaner
+/// (`components/ItemIcon.tsx` draws them).
+const DUMBBELL: &str = "svg:dumbbell";
+const VACUUM: &str = "svg:vacuum";
+
 /// The 課題 put in the list once, on the first start, as the snack book's first snacks are.
 const BUILTIN_TASKS: &[(&str, i64, &str)] = &[
+    ("腕立て伏せ 10回", 30, DUMBBELL),
+    ("スクワット 20回", 30, DUMBBELL),
+    ("洗濯物をたたむ", 30, "🧺"),
+    ("植物の水やり", 20, "🪴"),
+    ("散歩 30分", 50, "🚶"),
+    ("自転車 30分", 60, "🚲"),
+    ("部屋の掃除機がけ", 60, VACUUM),
+    ("宿題", 100, "✏️"),
+];
+
+/// The first 課題 as they were put in before their icons were chosen again (the dishes, the sponge,
+/// the broom… no longer offered), each with what it is now: one of them still as it was put in is
+/// made the new one. A 課題 the learner has corrected is left alone.
+const FORMER_BUILTIN_TASKS: &[(&str, i64, &str)] = &[
     ("腕立て伏せ 10回", 30, "💪"),
     ("スクワット 20回", 30, "🏋️"),
     ("洗濯物をたたむ", 30, "🧺"),
@@ -46,6 +66,13 @@ fn row_to_task(r: &Row) -> rusqlite::Result<Task> {
 
 pub fn seed_tasks(conn: &Connection) -> rusqlite::Result<()> {
     if meta_get(conn, "tasks_seeded")?.is_some() {
+        for ((old_name, old_kcal, old_icon), (name, kcal, icon)) in FORMER_BUILTIN_TASKS.iter().zip(BUILTIN_TASKS) {
+            conn.execute(
+                "UPDATE tasks SET name = ?4, calories = ?5, icon = ?6
+                 WHERE is_builtin = 1 AND name = ?1 AND calories = ?2 AND icon = ?3",
+                params![old_name, old_kcal, old_icon, name, kcal, icon],
+            )?;
+        }
         return Ok(());
     }
     let tx = conn.unchecked_transaction()?;
@@ -96,7 +123,7 @@ pub fn set_diet_mode_in(conn: &Connection, on: bool) -> CmdResult<bool> {
 }
 
 fn checked_task(name: &str, calories: i64, icon: &str) -> CmdResult<(String, String)> {
-    checked_item("課題", name, calories, TASK_MAX_KCAL, icon, "💪")
+    checked_item("課題", name, calories, TASK_MAX_KCAL, icon, DUMBBELL)
 }
 
 pub fn add_task_in(conn: &Connection, name: &str, calories: i64, icon: &str) -> CmdResult<Task> {
@@ -223,8 +250,8 @@ fn point(date: String, weight_kg: f64, height_cm: f64) -> WeightPoint {
     WeightPoint { date, weight_kg, height_cm, bmi: bmi(weight_kg, height_cm) }
 }
 
-/// Records today's weight at the height given (which is kept for the next time). The first record of
-/// a day pays [`WEIGHT_BONUS_KCAL`]; recording again the same day corrects it and pays nothing.
+/// Records today's weight at the height given (which is kept for the next time), and pays
+/// [`WEIGHT_BONUS_KCAL`]. A day is weighed once: from the home or the 記録, whichever comes first.
 pub fn record_weight_in(conn: &Connection, weight_kg: f64, height_cm: f64) -> CmdResult<WeightResult> {
     if !weight_kg.is_finite() || !WEIGHT_KG.contains(&weight_kg) {
         return Err("体重は10〜300 kgの範囲で入力してください".into());
@@ -235,31 +262,63 @@ pub fn record_weight_in(conn: &Connection, weight_kg: f64, height_cm: f64) -> Cm
     let (w, h) = (round1(weight_kg), round1(height_cm));
     let day = today();
     let now = now_ts();
+    if today_weight(conn).map_err(err)?.is_some() {
+        return Err("今日の体重はもう記録しました（記録できるのは1日1回です）".into());
+    }
     let tx = conn.unchecked_transaction().map_err(err)?;
     tx.execute("UPDATE users SET height_cm = ?1 WHERE id = ?2", params![h, USER_ID]).map_err(err)?;
-    let first = tx
-        .execute(
-            "INSERT OR IGNORE INTO weight_log (user_id, date, weight_kg, height_cm, bonus_kcal, recorded_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            params![USER_ID, day, w, h, WEIGHT_BONUS_KCAL, now],
-        )
-        .map_err(err)?
-        == 1;
-    if first {
-        earn_flat(&tx, &day, WEIGHT_BONUS_KCAL).map_err(err)?;
-    } else {
-        tx.execute(
-            "UPDATE weight_log SET weight_kg = ?3, height_cm = ?4, recorded_at = ?5 WHERE user_id = ?1 AND date = ?2",
-            params![USER_ID, day, w, h, now],
-        )
-        .map_err(err)?;
-    }
+    tx.execute(
+        "INSERT INTO weight_log (user_id, date, weight_kg, height_cm, bonus_kcal, recorded_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        params![USER_ID, day, w, h, WEIGHT_BONUS_KCAL, now],
+    )
+    .map_err(err)?;
+    earn_flat(&tx, &day, WEIGHT_BONUS_KCAL).map_err(err)?;
     tx.commit().map_err(err)?;
     Ok(WeightResult {
         point: point(day.clone(), w, h),
-        bonus: if first { WEIGHT_BONUS_KCAL } else { 0 },
+        bonus: WEIGHT_BONUS_KCAL,
         today: load_daily(conn, &day).map_err(err)?,
     })
+}
+
+/// Today's weight, once recorded.
+pub fn today_weight(conn: &Connection) -> rusqlite::Result<Option<WeightPoint>> {
+    conn.query_row(
+        "SELECT date, weight_kg, height_cm FROM weight_log WHERE user_id = ?1 AND date = ?2",
+        params![USER_ID, today()],
+        |r| Ok(point(r.get(0)?, r.get(1)?, r.get(2)?)),
+    )
+    .optional()
+}
+
+/// What ダイエット機能 has paid in all: the 課題 done and the weights' daily bonus.
+pub fn diet_kcal_total(conn: &Connection) -> rusqlite::Result<DietKcal> {
+    Ok(DietKcal {
+        tasks: conn.query_row(
+            "SELECT COALESCE(SUM(calories), 0) FROM task_log WHERE user_id = ?1",
+            params![USER_ID],
+            |r| r.get(0),
+        )?,
+        weight: conn.query_row(
+            "SELECT COALESCE(SUM(bonus_kcal), 0) FROM weight_log WHERE user_id = ?1",
+            params![USER_ID],
+            |r| r.get(0),
+        )?,
+    })
+}
+
+/// What ダイエット機能 paid each day from `start` on (課題 and the weight together).
+pub fn diet_kcal_since(conn: &Connection, start: &str) -> rusqlite::Result<HashMap<String, i64>> {
+    let mut stmt = conn.prepare(
+        "SELECT date, SUM(kcal) FROM (
+           SELECT date, calories AS kcal FROM task_log WHERE user_id = ?1 AND date >= ?2
+           UNION ALL
+           SELECT date, bonus_kcal FROM weight_log WHERE user_id = ?1 AND date >= ?2
+         ) GROUP BY date",
+    )?;
+    let rows = stmt.query_map(params![USER_ID, start], |r| Ok((r.get(0)?, r.get(1)?)))?;
+    rows.collect()
 }
 
 /// The weights recorded from `start` on, oldest first.
@@ -361,7 +420,7 @@ mod tests {
 
         set_play_mode_in(&conn, "hard").unwrap();
         let task = add_task_in(&conn, " 窓ふき（2階） ", 50, "").unwrap();
-        assert_eq!((task.name.as_str(), task.icon.as_str()), ("窓ふき（2階）", "💪"));
+        assert_eq!((task.name.as_str(), task.icon.as_str()), ("窓ふき（2階）", DUMBBELL));
         assert_eq!(log_done(&conn, task.id).unwrap().kcal_earned, 50, "no ×0.5 for a 課題");
         log_done(&conn, task.id).unwrap();
         assert_eq!(earned(&conn), 100);
@@ -404,27 +463,79 @@ mod tests {
         assert!(set_goal_task_in(&conn, task.id, true).is_err());
     }
 
-    /// Today's weight pays 10 kcal the first time only; recording again corrects it. The height is
+    /// Today's weight is recorded once, from the home or the 記録, and pays 10 kcal. The height is
     /// kept, and the BMI is worked out from the height of the record.
     #[test]
-    fn a_weight_pays_once_a_day_and_makes_a_bmi() {
+    fn a_weight_is_recorded_once_a_day_and_makes_a_bmi() {
         let conn = db::init_in_memory().unwrap();
+        assert!(record_weight_in(&conn, 5.0, 170.0).is_err());
+        assert!(record_weight_in(&conn, 60.0, 30.0).is_err());
+        assert!(record_weight_in(&conn, f64::NAN, 170.0).is_err());
+        assert!(load_dashboard(&conn).unwrap().weight_today.is_none());
+
         set_play_mode_in(&conn, "easy").unwrap();
         let first = record_weight_in(&conn, 63.64, 170.0).unwrap();
         assert_eq!(first.bonus, WEIGHT_BONUS_KCAL);
         assert_eq!(first.today.kcal_earned, WEIGHT_BONUS_KCAL, "no ×1.5 for a weight");
         assert_eq!((first.point.weight_kg, first.point.bmi), (63.6, 22.0));
-        let again = record_weight_in(&conn, 63.2, 170.0).unwrap();
-        assert_eq!(again.bonus, 0);
+        assert!(record_weight_in(&conn, 63.2, 170.0).is_err(), "once a day");
         assert_eq!(earned(&conn), WEIGHT_BONUS_KCAL);
         let weights = weights_since(&conn, &today()).unwrap();
         assert_eq!(weights.len(), 1);
-        assert_eq!((weights[0].weight_kg, weights[0].bmi), (63.2, 21.9));
-        assert_eq!(load_dashboard(&conn).unwrap().user.height_cm, Some(170.0));
+        assert_eq!((weights[0].weight_kg, weights[0].bmi), (63.6, 22.0));
+        let dash = load_dashboard(&conn).unwrap();
+        assert_eq!(dash.user.height_cm, Some(170.0));
+        assert_eq!(dash.weight_today.map(|w| w.weight_kg), Some(63.6));
+    }
 
-        assert!(record_weight_in(&conn, 5.0, 170.0).is_err());
-        assert!(record_weight_in(&conn, 60.0, 30.0).is_err());
-        assert!(record_weight_in(&conn, f64::NAN, 170.0).is_err());
+    /// With ダイエット機能 on, what the 課題 and the weight paid are in the 記録 (the chart's 獲得 and
+    /// 累計獲得カロリー, with a 課題 / 体重 line of their own); off, they are left out of both.
+    #[test]
+    fn the_record_counts_the_diet_kcal_only_while_it_is_on() {
+        let conn = db::init_in_memory().unwrap();
+        let task = add_task_in(&conn, "腹筋", 40, "").unwrap();
+        log_done(&conn, task.id).unwrap();
+        record_weight_in(&conn, 50.0, 160.0).unwrap();
+        // 7 kcal from study
+        crate::commands::credit(&conn, &today(), 7 * crate::srs::EIGHTHS).unwrap();
+
+        set_diet_mode_in(&conn, true).unwrap();
+        let on = crate::commands::load_stats(&conn).unwrap();
+        assert_eq!(on.total_kcal, 57);
+        assert_eq!(on.last_14_days.last().unwrap().kcal_earned, 57);
+        let diet = on.diet_kcal.expect("the 課題 line while on");
+        assert_eq!((diet.tasks, diet.weight), (40, WEIGHT_BONUS_KCAL));
+
+        set_diet_mode_in(&conn, false).unwrap();
+        let off = crate::commands::load_stats(&conn).unwrap();
+        assert_eq!(off.total_kcal, 7);
+        assert_eq!(off.last_14_days.last().unwrap().kcal_earned, 7);
+        assert!(off.diet_kcal.is_none());
+        // the day's budget keeps what was earned either way
+        assert_eq!(earned(&conn), 57);
+    }
+
+    /// The first 課題 put in before their icons were chosen again take the new ones (and the two whose
+    /// icon is gone, a new 課題); one the learner has corrected stays as it is.
+    #[test]
+    fn the_first_tasks_take_their_new_icons() {
+        let conn = db::init_in_memory().unwrap();
+        conn.execute("DELETE FROM tasks", []).unwrap();
+        for (name, kcal, icon) in FORMER_BUILTIN_TASKS {
+            conn.execute(
+                "INSERT INTO tasks (name, calories, icon, is_builtin, created_at) VALUES (?1, ?2, ?3, 1, '')",
+                params![name, kcal, icon],
+            )
+            .unwrap();
+        }
+        conn.execute("UPDATE tasks SET calories = 45 WHERE name = '食器洗い'", []).unwrap();
+        seed_tasks(&conn).unwrap();
+        let tasks = list_tasks_in(&conn).unwrap();
+        let icon_of = |name: &str| tasks.iter().find(|t| t.name == name).map(|t| t.icon.clone());
+        assert_eq!(icon_of("腕立て伏せ 10回").as_deref(), Some(DUMBBELL));
+        assert_eq!(icon_of("部屋の掃除機がけ").as_deref(), Some(VACUUM));
+        assert_eq!(icon_of("食器洗い").as_deref(), Some("🍽️"), "corrected by the learner");
+        assert_eq!(tasks.len(), FORMER_BUILTIN_TASKS.len());
     }
 
     /// The switch in the top bar: the home and the other screens read it from the dashboard.

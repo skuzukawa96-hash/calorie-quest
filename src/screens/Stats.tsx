@@ -1,5 +1,6 @@
 import BackupPanel from "../components/BackupPanel";
 import { SwitchViewButton } from "../components/IconButtons";
+import WeightForm, { d1 } from "../components/WeightForm";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { api } from "../lib/api";
 import {
@@ -57,7 +58,8 @@ export default function Stats({ dietMode, onChanged, toast }: Props) {
       .catch((e) => setLoadError(String(e)));
   }, []);
 
-  useEffect(load, [load]);
+  // Again when ダイエット機能 is switched: its kcal are in the totals and the chart only while it is on.
+  useEffect(load, [load, dietMode]);
 
   // A failed load used to leave "集計しています…" on screen for good, with the reason gone
   // after a three-second toast.
@@ -138,9 +140,22 @@ export default function Stats({ dietMode, onChanged, toast }: Props) {
               閉じる
             </button>
           </div>
-          <Breakdown metric={metric} cells={stats.breakdown} />
+          <Breakdown
+            metric={metric}
+            cells={stats.breakdown}
+            extra={
+              stats.dietKcal
+                ? [
+                    { label: "課題", kcal: stats.dietKcal.tasks },
+                    { label: "体重記録", kcal: stats.dietKcal.weight },
+                  ]
+                : []
+            }
+          />
           <p className="muted small">
-            学習の問題（英単語〜例文）の分で、獲得カロリーは がんばり・お気軽 にかかわらず通常モードの値です。レシピ・試験・チートデイの分は、上の累計にだけ入ります。
+            学習の問題（英単語〜例文）の分で、獲得カロリーは がんばり・お気軽 にかかわらず通常モードの値です。
+            {stats.dietKcal && metric === "kcal" && "課題と体重記録（ダイエット機能）は、書いてあるカロリーのまま合計に入ります。"}
+            レシピ・試験・チートデイの分は、上の累計にだけ入ります。
           </p>
         </section>
       )}
@@ -158,8 +173,9 @@ export default function Stats({ dietMode, onChanged, toast }: Props) {
           </h2>
           {showWeight && (
             <WeightForm
+              askHeight
               heightCm={stats.heightCm ?? null}
-              todayWeight={todayWeight?.weightKg ?? null}
+              today={todayWeight ?? null}
               bonus={stats.weightBonusKcal}
               onRecorded={() => {
                 load();
@@ -326,9 +342,11 @@ function metricText(metric: Metric, cells: StatCell[]): string {
 
 /**
  * The tabs (英単語 … 例文) down, the modes (選択 / 記入 / 発音 / ヒアリング) across, and totals for
- * each, in one metric. A tab and mode never answered shows "—" for 正答率 and 0 otherwise.
+ * each, in one metric. A tab and mode never answered shows "—" for 正答率 and 0 otherwise. In kcal,
+ * `extra` (課題 and 体重記録, while ダイエット機能 is on) adds rows of no mode, counted in the grand total.
  */
-function Breakdown({ metric, cells }: { metric: Metric; cells: StatCell[] }) {
+function Breakdown({ metric, cells, extra }: { metric: Metric; cells: StatCell[]; extra: Array<{ label: string; kcal: number }> }) {
+  const rows = metric === "kcal" ? extra : [];
   const pick = (tier: string | null, mode: Mode | null) =>
     cells.filter((c) => (tier === null || c.tier === tier) && (mode === null || c.mode === mode));
   const unit = metric === "kcal" ? " kcal" : metric === "answered" ? " 問" : "";
@@ -360,6 +378,17 @@ function Breakdown({ metric, cells }: { metric: Metric; cells: StatCell[] }) {
               <td className="total">{cell(pick(t, null))}</td>
             </tr>
           ))}
+          {rows.map((r) => (
+            <tr key={r.label} className="breakdown-extra">
+              <th>{r.label}</th>
+              {MODES.map((m) => (
+                <td key={m} className="empty">
+                  —
+                </td>
+              ))}
+              <td className="total">{r.kcal} kcal</td>
+            </tr>
+          ))}
         </tbody>
         <tfoot>
           <tr>
@@ -369,7 +398,9 @@ function Breakdown({ metric, cells }: { metric: Metric; cells: StatCell[] }) {
                 {cell(pick(null, m))}
               </td>
             ))}
-            <td className="total grand">{cell(cells)}</td>
+            <td className="total grand">
+              {rows.length > 0 ? `${Number(metricText(metric, cells)) + rows.reduce((n, r) => n + r.kcal, 0)} kcal` : cell(cells)}
+            </td>
           </tr>
         </tfoot>
       </table>
@@ -622,66 +653,6 @@ function bmiOf(weightKg: number, heightCm: number): number {
 }
 
 /**
- * 身長 / 体重 / 記録, at the top right of the weight chart: today's weight at the height given (the
- * height is kept for the next time). The first record of a day pays `bonus` kcal; recording again
- * that day corrects it.
- */
-function WeightForm({
-  heightCm,
-  todayWeight,
-  bonus,
-  onRecorded,
-  toast,
-}: {
-  heightCm: number | null;
-  todayWeight: number | null;
-  bonus: number;
-  onRecorded: () => void;
-  toast: (msg: string) => void;
-}) {
-  const [height, setHeight] = useState(heightCm !== null ? String(heightCm) : "");
-  const [weight, setWeight] = useState(todayWeight !== null ? String(todayWeight) : "");
-  const [busy, setBusy] = useState(false);
-  const recorded = todayWeight !== null;
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setBusy(true);
-    try {
-      const r = await api.recordWeight(Number(weight), Number(height));
-      const what = `体重 ${r.point.weightKg.toFixed(1)} kg（BMI ${r.point.bmi.toFixed(1)}）`;
-      toast(r.bonus > 0 ? `⚖️ 今日の${what}を記録しました +${r.bonus} kcal` : `⚖️ 今日の${what}に直しました（カロリーは1日1回だけです）`);
-      onRecorded();
-    } catch (err) {
-      toast(String(err));
-    } finally {
-      setBusy(false);
-    }
-  };
-  return (
-    <form className="weight-form" onSubmit={(e) => void submit(e)}>
-      <label>
-        身長
-        <input type="number" inputMode="decimal" step="0.1" min={50} max={250} value={height} onChange={(e) => setHeight(e.target.value)} />
-        cm
-      </label>
-      <label>
-        体重
-        <input type="number" inputMode="decimal" step="0.1" min={10} max={300} value={weight} onChange={(e) => setWeight(e.target.value)} />
-        kg
-      </label>
-      <button
-        className="btn btn-primary btn-small"
-        type="submit"
-        disabled={busy || !height || !weight}
-        title={recorded ? "今日の体重を直します（カロリーは1日1回だけです）" : `今日の体重を記録します（1日1回 +${bonus} kcal）`}
-      >
-        {recorded ? "直す" : `記録 +${bonus} kcal`}
-      </button>
-    </form>
-  );
-}
-
-/**
  * The fortnight's weight as one line through the days weighed (a day not weighed is passed over),
  * on a kg axis at the left; the axis at the right reads the same heights as BMI at the height last
  * given, so the line is both. A dot's tooltip has the day's own weight and BMI.
@@ -723,8 +694,6 @@ function WeightChart({
   for (let v = lo; v <= hi + step / 1000; v += step) ticks.push(Math.round(v * 100) / 100);
   const path = weights.map((w, i) => `${i ? "L" : "M"}${f1(x(w.date))},${f1(y(w.weightKg))}`).join(" ");
   const change = Math.round((last.weightKg - weights[0].weightKg) * 10) / 10;
-  // One decimal always (21.0, not 21), as the scale reads them.
-  const d1 = (n: number) => n.toFixed(1);
   return (
     <div className="line-chart">
       <div className="muted small line-chart-legend">

@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from "react";
 import { DeleteButton, EditButton } from "./IconButtons";
+import { iconLabel, ItemIcon } from "./ItemIcon";
 
 /**
  * The お菓子図鑑 and the 課題一覧 (ダイエット機能) are the same kind of list: a name, kcal and icon a
@@ -118,6 +119,8 @@ function sortItems<T extends BookItem>(items: T[], { key, dir }: SortState, icon
 
 interface BookCardProps<T extends BookItem> {
   title: ReactNode;
+  /** beside the heading: the ⇄ that switches the お菓子図鑑 and the 課題一覧 */
+  switcher?: ReactNode;
   /** how the list is used, under the heading */
   intro: ReactNode;
   /** a note above the rows (the snack book's 引換券) */
@@ -146,6 +149,7 @@ interface BookCardProps<T extends BookItem> {
 /** The list as a card: the heading with the orders, then a row each, a row opening its edit form or its delete question below it. */
 export function BookCard<T extends BookItem>({
   title,
+  switcher,
   intro,
   note,
   items,
@@ -186,7 +190,7 @@ export function BookCard<T extends BookItem>({
     const { id, name, calories, icon } = editing;
     run(async () => {
       const s = await update(id, name, Number(calories), icon);
-      toast(`${s.icon} ${s.name}（${words.kcal(s.calories)}）に修正しました`);
+      toast(`${iconLabel(s.icon, s.name)}（${words.kcal(s.calories)}）に修正しました`);
       setEditing(null);
     });
   };
@@ -194,7 +198,10 @@ export function BookCard<T extends BookItem>({
   return (
     <section className="card">
       <div className="section-head">
-        <h2>{title}</h2>
+        <div className="title-with-switch">
+          <h2>{title}</h2>
+          {switcher}
+        </div>
         <div className="sort-bar" role="group" aria-label="並び替え">
           <span className="muted small">並び替え</span>
           <div className="segmented">
@@ -234,7 +241,9 @@ export function BookCard<T extends BookItem>({
               >
                 {isGoal ? "★" : "☆"}
               </button>
-              <span className="snack-row-icon">{s.icon}</span>
+              <span className="snack-row-icon">
+                <ItemIcon icon={s.icon} />
+              </span>
               <span className="snack-row-name" title={s.name}>
                 {s.name}
                 {!s.isBuiltin && <span className="pill snack-mine">自作</span>}
@@ -266,7 +275,7 @@ export function BookCard<T extends BookItem>({
             deleting === s.id && (
               <li key={`${s.id}-delete`} className="snack-confirm">
                 <span>
-                  {s.icon} {s.name} を{words.book}から削除しますか？
+                  <ItemIcon icon={s.icon} /> {s.name} を{words.book}から削除しますか？
                   {s.isBuiltin && <span className="muted small">（初めから入っている{words.what}は元に戻せません）</span>}
                 </span>
                 <button
@@ -276,7 +285,7 @@ export function BookCard<T extends BookItem>({
                     run(async () => {
                       await remove(s.id);
                       setDeleting(null);
-                      toast(`${s.icon} ${s.name} を${words.book}から削除しました`);
+                      toast(`${iconLabel(s.icon, s.name)} を${words.book}から削除しました`);
                     })
                   }
                 >
@@ -293,12 +302,12 @@ export function BookCard<T extends BookItem>({
                   <div className="icon-picker small">
                     {icons.includes(edit.icon) ? null : (
                       <button type="button" className="active" title="今のアイコン">
-                        {edit.icon}
+                        <ItemIcon icon={edit.icon} />
                       </button>
                     )}
                     {icons.map((i) => (
                       <button type="button" key={i} className={edit.icon === i ? "active" : ""} onClick={() => setEditing({ ...edit, icon: i })}>
-                        {i}
+                        <ItemIcon icon={i} />
                       </button>
                     ))}
                   </div>
@@ -368,7 +377,7 @@ export function AddCard({
     e.preventDefault();
     run(async () => {
       const s = await add(name, Number(calories), icon);
-      toast(`${s.icon} ${s.name} を${words.book}に追加しました`);
+      toast(`${iconLabel(s.icon, s.name)} を${words.book}に追加しました`);
       setName("");
       setCalories("");
     });
@@ -380,7 +389,7 @@ export function AddCard({
         <div className="icon-picker">
           {icons.map((i) => (
             <button type="button" key={i} className={icon === i ? "active" : ""} onClick={() => setIcon(i)}>
-              {i}
+              <ItemIcon icon={i} />
             </button>
           ))}
         </div>
@@ -397,7 +406,7 @@ export function AddCard({
             style={{ width: 110 }}
           />
           <button className="btn btn-primary" type="submit" disabled={busy || !name.trim() || !calories}>
-            {icon} 追加
+            <ItemIcon icon={icon} /> 追加
           </button>
         </div>
       </form>

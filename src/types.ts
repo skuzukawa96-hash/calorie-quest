@@ -272,9 +272,15 @@ export interface WeightPoint {
   bmi: number;
 }
 
+/** What ダイエット機能 has paid: the 課題 done and the weights' daily bonus. */
+export interface DietKcal {
+  tasks: number;
+  weight: number;
+}
+
 export interface WeightResult {
   point: WeightPoint;
-  /** kcal paid now: the first record of the day pays, a correction the same day does not */
+  /** kcal paid now (a day's weight is recorded once) */
   bonus: number;
   today: DailyStats;
 }
@@ -288,6 +294,8 @@ export interface KcalRates {
   cheatDayBonus: number;
   /** days a review may be carried over before it goes back to the ordinary questions */
   staleReviewDays: number;
+  /** what recording the day's weight pays (ダイエット機能) */
+  weightBonus: number;
 }
 
 export interface CategoryInfo {
@@ -416,6 +424,8 @@ export interface Dashboard {
   doneToday: number[];
   /** 課題一覧 */
   tasks: Task[];
+  /** today's weight, once recorded (a day is weighed once) */
+  weightToday?: WeightPoint | null;
   categories: CategoryInfo[];
   /** 英単語 by part of speech, for the chips above the genres */
   partsOfSpeech: PartOfSpeechInfo[];
@@ -684,6 +694,8 @@ export interface Stats {
   reviewPending: number;
   /** the study answers by tab and mode (英単語 × 選択 …), for 累計獲得カロリー / 累計回答数 / 正答率 */
   breakdown: StatCell[];
+  /** what ダイエット機能 has paid in all, while it is on (off, it is left out of the totals and the chart too) */
+  dietKcal?: DietKcal | null;
   /** the weights recorded in the last two weeks, oldest first (ダイエット機能) */
   weights: WeightPoint[];
   heightCm?: number | null;

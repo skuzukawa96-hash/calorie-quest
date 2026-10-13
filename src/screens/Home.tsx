@@ -2,7 +2,9 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import CalorieBar from "../components/CalorieBar";
 import GoalAdder, { SNACK_GOALS, TASK_GOALS } from "../components/GoalAdder";
 import { DeleteButton, DoneButton, EatButton, SwitchViewButton } from "../components/IconButtons";
+import { iconLabel, ItemIcon } from "../components/ItemIcon";
 import PencilIcon from "../components/PencilIcon";
+import WeightForm from "../components/WeightForm";
 import { api } from "../lib/api";
 import { playCrunch, playDone, playFanfare } from "../lib/sfx";
 import {
@@ -162,12 +164,12 @@ export default function Home({
     act(async () => {
       await api.logTaskDone(t.id);
       playDone();
-      toast(`💪 ${t.icon} ${t.name} を達成しました（+${t.calories} kcal）。取り消しはお菓子図鑑から`);
+      toast(`💪 ${iconLabel(t.icon, t.name)} を達成しました（+${t.calories} kcal）。取り消しはお菓子図鑑から`);
     });
   const dropTask = (t: Task) =>
     act(async () => {
       await api.setGoalTask(t.id, false);
-      toast(`${t.icon} ${t.name} を目標から外しました（課題一覧には残っています）`);
+      toast(`${iconLabel(t.icon, t.name)} を目標から外しました（課題一覧には残っています）`);
     });
 
   const countFor = (c: CategoryInfo) => (tier === "mixed" ? c.total : c[tier]);
@@ -270,9 +272,21 @@ export default function Home({
               <SwitchViewButton label={showTasks ? "目標のお菓子に切り替える" : "目標の課題に切り替える"} onClick={switchGoals} />
             )}
           </h2>
-          <button className="btn-link" aria-expanded={adding} onClick={() => setAdding((a) => !a)}>
-            {adding ? "閉じる" : showTasks ? "＋ 課題追加" : "＋ 目標追加"}
-          </button>
+          <div className="goal-head-right">
+            {/* today's weight, once a day here or in the 記録 (体重記録のデイリーボーナス) */}
+            {showTasks && (
+              <WeightForm
+                heightCm={user.heightCm ?? null}
+                today={dash.weightToday ?? null}
+                bonus={kcalRates.weightBonus}
+                onRecorded={onChanged}
+                toast={toast}
+              />
+            )}
+            <button className="btn-link" aria-expanded={adding} onClick={() => setAdding((a) => !a)}>
+              {adding ? "閉じる" : showTasks ? "＋ 課題追加" : "＋ 目標追加"}
+            </button>
+          </div>
         </div>
         {showTasks ? (
           <>
@@ -292,7 +306,9 @@ export default function Home({
                   const did = doneToday.includes(t.id);
                   return (
                     <li key={t.id} className={"goal-row task-row" + (did ? " eaten" : "")}>
-                      <span className="goal-icon">{t.icon}</span>
+                      <span className="goal-icon">
+                        <ItemIcon icon={t.icon} />
+                      </span>
                       <span className="goal-name" title={t.name}>
                         {t.name}
                         <span className="goal-kcal earned">+{t.calories} kcal</span>

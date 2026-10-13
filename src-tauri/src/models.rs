@@ -300,12 +300,20 @@ pub struct WeightPoint {
     pub bmi: f64,
 }
 
+/// What ダイエット機能 has paid: the 課題 done and the weights' daily bonus.
+#[derive(Debug, Clone, Copy, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DietKcal {
+    pub tasks: i64,
+    pub weight: i64,
+}
+
 /// What recording today's weight did: the record, and the kcal it paid (once a day).
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WeightResult {
     pub point: WeightPoint,
-    /// kcal paid now: the first record of the day pays, a correction the same day does not
+    /// kcal paid now (a day's weight is recorded once)
     pub bonus: i64,
     pub today: DailyStats,
 }
@@ -321,6 +329,8 @@ pub struct KcalRates {
     pub cheat_day_bonus: i64,
     /// days a review may be carried over before it goes back to the ordinary questions
     pub stale_review_days: i64,
+    /// what recording the day's weight pays (ダイエット機能)
+    pub weight_bonus: i64,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -360,6 +370,8 @@ pub struct Dashboard {
     pub done_today: Vec<i64>,
     /// 課題一覧
     pub tasks: Vec<Task>,
+    /// today's weight, once recorded (a day is weighed once)
+    pub weight_today: Option<WeightPoint>,
     pub categories: Vec<CategoryInfo>,
     /// 英単語 by part of speech (noun / verb / adjective / adverb), for the chips above the genres
     pub parts_of_speech: Vec<PartOfSpeechInfo>,
@@ -788,6 +800,9 @@ pub struct Stats {
     pub review_pending: i64,
     /// the study answers by tab and mode (英単語 × 選択 …), for 累計獲得カロリー / 累計回答数 / 正答率
     pub breakdown: Vec<StatCell>,
+    /// what ダイエット機能 has paid in all, while it is on (off, it is left out of the totals and
+    /// the chart too)
+    pub diet_kcal: Option<DietKcal>,
     /// the weights recorded in the last two weeks, oldest first (ダイエット機能)
     pub weights: Vec<WeightPoint>,
     pub height_cm: Option<f64>,

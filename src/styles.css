@@ -1597,19 +1597,30 @@ button.recipe-bulk:hover:not(:disabled) {
   transform: translateX(13px);
 }
 /* ダイエット機能 in the top bar: smaller, and green when on */
-.diet-switch {
-  padding: 3px 10px 3px 4px;
-  font-size: 12.5px;
-  font-weight: 600;
-  gap: 6px;
-}
+/* ダイエット機能 in the top bar: the switch alone, green when on (what it is, in its tooltip) */
+.diet-switch,
 .diet-switch.on {
-  color: var(--mint);
-  border-color: #c6e3cf;
-  background: var(--mint-bg);
+  padding: 4px;
+  border: none;
+  background: none;
+}
+.diet-switch .switch-knob {
+  width: 34px;
+  height: 19px;
+}
+.diet-switch .switch-knob::after {
+  width: 15px;
+  height: 15px;
 }
 .diet-switch.on .switch-knob {
   background: var(--mint);
+}
+.diet-switch.on .switch-knob::after {
+  transform: translateX(15px);
+}
+.diet-switch:focus-visible {
+  outline: 2px solid var(--caramel);
+  border-radius: 999px;
 }
 /* 文中の用法: one block per word of the sentence */
 .used-word + .used-word {
@@ -3064,6 +3075,12 @@ button.wp-link.open {
 .snack-star:hover:not(:disabled) {
   color: var(--caramel);
 }
+/* A drawn icon (components/ItemIcon.tsx) in an emoji's place: a little larger than the text, as the emoji are */
+.item-icon {
+  width: 1.15em;
+  height: 1.15em;
+  vertical-align: -0.2em;
+}
 .snack-row-icon {
   font-size: 22px;
   text-align: center;
@@ -3239,6 +3256,33 @@ button.wp-link.open {
   width: 74px;
   padding: 4px 8px;
   font-size: 14px;
+}
+/* Today's weight once recorded, in the form's place (the home's 目標の課題, the 記録) */
+.weight-today {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.weight-today b {
+  color: var(--choco);
+}
+.weight-today .pill {
+  padding: 1px 8px;
+  font-size: 11.5px;
+}
+/* 目標の課題: the weight, then ＋ 課題追加 */
+.goal-head-right {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+}
+/* 課題 and 体重記録 in the kcal breakdown (ダイエット機能): no mode, so their total only */
+.breakdown-table tr.breakdown-extra th {
+  color: var(--mint);
 }
 .weight-empty {
   padding: 28px 8px;

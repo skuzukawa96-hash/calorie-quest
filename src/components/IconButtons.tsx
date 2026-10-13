@@ -30,21 +30,21 @@ export function EatButton({ affordable, label, disabled, onClick }: Common & { a
 }
 
 /**
- * 達成！ for a 課題 as a flexed arm (💪), drawn like the knife and fork: a fist (filled, as the
- * knife's blade is), a forearm and a round biceps in the same bold brown strokes.
+ * 達成！ for a 課題 as a flexed arm (💪), drawn like the knife and fork in the same bold brown
+ * strokes: one outline from the fist down the forearm and round the biceps.
  */
 export function DoneButton({ label = "達成！（カロリーを獲得）", disabled, onClick }: Common & { label?: string }) {
   return (
     <button type="button" className="icon-btn done" disabled={disabled} title={label} aria-label={label} onClick={onClick}>
       <svg viewBox="0 0 24 24" aria-hidden="true">
-        <g fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
-          {/* the arm: forearm up to the fist, the biceps round at the lower right */}
-          <path d="M3.2 18.6C2.6 11 5 3 10.6 3a2.6 2.6 0 0 1 0 5.2c-.4 0-.8-.1-1.1-.2.3 1.9 1.4 3.9 2.6 5.2a4.9 4.9 0 0 1 9.4 2c0 3.4-3.9 5.8-8.6 5.8-3.6 0-7.2-.8-9.7-2.4z" />
-          {/* the fist */}
-          <path d="M10.6 3a2.6 2.6 0 0 1 0 5.2c-.4 0-.8-.1-1.1-.2-.9-.6-1.2-1.6-1.1-2.6.2-1.4 1-2.4 2.2-2.4z" fill="currentColor" />
-          {/* the crook of the elbow under the biceps */}
-          <path d="M15.6 14.3a4.8 4.8 0 0 0-6.3 2" />
-        </g>
+        <path
+          d="M3.2 18.6C2.6 11 5 3 10.6 3a2.6 2.6 0 0 1 0 5.2c-.4 0-.8-.1-1.1-.2.3 1.9 1.4 3.9 2.6 5.2a4.9 4.9 0 0 1 9.4 2c0 3.4-3.9 5.8-8.6 5.8-3.6 0-7.2-.8-9.7-2.4z"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.9"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
       </svg>
     </button>
   );
