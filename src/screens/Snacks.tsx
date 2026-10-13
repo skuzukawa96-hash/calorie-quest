@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
-import { DeleteButton, EatButton, EditButton, UndoButton } from "../components/IconButtons";
+import { DoneButton, EatButton, UndoButton } from "../components/IconButtons";
+import { AddCard, BookCard, SNACK_MAX_KCAL, SNACK_WORDS, TASK_MAX_KCAL, TASK_WORDS } from "../components/ItemBook";
 import { api } from "../lib/api";
 import { SNACK_ICONS } from "../lib/snackIcons";
-import { playCrunch } from "../lib/sfx";
-import { remainingKcal, type ConsumptionEntry, type Dashboard, type Snack } from "../types";
+import { TASK_ICONS } from "../lib/taskIcons";
+import { playCrunch, playDone } from "../lib/sfx";
+import { remainingKcal, type ConsumptionEntry, type Dashboard, type Snack, type Task, type TaskEntry } from "../types";
 
 interface Props {
   dash: Dashboard;
@@ -14,129 +16,98 @@ interface Props {
   toast: (msg: string) => void;
 }
 
-
-type SortKey = "calories" | "added" | "name" | "icon" | "eaten";
-type SortDir = "asc" | "desc";
-interface SortState {
-  key: SortKey;
-  dir: SortDir;
+/** A row of today's log: a snack eaten (kcal spent) or a 課題 done (kcal earned, ダイエット機能). */
+interface LogEntry {
+  kind: "snack" | "task";
+  id: number;
+  name: string;
+  icon: string;
+  calories: number;
+  at: string;
+  withTicket: boolean;
 }
 
-/** Each order starts in the direction people usually want it, and flips on a second click. */
-const SORTS: Array<{ key: SortKey; label: string; first: SortDir; dirs: Record<SortDir, string> }> = [
-  { key: "calories", label: "カロリー", first: "asc", dirs: { asc: "低い順", desc: "高い順" } },
-  { key: "added", label: "追加", first: "desc", dirs: { desc: "新しい順", asc: "古い順" } },
-  { key: "name", label: "名前", first: "asc", dirs: { asc: "あ→ん", desc: "ん→あ" } },
-  { key: "icon", label: "アイコン", first: "asc", dirs: { asc: "種類ごと", desc: "種類ごと（逆）" } },
-  { key: "eaten", label: "よく食べる", first: "desc", dirs: { desc: "多い順", asc: "少ない順" } },
-];
-const SORT_STORAGE = "cq-snack-sort";
-const DEFAULT_SORT: SortState = { key: "calories", dir: "asc" };
-
-function loadSort(): SortState {
-  try {
-    const v = JSON.parse(localStorage.getItem(SORT_STORAGE) ?? "null") as SortState | null;
-    if (v && SORTS.some((s) => s.key === v.key) && (v.dir === "asc" || v.dir === "desc")) return v;
-  } catch {
-    /* ignore */
-  }
-  return DEFAULT_SORT;
+function logEntries(eaten: ConsumptionEntry[], done: TaskEntry[]): LogEntry[] {
+  return [
+    ...eaten.map((e): LogEntry => ({
+      kind: "snack",
+      id: e.id,
+      name: e.snackName,
+      icon: e.snackIcon,
+      calories: e.calories,
+      at: e.eatenAt,
+      withTicket: e.withTicket,
+    })),
+    ...done.map((e): LogEntry => ({
+      kind: "task",
+      id: e.id,
+      name: e.taskName,
+      icon: e.taskIcon,
+      calories: e.calories,
+      at: e.doneAt,
+      withTicket: false,
+    })),
+  ];
 }
 
-function saveSort(sort: SortState) {
-  try {
-    localStorage.setItem(SORT_STORAGE, JSON.stringify(sort));
-  } catch {
-    /* ignore */
-  }
-}
-
-const collator = new Intl.Collator("ja");
-
-/** Icons in the order of the picker, so "アイコン順" groups them the way they are offered. */
-function iconRank(icon: string): number {
-  const i = SNACK_ICONS.indexOf(icon);
-  return i < 0 ? SNACK_ICONS.length : i;
-}
-
-function compare(key: SortKey, a: Snack, b: Snack): number {
-  switch (key) {
-    case "calories":
-      return a.calories - b.calories;
-    case "added":
-      // Ids grow as snacks are added; the built-in ones come first.
-      return a.id - b.id;
-    case "name":
-      return collator.compare(a.name, b.name);
-    case "icon":
-      return iconRank(a.icon) - iconRank(b.icon) || a.icon.localeCompare(b.icon);
-    case "eaten":
-      return a.eatenCount - b.eatenCount;
-  }
-}
-
-/** The same snack eaten again and again in a day, kept as one row: 飴一粒 ×8 −240 kcal. */
+/** The same snack eaten (or 課題 done) again and again in a day, kept as one row: 飴一粒 ×8 −240 kcal. */
 interface LogStack {
   key: string;
-  /** in the order eaten */
-  entries: ConsumptionEntry[];
+  /** in the order eaten or done */
+  entries: LogEntry[];
 }
 
 /**
  * The day's log with each snack's records stacked: the same name, icon and calories (and whether a
- * ticket paid for it) are the same snack. A stack is placed by the time of its first record, the
- * time it shows, newest first as the log is.
+ * ticket paid for it) are the same snack, and a 課題 stacks the same way. A stack is placed by the
+ * time of its first record, the time it shows, newest first as the log is.
  */
-function stackLog(log: ConsumptionEntry[]): LogStack[] {
-  const byKey = new Map<string, ConsumptionEntry[]>();
+function stackLog(log: LogEntry[]): LogStack[] {
+  const byKey = new Map<string, LogEntry[]>();
   for (const e of log) {
-    const key = [e.snackName, e.snackIcon, e.calories, e.withTicket].join("|");
+    const key = [e.kind, e.name, e.icon, e.calories, e.withTicket].join("|");
     byKey.set(key, [...(byKey.get(key) ?? []), e]);
   }
-  const eaten = (a: ConsumptionEntry, b: ConsumptionEntry) => a.eatenAt.localeCompare(b.eatenAt) || a.id - b.id;
+  const inOrder = (a: LogEntry, b: LogEntry) => a.at.localeCompare(b.at) || a.id - b.id;
   return [...byKey]
-    .map(([key, entries]) => ({ key, entries: entries.slice().sort(eaten) }))
-    .sort((a, b) => eaten(b.entries[0], a.entries[0]));
+    .map(([key, entries]) => ({ key, entries: entries.slice().sort(inOrder) }))
+    .sort((a, b) => inOrder(b.entries[0], a.entries[0]));
 }
 
-/** One record of today's log: what was eaten, its calories (or the ticket) and when, with its undo. */
-function LogRow({ e, busy, onUndo }: { e: ConsumptionEntry; busy: boolean; onUndo: () => void }) {
+/** What a row of the log did to the day: −50 kcal eaten, 🎟 引換券, +30 kcal done. */
+function logKcal(e: LogEntry, calories = e.calories): string {
+  if (e.withTicket) return "🎟 引換券";
+  return e.kind === "task" ? `+${calories} kcal` : `−${calories} kcal`;
+}
+
+/** One record of today's log: what was eaten or done, its calories (or the ticket) and when, with its undo. */
+function LogRow({ e, busy, onUndo }: { e: LogEntry; busy: boolean; onUndo: () => void }) {
   return (
     <div className="log-row">
-      <span className="log-icon">{e.snackIcon}</span>
-      <span className="log-name">{e.snackName}</span>
-      <span className="log-kcal">{e.withTicket ? "🎟 引換券" : `−${e.calories} kcal`}</span>
-      <span className="muted small">{e.eatenAt.slice(11, 16)}</span>
+      <span className="log-icon">{e.icon}</span>
+      <span className="log-name">{e.name}</span>
+      <span className={"log-kcal" + (e.kind === "task" ? " earned" : "")}>{logKcal(e)}</span>
+      <span className="muted small">{e.at.slice(11, 16)}</span>
       <UndoButton disabled={busy} onClick={onUndo} />
     </div>
   );
 }
 
-/** Ties fall back to calories and then the order added, always ascending, so rows stay put. */
-function sortSnacks(snacks: Snack[], { key, dir }: SortState): Snack[] {
-  const sign = dir === "asc" ? 1 : -1;
-  return snacks.slice().sort((a, b) => sign * compare(key, a, b) || a.calories - b.calories || a.id - b.id);
-}
-
 export default function Snacks({ dash, onChanged, ticketMode, onTicketMode, toast }: Props) {
   const [snacks, setSnacks] = useState<Snack[]>(dash.snacks);
-  const [log, setLog] = useState<ConsumptionEntry[]>([]);
-  const [name, setName] = useState("");
-  const [calories, setCalories] = useState("");
-  const [icon, setIcon] = useState("🍰");
+  const [tasks, setTasks] = useState<Task[]>(dash.tasks);
+  const [eaten, setEaten] = useState<ConsumptionEntry[]>([]);
+  const [done, setDone] = useState<TaskEntry[]>([]);
   const [busy, setBusy] = useState(false);
-  const [sort, setSort] = useState<SortState>(loadSort);
-  /** the snack being corrected, with what the form says so far */
-  const [editing, setEditing] = useState<{ id: number; name: string; calories: string; icon: string } | null>(null);
-  /** the snack whose × asks "削除する / やめる" */
-  const [deleting, setDeleting] = useState<number | null>(null);
   /** the stack of today's log opened to undo its records one by one */
   const [openStack, setOpenStack] = useState<string | null>(null);
 
   const reload = useCallback(async () => {
-    const [s, l] = await Promise.all([api.listSnacks(), api.getTodayConsumption()]);
+    const [s, e, t, d] = await Promise.all([api.listSnacks(), api.getTodayConsumption(), api.listTasks(), api.getTodayTasks()]);
     setSnacks(s);
-    setLog(l);
+    setEaten(e);
+    setTasks(t);
+    setDone(d);
   }, []);
 
   // Again on a new day (the app left open past midnight): the log is today's.
@@ -145,57 +116,32 @@ export default function Snacks({ dash, onChanged, ticketMode, onTicketMode, toas
     reload().catch((e) => toast(String(e)));
   }, [reload, toast, day]);
 
-  const goalIds = new Set(dash.goalSnacks.map((g) => g.id));
+  const diet = dash.user.dietMode;
   const { today, savings } = dash;
   const budget = remainingKcal(today);
   const tickets = savings.snackTickets;
   const showTickets = ticketMode && tickets > 0;
+  const log = logEntries(eaten, done);
 
-  const run = async (fn: () => Promise<void>) => {
-    setBusy(true);
-    try {
-      await fn();
-      await reload();
-      onChanged();
-    } catch (e) {
-      toast(String(e));
-    } finally {
-      setBusy(false);
-    }
+  const run = (fn: () => Promise<void>) => {
+    void (async () => {
+      setBusy(true);
+      try {
+        await fn();
+        await reload();
+        onChanged();
+      } catch (e) {
+        toast(String(e));
+      } finally {
+        setBusy(false);
+      }
+    })();
   };
 
-  const chooseSort = (key: SortKey) => {
-    const next: SortState =
-      sort.key === key
-        ? { key, dir: sort.dir === "asc" ? "desc" : "asc" }
-        : { key, dir: SORTS.find((s) => s.key === key)!.first };
-    setSort(next);
-    saveSort(next);
-  };
-  const sortInfo = SORTS.find((s) => s.key === sort.key)!;
-  const shown = sortSnacks(snacks, sort);
-
-  const saveEdit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!editing) return;
-    const { id, name: newName, calories: kcal, icon: newIcon } = editing;
-    void run(async () => {
-      const s = await api.updateSnack(id, newName, Number(kcal), newIcon);
-      toast(`${s.icon} ${s.name}（${s.calories} kcal）に修正しました`);
-      setEditing(null);
+  const undo = (e: LogEntry) =>
+    run(async () => {
+      await (e.kind === "task" ? api.deleteTaskDone(e.id) : api.deleteConsumption(e.id));
     });
-  };
-
-  const add = (e: React.FormEvent) => {
-    e.preventDefault();
-    const kcal = Number(calories);
-    void run(async () => {
-      const s = await api.addSnack(name, kcal, icon);
-      toast(`${s.icon} ${s.name} を図鑑に追加しました`);
-      setName("");
-      setCalories("");
-    });
-  };
 
   return (
     <div className="screen snacks">
@@ -244,7 +190,11 @@ export default function Snacks({ dash, onChanged, ticketMode, onTicketMode, toas
           </div>
         </div>
         {log.length === 0 ? (
-          <div className="muted">まだ何も食べていません。食べたら図鑑のナイフとフォークのボタンで記録しましょう。</div>
+          <div className="muted">
+            {diet
+              ? "まだ何も記録していません。食べたら図鑑のナイフとフォーク、課題をやったら課題一覧の 💪 で記録しましょう。"
+              : "まだ何も食べていません。食べたら図鑑のナイフとフォークのボタンで記録しましょう。"}
+          </div>
         ) : (
           <ul className="log-list">
             {stackLog(log).map(({ key, entries }) => {
@@ -252,7 +202,7 @@ export default function Snacks({ dash, onChanged, ticketMode, onTicketMode, toas
               if (entries.length === 1) {
                 return (
                   <li key={key}>
-                    <LogRow e={first} busy={busy} onUndo={() => run(async () => { await api.deleteConsumption(first.id); })} />
+                    <LogRow e={first} busy={busy} onUndo={() => undo(first)} />
                   </li>
                 );
               }
@@ -263,12 +213,12 @@ export default function Snacks({ dash, onChanged, ticketMode, onTicketMode, toas
               return (
                 <li key={key} className={"log-stack" + (open ? " open" : "")}>
                   <div className="log-row">
-                    <span className="log-icon">{first.snackIcon}</span>
+                    <span className="log-icon">{first.icon}</span>
                     <span className="log-name">
-                      {first.snackName} <b className="log-count">×{entries.length}</b>
+                      {first.name} <b className="log-count">×{entries.length}</b>
                     </span>
-                    <span className="log-kcal">{first.withTicket ? "🎟 引換券" : `−${total} kcal`}</span>
-                    <span className="muted small">{first.eatenAt.slice(11, 16)}</span>
+                    <span className={"log-kcal" + (first.kind === "task" ? " earned" : "")}>{logKcal(first, total)}</span>
+                    <span className="muted small">{first.at.slice(11, 16)}</span>
                     <UndoButton
                       label={open ? "一覧を閉じる" : "1つずつ取り消す（一覧を開く）"}
                       expanded={open}
@@ -280,7 +230,7 @@ export default function Snacks({ dash, onChanged, ticketMode, onTicketMode, toas
                     <ul className="log-stack-list">
                       {entries.map((e) => (
                         <li key={e.id}>
-                          <LogRow e={e} busy={busy} onUndo={() => run(async () => { await api.deleteConsumption(e.id); })} />
+                          <LogRow e={e} busy={busy} onUndo={() => undo(e)} />
                         </li>
                       ))}
                     </ul>
@@ -292,200 +242,126 @@ export default function Snacks({ dash, onChanged, ticketMode, onTicketMode, toas
         )}
       </section>
 
-      <section className="card">
-        <div className="section-head">
-          <h2>
+      <BookCard
+        title={
+          <>
             お菓子図鑑 <span className="snack-count">{snacks.length}種</span>
-          </h2>
-          <div className="sort-bar" role="group" aria-label="並び替え">
-            <span className="muted small">並び替え</span>
-            <div className="segmented">
-              {SORTS.map((s) => (
-                <button
-                  key={s.key}
-                  className={sort.key === s.key ? "active" : ""}
-                  title={sort.key === s.key ? "もう一度押すと逆順" : `${s.label}順（${s.dirs[s.first]}）`}
-                  onClick={() => chooseSort(s.key)}
-                >
-                  {s.label}
-                  {sort.key === s.key && (sort.dir === "asc" ? " ↑" : " ↓")}
-                </button>
-              ))}
-            </div>
-            <button className="btn-link sort-dir" title="逆順にする" onClick={() => chooseSort(sort.key)}>
-              {sortInfo.dirs[sort.dir]}
-            </button>
-          </div>
-        </div>
-        <p className="muted small">
-          ☆ を押すと目標になり、ホームに「あと何問で食べられるか」が表示されます（いくつでも登録できます）。初めから入っているお菓子も、鉛筆で名前・カロリー・アイコンを修正したり、× で削除したりできます。
-        </p>
-        {showTickets && (
-          <p className="ticket-note">🎟 引換券を使うお菓子の「引換券」を押してください。カロリーを使わずに食べられます。</p>
-        )}
-        <ul className={"snack-list" + (showTickets ? " with-tickets" : "")}>
-          {shown.map((s) => {
-            const isGoal = goalIds.has(s.id);
-            const affordable = budget >= s.calories;
-            const edit = editing?.id === s.id ? editing : null;
-            return [
-              <li key={s.id} className={"snack-row" + (isGoal ? " goal" : "") + (edit ? " editing" : "")}>
-                <button
-                  className={"snack-star" + (isGoal ? " on" : "")}
-                  disabled={busy}
-                  aria-pressed={isGoal}
-                  aria-label={isGoal ? "目標から外す" : "目標にする"}
-                  title={isGoal ? "目標から外します" : "目標にします（いくつでも登録できます）"}
-                  onClick={() => run(async () => { await api.setGoalSnack(s.id, !isGoal); })}
-                >
-                  {isGoal ? "★" : "☆"}
-                </button>
-                <span className="snack-row-icon">{s.icon}</span>
-                <span className="snack-row-name" title={s.name}>
-                  {s.name}
-                  {!s.isBuiltin && <span className="pill snack-mine">自作</span>}
-                </span>
-                <span className="snack-row-count" title="これまでに食べた回数">
-                  {s.eatenCount > 0 || sort.key === "eaten" ? `${s.eatenCount}回` : ""}
-                </span>
-                <span className="snack-row-kcal">{s.calories} kcal</span>
-                <span className="snack-row-actions">
-                  <EatButton
-                    affordable={affordable}
-                    disabled={busy}
-                    onClick={() =>
-                      run(async () => {
-                        await api.logSnackEaten(s.id);
-                        playCrunch();
-                        toast(`${s.icon} ${s.name}（${s.calories} kcal）を記録しました`);
-                      })
-                    }
-                  />
-                  {showTickets && (
-                    <button
-                      className="btn-small ticket"
-                      disabled={busy}
-                      title="お菓子引換券を1枚使って、カロリーを使わずに食べます"
-                      onClick={() =>
-                        run(async () => {
-                          await api.eatWithTicket(s.id);
-                          playCrunch();
-                          toast(`🎟 引換券で ${s.icon} ${s.name} を食べました（カロリーは使っていません）`);
-                        })
-                      }
-                    >
-                      🎟 引換券
-                    </button>
-                  )}
-                  <EditButton
-                    label="名前・カロリー・アイコンを修正"
-                    disabled={busy}
-                    onClick={() => {
-                      setDeleting(null);
-                      setEditing(edit ? null : { id: s.id, name: s.name, calories: String(s.calories), icon: s.icon });
-                    }}
-                  />
-                  <DeleteButton
-                    label="図鑑から削除"
-                    disabled={busy}
-                    onClick={() => {
-                      setEditing(null);
-                      setDeleting(deleting === s.id ? null : s.id);
-                    }}
-                  />
-                </span>
-              </li>,
-              deleting === s.id && (
-                <li key={`${s.id}-delete`} className="snack-confirm">
-                  <span>
-                    {s.icon} {s.name} を図鑑から削除しますか？
-                    {s.isBuiltin && <span className="muted small">（初めから入っているお菓子は元に戻せません）</span>}
-                  </span>
-                  <button
-                    className="btn-small danger"
-                    disabled={busy}
-                    onClick={() =>
-                      run(async () => {
-                        await api.deleteSnack(s.id);
-                        setDeleting(null);
-                        toast(`${s.icon} ${s.name} を図鑑から削除しました`);
-                      })
-                    }
-                  >
-                    削除する
-                  </button>
-                  <button className="btn-small" disabled={busy} onClick={() => setDeleting(null)}>
-                    やめる
-                  </button>
-                </li>
-              ),
-              edit && (
-                <li key={`${s.id}-edit`} className="snack-edit">
-                  <form onSubmit={saveEdit}>
-                    <div className="icon-picker small">
-                      {SNACK_ICONS.includes(edit.icon) ? null : (
-                        <button type="button" className="active" title="今のアイコン">
-                          {edit.icon}
-                        </button>
-                      )}
-                      {SNACK_ICONS.map((i) => (
-                        <button type="button" key={i} className={edit.icon === i ? "active" : ""} onClick={() => setEditing({ ...edit, icon: i })}>
-                          {i}
-                        </button>
-                      ))}
-                    </div>
-                    <div className="row">
-                      <input
-                        value={edit.name}
-                        onChange={(e) => setEditing({ ...edit, name: e.target.value })}
-                        maxLength={40}
-                        aria-label="お菓子の名前"
-                        autoFocus
-                      />
-                      <input
-                        value={edit.calories}
-                        onChange={(e) => setEditing({ ...edit, calories: e.target.value })}
-                        type="number"
-                        min={1}
-                        max={5000}
-                        aria-label="カロリー"
-                        className="snack-edit-kcal"
-                      />
-                      <span className="muted small">kcal</span>
-                      <button className="btn btn-primary" type="submit" disabled={busy || !edit.name.trim() || !edit.calories}>
-                        保存
-                      </button>
-                      <button className="btn" type="button" disabled={busy} onClick={() => setEditing(null)}>
-                        やめる
-                      </button>
-                    </div>
-                  </form>
-                </li>
-              ),
-            ];
-          })}
-        </ul>
-      </section>
-
-      <section className="card">
-        <h2>お菓子を登録する</h2>
-        <form className="add-form" onSubmit={add}>
-          <div className="icon-picker">
-            {SNACK_ICONS.map((i) => (
-              <button type="button" key={i} className={icon === i ? "active" : ""} onClick={() => setIcon(i)}>
-                {i}
+          </>
+        }
+        intro="☆ を押すと目標になり、ホームに「あと何問で食べられるか」が表示されます（いくつでも登録できます）。初めから入っているお菓子も、鉛筆で名前・カロリー・アイコンを修正したり、× で削除したりできます。"
+        note={
+          showTickets && <p className="ticket-note">🎟 引換券を使うお菓子の「引換券」を押してください。カロリーを使わずに食べられます。</p>
+        }
+        items={snacks}
+        words={SNACK_WORDS}
+        icons={SNACK_ICONS}
+        maxKcal={SNACK_MAX_KCAL}
+        sortStorage="cq-snack-sort"
+        countOf={(s) => s.eatenCount}
+        goalIds={new Set(dash.goalSnacks.map((g) => g.id))}
+        listClass={showTickets ? "with-tickets" : ""}
+        busy={busy}
+        run={run}
+        toast={toast}
+        setGoal={api.setGoalSnack}
+        update={api.updateSnack}
+        remove={api.deleteSnack}
+        actions={(s) => (
+          <>
+            <EatButton
+              affordable={budget >= s.calories}
+              disabled={busy}
+              onClick={() =>
+                run(async () => {
+                  await api.logSnackEaten(s.id);
+                  playCrunch();
+                  toast(`${s.icon} ${s.name}（${s.calories} kcal）を記録しました`);
+                })
+              }
+            />
+            {showTickets && (
+              <button
+                className="btn-small ticket"
+                disabled={busy}
+                title="お菓子引換券を1枚使って、カロリーを使わずに食べます"
+                onClick={() =>
+                  run(async () => {
+                    await api.eatWithTicket(s.id);
+                    playCrunch();
+                    toast(`🎟 引換券で ${s.icon} ${s.name} を食べました（カロリーは使っていません）`);
+                  })
+                }
+              >
+                🎟 引換券
               </button>
-            ))}
-          </div>
-          <div className="row">
-            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="例: 近所のケーキ屋のショートケーキ" maxLength={40} />
-            <input value={calories} onChange={(e) => setCalories(e.target.value)} placeholder="kcal" type="number" min={1} max={5000} style={{ width: 110 }} />
-            <button className="btn btn-primary" type="submit" disabled={busy || !name.trim() || !calories}>
-              {icon} 追加
-            </button>
-          </div>
-        </form>
-      </section>
+            )}
+          </>
+        )}
+      />
+
+      <AddCard
+        title="お菓子を登録する"
+        words={SNACK_WORDS}
+        icons={SNACK_ICONS}
+        defaultIcon="🍰"
+        maxKcal={SNACK_MAX_KCAL}
+        placeholder="例: 近所のケーキ屋のショートケーキ"
+        busy={busy}
+        run={run}
+        toast={toast}
+        add={api.addSnack}
+      />
+
+      {diet && (
+        <>
+          <BookCard
+            title={
+              <>
+                課題一覧 <span className="snack-count">{tasks.length}件</span>
+              </>
+            }
+            intro="💪 を押すと達成になり、書いてあるカロリーがもらえます（遊び方モードの倍率は掛かりません。取り消しは上の家計簿から）。☆ を押すと目標になり、ホームの「目標の課題」からも達成を記録できます。初めから入っている課題も、鉛筆で修正したり、× で削除したりできます。"
+            items={tasks}
+            words={TASK_WORDS}
+            icons={TASK_ICONS}
+            maxKcal={TASK_MAX_KCAL}
+            sortStorage="cq-task-sort"
+            countOf={(t) => t.doneCount}
+            goalIds={new Set(dash.goalTasks.map((g) => g.id))}
+            listClass="task-list"
+            busy={busy}
+            run={run}
+            toast={toast}
+            setGoal={api.setGoalTask}
+            update={api.updateTask}
+            remove={api.deleteTask}
+            actions={(t) => (
+              <DoneButton
+                disabled={busy}
+                onClick={() =>
+                  run(async () => {
+                    await api.logTaskDone(t.id);
+                    playDone();
+                    toast(`💪 ${t.icon} ${t.name} を達成しました（+${t.calories} kcal）`);
+                  })
+                }
+              />
+            )}
+          />
+          <AddCard
+            title="課題を登録する"
+            words={TASK_WORDS}
+            icons={TASK_ICONS}
+            defaultIcon="💪"
+            maxKcal={TASK_MAX_KCAL}
+            placeholder="例: 腹筋 20回、お風呂掃除、漢字ドリル 1ページ"
+            busy={busy}
+            run={run}
+            toast={toast}
+            add={api.addTask}
+          />
+        </>
+      )}
     </div>
   );
 }

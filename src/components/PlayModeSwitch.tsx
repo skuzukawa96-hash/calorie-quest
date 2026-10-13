@@ -24,8 +24,8 @@ export default function PlayModeSwitch({ mode, onChange }: { mode: PlayMode; onC
           </span>
         ))}
         <span className="play-mode-note">
-          学習・単語帳・試験・チートデイなど、カロリーがもらえるものすべてに掛かります。クリックで切り替え（がんばり → 通常 →
-          お気軽）
+          学習・単語帳・試験・チートデイなど、カロリーがもらえるものすべてに掛かります（ダイエット機能の課題と体重の記録は除く）。クリックで切り替え（がんばり →
+          通常 → お気軽）
         </span>
       </span>
     </span>

@@ -941,12 +941,12 @@ export default function Recipe({ playMode, onProgress, toast }: Props) {
           </div>
           <button
             type="button"
-            className={"recipe-priority" + (missedFirst ? " on" : "")}
+            className={"switch-btn" + (missedFirst ? " on" : "")}
             aria-pressed={missedFirst}
             title="オンにすると、復習で間違えた回数が多い単語から出題します"
             onClick={() => setMissedFirst((on) => !on)}
           >
-            <span className="recipe-priority-switch" aria-hidden="true" />
+            <span className="switch-knob" aria-hidden="true" />
             間違いやすい語を優先
           </button>
           {asking ? (

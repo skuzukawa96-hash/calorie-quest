@@ -30,7 +30,10 @@ import type {
   Snack,
   SpeechCapabilities,
   Stats,
+  Task,
+  TaskEntry,
   TierChoice,
+  WeightResult,
   WordNotes,
   WordTags,
 } from "../types";
@@ -78,6 +81,23 @@ export const api = {
   /** がんばり / 通常 / お気軽: what is earned from now on is scaled by it */
   setPlayMode: (mode: PlayMode) => call<PlayMode>("set_play_mode", { mode }),
   getStats: () => call<Stats>("get_stats"),
+
+  // ダイエット機能: 課題 (done for kcal, as they say whatever the play mode) and the weight
+  setDietMode: (on: boolean) => call<boolean>("set_diet_mode", { on }),
+  listTasks: () => call<Task[]>("list_tasks"),
+  addTask: (name: string, calories: number, icon: string) => call<Task>("add_task", { name, calories, icon }),
+  updateTask: (id: number, name: string, calories: number, icon: string) =>
+    call<Task>("update_task", { id, name, calories, icon }),
+  deleteTask: (id: number) => call<void>("delete_task", { id }),
+  setGoalTask: (id: number, goal: boolean) => call<Task[]>("set_goal_task", { id, goal }),
+  logTaskDone: (taskId: number) => call<DailyStats>("log_task_done", { taskId }),
+  /** 達成の記録とカロリーの獲得だけ。課題一覧にも目標にも入れない */
+  logOneOffTask: (name: string, calories: number, icon: string) =>
+    call<DailyStats>("log_one_off_task", { name, calories, icon }),
+  getTodayTasks: () => call<TaskEntry[]>("get_today_tasks"),
+  deleteTaskDone: (id: number) => call<DailyStats>("delete_task_done", { id }),
+  /** today's weight at the height given; the first record of a day pays */
+  recordWeight: (weightKg: number, heightCm: number) => call<WeightResult>("record_weight", { weightKg, heightCm }),
   /** 💾 バックアップ: the backups folder and its files, newest first */
   listBackups: () => call<BackupList>("list_backups"),
   createBackup: () => call<BackupInfo>("create_backup"),

@@ -200,6 +200,10 @@ export interface UserInfo {
   longestStreak: number;
   lastStudyDate?: string | null;
   playMode: PlayMode;
+  /** ダイエット機能: 課題一覧・目標の課題・体重と BMI のグラフを出す */
+  dietMode: boolean;
+  /** the height BMI is worked out from, once given */
+  heightCm?: number | null;
 }
 
 /** 遊び方: がんばり（獲得カロリー ×0.5）/ 通常 / お気軽（×1.5）。Mirrors srs::PLAY_MODES. */
@@ -237,6 +241,42 @@ export interface Snack {
   isBuiltin: boolean;
   /** how many times it has been recorded as eaten (with kcal or a ticket) */
   eatenCount: number;
+}
+
+/** ダイエット機能の課題: something done for kcal (腕立て伏せ 10回 30 kcal), the other way round from a snack. */
+export interface Task {
+  id: number;
+  name: string;
+  /** what doing it earns */
+  calories: number;
+  icon: string;
+  isBuiltin: boolean;
+  /** how many times it has been done */
+  doneCount: number;
+}
+
+/** A 課題 done today, in the day's log beside the snacks eaten. */
+export interface TaskEntry {
+  id: number;
+  taskName: string;
+  taskIcon: string;
+  calories: number;
+  doneAt: string;
+}
+
+/** The weight of a day, the height it was weighed at, and the BMI they make. */
+export interface WeightPoint {
+  date: string;
+  weightKg: number;
+  heightCm: number;
+  bmi: number;
+}
+
+export interface WeightResult {
+  point: WeightPoint;
+  /** kcal paid now: the first record of the day pays, a correction the same day does not */
+  bonus: number;
+  today: DailyStats;
 }
 
 export interface KcalRates {
@@ -370,6 +410,12 @@ export interface Dashboard {
   /** 今日食べたお菓子の id。目標やバーのアイコンに「食べた」を付ける */
   eatenToday: number[];
   snacks: Snack[];
+  /** 目標の課題（カロリーの少ない順） */
+  goalTasks: Task[];
+  /** 今日やった課題の id */
+  doneToday: number[];
+  /** 課題一覧 */
+  tasks: Task[];
   categories: CategoryInfo[];
   /** 英単語 by part of speech, for the chips above the genres */
   partsOfSpeech: PartOfSpeechInfo[];
@@ -638,6 +684,11 @@ export interface Stats {
   reviewPending: number;
   /** the study answers by tab and mode (英単語 × 選択 …), for 累計獲得カロリー / 累計回答数 / 正答率 */
   breakdown: StatCell[];
+  /** the weights recorded in the last two weeks, oldest first (ダイエット機能) */
+  weights: WeightPoint[];
+  heightCm?: number | null;
+  /** what the first weight recorded in a day pays */
+  weightBonusKcal: number;
 }
 
 /** The study answers of one tab in one mode: what they earned at 通常 (the play mode left aside), how many, how many right. */

@@ -22,7 +22,7 @@ pub(crate) fn err<E: std::fmt::Display>(e: E) -> String {
 
 fn load_user(conn: &Connection) -> rusqlite::Result<UserInfo> {
     conn.query_row(
-        "SELECT id, name, total_study_days, current_streak, longest_streak, last_study_date, play_mode
+        "SELECT id, name, total_study_days, current_streak, longest_streak, last_study_date, play_mode, diet_mode, height_cm
          FROM users WHERE id = ?1",
         params![USER_ID],
         |r| {
@@ -34,6 +34,8 @@ fn load_user(conn: &Connection) -> rusqlite::Result<UserInfo> {
                 longest_streak: r.get(4)?,
                 last_study_date: r.get(5)?,
                 play_mode: r.get(6)?,
+                diet_mode: r.get::<_, i64>(7)? != 0,
+                height_cm: r.get(8)?,
             })
         },
     )
@@ -1224,6 +1226,9 @@ pub fn load_dashboard(conn: &Connection) -> CmdResult<Dashboard> {
         goal_snacks: goal_snacks_inner(conn).map_err(err)?,
         eaten_today: eaten_today(conn).map_err(err)?,
         snacks: list_snacks_inner(conn).map_err(err)?,
+        goal_tasks: crate::diet::goal_tasks(conn).map_err(err)?,
+        done_today: crate::diet::done_today(conn).map_err(err)?,
+        tasks: crate::diet::list_tasks_in(conn).map_err(err)?,
         categories: category_infos(conn).map_err(err)?,
         parts_of_speech: parts_of_speech(conn).map_err(err)?,
         mode_counts: mode_counts(conn).map_err(err)?,
@@ -1307,14 +1312,27 @@ pub fn list_snacks(state: State<'_, AppState>) -> CmdResult<Vec<Snack>> {
 /// A snack's name and icon as they are kept: the name trimmed and not empty, an empty icon made 🍬,
 /// and the kcal 1〜5000.
 fn checked_snack(name: &str, calories: i64, icon: &str) -> CmdResult<(String, String)> {
+    checked_item("お菓子", name, calories, 5000, icon, "🍬")
+}
+
+/// The name and icon of a snack or a 課題 (`what`) as they are kept: the name trimmed and not empty,
+/// an empty icon made `default_icon`, and the kcal 1〜`max`.
+pub(crate) fn checked_item(
+    what: &str,
+    name: &str,
+    calories: i64,
+    max: i64,
+    icon: &str,
+    default_icon: &str,
+) -> CmdResult<(String, String)> {
     let name = name.trim();
     if name.is_empty() {
-        return Err("お菓子の名前を入力してください".into());
+        return Err(format!("{what}の名前を入力してください"));
     }
-    if !(1..=5000).contains(&calories) {
-        return Err("カロリーは1〜5000の範囲で入力してください".into());
+    if !(1..=max).contains(&calories) {
+        return Err(format!("カロリーは1〜{max}の範囲で入力してください"));
     }
-    let icon = if icon.trim().is_empty() { "🍬" } else { icon };
+    let icon = if icon.trim().is_empty() { default_icon } else { icon };
     Ok((name.to_string(), icon.to_string()))
 }
 
@@ -1623,6 +1641,9 @@ pub fn load_stats(conn: &Connection) -> CmdResult<Stats> {
         review_due: due_review_count(conn).map_err(err)?,
         review_pending,
         breakdown,
+        weights: crate::diet::weights_since(conn, &start).map_err(err)?,
+        height_cm: user.height_cm,
+        weight_bonus_kcal: crate::diet::WEIGHT_BONUS_KCAL,
     })
 }
 
@@ -1633,7 +1654,7 @@ pub fn reset_progress(state: State<'_, AppState>) -> CmdResult<()> {
     let tx = conn.unchecked_transaction().map_err(err)?;
     tx.execute_batch(
         "DELETE FROM learning_history; DELETE FROM answer_log; DELETE FROM daily_stats;
-         DELETE FROM consumption_log; DELETE FROM cheat_tickets; DELETE FROM snack_tickets;
+         DELETE FROM consumption_log; DELETE FROM task_log; DELETE FROM cheat_tickets; DELETE FROM snack_tickets;
          UPDATE users SET total_study_days = 0, current_streak = 0, longest_streak = 0, last_study_date = NULL,
            savings_kcal = 0;
          UPDATE recipe_words SET paid_on = NULL;

@@ -1,5 +1,6 @@
-// Icon-only buttons used across the screens: a knife and fork records a snack as eaten, a red × deletes, a brown
-// curved arrow undoes. Each keeps its words in the tooltip and the accessible name.
+// Icon-only buttons used across the screens: a knife and fork records a snack as eaten, a flexed arm a 課題
+// done, a red × deletes, a brown curved arrow undoes, two arrows switch a view. Each keeps its words in the
+// tooltip and the accessible name.
 
 interface Common {
   disabled?: boolean;
@@ -28,6 +29,27 @@ export function EatButton({ affordable, label, disabled, onClick }: Common & { a
   );
 }
 
+/**
+ * 達成！ for a 課題 as a flexed arm (💪), drawn like the knife and fork: a fist (filled, as the
+ * knife's blade is), a forearm and a round biceps in the same bold brown strokes.
+ */
+export function DoneButton({ label = "達成！（カロリーを獲得）", disabled, onClick }: Common & { label?: string }) {
+  return (
+    <button type="button" className="icon-btn done" disabled={disabled} title={label} aria-label={label} onClick={onClick}>
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <g fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+          {/* the arm: forearm up to the fist, the biceps round at the lower right */}
+          <path d="M3.2 18.6C2.6 11 5 3 10.6 3a2.6 2.6 0 0 1 0 5.2c-.4 0-.8-.1-1.1-.2.3 1.9 1.4 3.9 2.6 5.2a4.9 4.9 0 0 1 9.4 2c0 3.4-3.9 5.8-8.6 5.8-3.6 0-7.2-.8-9.7-2.4z" />
+          {/* the fist */}
+          <path d="M10.6 3a2.6 2.6 0 0 1 0 5.2c-.4 0-.8-.1-1.1-.2-.9-.6-1.2-1.6-1.1-2.6.2-1.4 1-2.4 2.2-2.4z" fill="currentColor" />
+          {/* the crook of the elbow under the biceps */}
+          <path d="M15.6 14.3a4.8 4.8 0 0 0-6.3 2" />
+        </g>
+      </svg>
+    </button>
+  );
+}
+
 /** A red ×. `label` says what goes, since a list can hold several kinds of removal. */
 export function DeleteButton({ label, disabled, onClick }: Common & { label: string }) {
   return (
@@ -49,6 +71,27 @@ export function EditButton({ label = "修正する", disabled, onClick }: Common
           fill="none"
           stroke="currentColor"
           strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </svg>
+    </button>
+  );
+}
+
+/**
+ * Two arrows the opposite ways (⇄) beside a heading: switches what the card shows (目標のお菓子 ⇄
+ * 目標の課題, the kcal chart ⇄ the weight chart). `label` names what it switches to.
+ */
+export function SwitchViewButton({ label, disabled, onClick }: Common & { label: string }) {
+  return (
+    <button type="button" className="icon-btn switch-view" disabled={disabled} title={label} aria-label={label} onClick={onClick}>
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path
+          d="M4 8.5h14.5M15 5l3.5 3.5L15 12M20 15.5H5.5M9 12l-3.5 3.5L9 19"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2.1"
           strokeLinecap="round"
           strokeLinejoin="round"
         />

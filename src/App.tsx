@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, runningInTauri } from "./lib/api";
+import DietSwitch from "./components/DietSwitch";
 import PlayModeSwitch from "./components/PlayModeSwitch";
 import RecipeProvider from "./components/RecipeProvider";
 import { playFanfare } from "./lib/sfx";
@@ -99,6 +100,25 @@ export default function App() {
     [refresh],
   );
 
+  // ダイエット機能: on, the 課題一覧, the 課題 goals and the weight chart come out.
+  const changeDietMode = useCallback(
+    async (on: boolean) => {
+      try {
+        await api.setDietMode(on);
+        await refresh();
+        showToast(
+          on
+            ? "💪 ダイエット機能をONにしました（お菓子図鑑に課題一覧、ホームの目標に課題、記録に体重・BMIのグラフが出ます）"
+            : "ダイエット機能をOFFにしました（課題と体重の記録は残っています）",
+          4000,
+        );
+      } catch (e) {
+        setError(String(e));
+      }
+    },
+    [refresh, showToast],
+  );
+
   useEffect(() => {
     void refresh();
     void loadSpeechCapabilities();
@@ -154,6 +174,7 @@ export default function App() {
           <div className="topbar-stats">
             {dash && (
               <>
+                <DietSwitch on={dash.user.dietMode} onChange={(on) => void changeDietMode(on)} />
                 <PlayModeSwitch mode={dash.user.playMode} onChange={(m) => void changePlayMode(m)} />
                 <span title="連続学習日数">🔥 {dash.user.currentStreak}日</span>
                 {/* What is left to eat today (earned minus eaten) over what was earned. */}
@@ -236,7 +257,7 @@ export default function App() {
               <Favorites rates={dash.kcalRates} overview={dash.exam} playMode={dash.user.playMode} toast={showToast} />
             ) : null
           ) : (
-            <Stats onChanged={() => void refresh()} toast={showToast} />
+            <Stats dietMode={dash?.user.dietMode ?? false} onChanged={() => void refresh()} toast={showToast} />
           )}
         </main>
 

@@ -234,6 +234,10 @@ pub struct UserInfo {
     pub last_study_date: Option<String>,
     /// がんばり hard (earnings ×0.5) / 通常 normal / お気軽 easy (×1.5)
     pub play_mode: String,
+    /// ダイエット機能: 課題一覧・目標の課題・体重と BMI のグラフを出す
+    pub diet_mode: bool,
+    /// the height BMI is worked out from, once given
+    pub height_cm: Option<f64>,
 }
 
 #[derive(Debug, Clone, Default, Serialize)]
@@ -258,6 +262,52 @@ pub struct Snack {
     pub is_builtin: bool,
     /// how many times it has been recorded as eaten (with kcal or a ticket), for "よく食べる順"
     pub eaten_count: i64,
+}
+
+/// ダイエット機能の課題: something done for kcal (腕立て伏せ 10回 30 kcal, 窓ふき 50 kcal), the other
+/// way round from a snack.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Task {
+    pub id: i64,
+    pub name: String,
+    /// what doing it earns
+    pub calories: i64,
+    pub icon: String,
+    pub is_builtin: bool,
+    /// how many times it has been done, for "よくやる順"
+    pub done_count: i64,
+}
+
+/// A task done today, in the day's log beside the snacks eaten.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TaskEntry {
+    pub id: i64,
+    pub task_name: String,
+    pub task_icon: String,
+    pub calories: i64,
+    pub done_at: String,
+}
+
+/// The weight of a day, the height it was weighed at, and the BMI they make.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WeightPoint {
+    pub date: String,
+    pub weight_kg: f64,
+    pub height_cm: f64,
+    pub bmi: f64,
+}
+
+/// What recording today's weight did: the record, and the kcal it paid (once a day).
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WeightResult {
+    pub point: WeightPoint,
+    /// kcal paid now: the first record of the day pays, a correction the same day does not
+    pub bonus: i64,
+    pub today: DailyStats,
 }
 
 #[derive(Debug, Serialize)]
@@ -304,6 +354,12 @@ pub struct Dashboard {
     /// 今日食べたお菓子の id（重複なし）。目標やバーのアイコンに「食べた」を付ける
     pub eaten_today: Vec<i64>,
     pub snacks: Vec<Snack>,
+    /// 目標の課題（カロリーの少ない順）
+    pub goal_tasks: Vec<Task>,
+    /// 今日やった課題の id（重複なし）
+    pub done_today: Vec<i64>,
+    /// 課題一覧
+    pub tasks: Vec<Task>,
     pub categories: Vec<CategoryInfo>,
     /// 英単語 by part of speech (noun / verb / adjective / adverb), for the chips above the genres
     pub parts_of_speech: Vec<PartOfSpeechInfo>,
@@ -732,6 +788,11 @@ pub struct Stats {
     pub review_pending: i64,
     /// the study answers by tab and mode (英単語 × 選択 …), for 累計獲得カロリー / 累計回答数 / 正答率
     pub breakdown: Vec<StatCell>,
+    /// the weights recorded in the last two weeks, oldest first (ダイエット機能)
+    pub weights: Vec<WeightPoint>,
+    pub height_cm: Option<f64>,
+    /// what the first weight recorded in a day pays
+    pub weight_bonus_kcal: i64,
 }
 
 /// The study answers of one tab (word / compound / grammar / idiom / phrase / example) in one mode

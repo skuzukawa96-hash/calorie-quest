@@ -1,6 +1,7 @@
 mod backup;
 mod commands;
 mod db;
+mod diet;
 mod exam;
 mod favorite;
 mod models;
@@ -45,6 +46,17 @@ pub fn run() {
             commands::eat_with_ticket,
             commands::redeem_cheat_ticket,
             commands::set_play_mode,
+            diet::set_diet_mode,
+            diet::list_tasks,
+            diet::add_task,
+            diet::update_task,
+            diet::delete_task,
+            diet::set_goal_task,
+            diet::log_task_done,
+            diet::log_one_off_task,
+            diet::get_today_tasks,
+            diet::delete_task_done,
+            diet::record_weight,
             commands::get_stats,
             commands::get_dictionary,
             commands::get_idioms,

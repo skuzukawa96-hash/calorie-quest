@@ -83,3 +83,12 @@ export function playPop() {
   if (!c) return;
   tone(c, c.currentTime, 880, 0.07, "sine", 0.08);
 }
+
+/** A bright two-note chime for a 課題 done (ダイエット機能): kcal earned, not eaten. */
+export function playDone() {
+  const c = audio();
+  if (!c) return;
+  const t = c.currentTime;
+  tone(c, t, 784, 0.14, "sine", 0.09);
+  tone(c, t + 0.1, 1175, 0.3, "sine", 0.09);
+}

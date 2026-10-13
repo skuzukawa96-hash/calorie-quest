@@ -66,11 +66,15 @@ import type {
   SessionQuestion,
   Snack,
   Stats,
+  Task,
+  TaskEntry,
   Ticket,
   Tier,
   UsedWord,
   UserInfo,
   WeakQuestion,
+  WeightPoint,
+  WeightResult,
   WordNotes,
   Abbreviation,
   WordTags,
@@ -114,6 +118,19 @@ interface StoredConsumption extends ConsumptionEntry {
   ticketId?: number | null;
   /** null: eaten without being put in the book (log_one_off_snack) */
   snackId?: number | null;
+}
+
+/** A 課題 done (mirrors task_log); `taskId` null for one done without the list. */
+interface StoredTaskEntry extends TaskEntry {
+  date: string;
+  taskId: number | null;
+}
+
+/** A day's weight (mirrors weight_log): the height it was weighed at and what it paid. */
+interface StoredWeight {
+  weightKg: number;
+  heightCm: number;
+  bonus: number;
 }
 
 /** An exam set as asked: how many exams asked it, and when it was last asked (mirrors exam_seen). */
@@ -163,6 +180,14 @@ interface MockState {
   favorites: StoredFavorite[];
   /** mirrors meta done_reviews_released: reviews done once have stopped waiting to return */
   doneReviewsReleased?: boolean;
+  /** ダイエット機能の課題一覧 (mirrors tasks) */
+  tasks: Task[];
+  /** 目標の課題 (mirrors goal_tasks) */
+  goalTasks: number[];
+  /** 課題 done (mirrors task_log), the latest first */
+  taskLog: StoredTaskEntry[];
+  /** date → the weight of the day (mirrors weight_log) */
+  weights: Record<string, StoredWeight>;
   nextId: number;
 }
 
@@ -298,6 +323,25 @@ const BUILTIN: Array<[string, number, string]> = [
   ["ショートケーキ", 350, "🍰"],
 ];
 
+/** Mirrors diet::BUILTIN_TASKS. */
+const BUILTIN_TASKS: Array<[string, number, string]> = [
+  ["腕立て伏せ 10回", 30, "💪"],
+  ["スクワット 20回", 30, "🏋️"],
+  ["洗濯物をたたむ", 30, "🧺"],
+  ["食器洗い", 40, "🍽️"],
+  ["散歩 30分", 50, "🚶"],
+  ["窓ふき", 50, "🧽"],
+  ["部屋の掃除", 60, "🧹"],
+  ["宿題", 100, "📚"],
+];
+/** Mirrors diet::WEIGHT_BONUS_KCAL and diet::TASK_MAX_KCAL. */
+const WEIGHT_BONUS_KCAL = 10;
+const TASK_MAX_KCAL = 1000;
+
+function builtinTasks(): Task[] {
+  return BUILTIN_TASKS.map(([name, calories, icon], i) => ({ id: i + 1, name, calories, icon, isBuiltin: true, doneCount: 0 }));
+}
+
 function pad(n: number): string {
   return n < 10 ? `0${n}` : String(n);
 }
@@ -335,6 +379,8 @@ function freshState(): MockState {
       longestStreak: 0,
       lastStudyDate: null,
       playMode: "normal",
+      dietMode: false,
+      heightCm: null,
     },
     history: {},
     daily: {},
@@ -355,6 +401,10 @@ function freshState(): MockState {
     examProgress: {},
     favorites: [],
     doneReviewsReleased: true,
+    tasks: builtinTasks(),
+    goalTasks: [],
+    taskLog: [],
+    weights: {},
     nextId: 100,
   };
 }
@@ -389,6 +439,10 @@ function load(): MockState {
           | "examSeen"
           | "examProgress"
           | "favorites"
+          | "tasks"
+          | "goalTasks"
+          | "taskLog"
+          | "weights"
         > & {
           /** the day's recipe pay in halves, then in quarters, before eighths of any reward */
           recipeHalves?: Record<string, number>;
@@ -400,8 +454,13 @@ function load(): MockState {
         Object.fromEntries(Object.entries(stored.recipeHalves ?? {}).map(([d, n]) => [d, n * 2]));
       return {
         ...stored,
-        // Mirrors users.play_mode's default for state saved before modes existed.
-        user: { ...stored.user, playMode: stored.user.playMode ?? "normal" },
+        // Mirrors the defaults of users.play_mode, diet_mode and height_cm for state saved before them.
+        user: {
+          ...stored.user,
+          playMode: stored.user.playMode ?? "normal",
+          dietMode: stored.user.dietMode ?? false,
+          heightCm: stored.user.heightCm ?? null,
+        },
         // Mirrors recipe::trim_passage_examples: a word once saved with a whole exam passage keeps its
         // sentence; and recipe::migrate_usage_notation: a 用法 saved as "be afraid of ～" is "be afraid of A".
         recipe: migrateUsageNotation(
@@ -428,6 +487,11 @@ function load(): MockState {
         ),
         examProgress: stored.examProgress ?? {},
         favorites: stored.favorites ?? [],
+        // Mirrors diet::seed_tasks: the first 課題 come in once, with the list.
+        tasks: stored.tasks ?? builtinTasks(),
+        goalTasks: stored.goalTasks ?? [],
+        taskLog: stored.taskLog ?? [],
+        weights: stored.weights ?? {},
         // Mirrors the Rust migration: a review done once (level above 0) waits no more, once.
         history: stored.doneReviewsReleased
           ? stored.history
@@ -495,6 +559,76 @@ function save() {
   } catch {
     /* ignore */
   }
+}
+
+/**
+ * Mirrors commands::checked_item: the name and icon of a snack or a 課題 (`what`) as they are kept,
+ * the name trimmed and not empty, the kcal 1〜`max`, an empty icon made `defaultIcon`.
+ */
+function checkedItem(
+  what: string,
+  args: Record<string, unknown>,
+  max: number,
+  defaultIcon: string,
+): { name: string; calories: number; icon: string } {
+  const name = String(args.name ?? "").trim();
+  const calories = Number(args.calories);
+  if (!name) throw new Error(`${what}の名前を入力してください`);
+  if (!(Number.isInteger(calories) && calories >= 1 && calories <= max)) throw new Error(`カロリーは1〜${max}の範囲で入力してください`);
+  const icon = String(args.icon ?? "");
+  return { name, calories, icon: icon.trim() ? icon : defaultIcon };
+}
+
+/** Mirrors TASK_COLS in diet.rs: every 課題 carries how often it has been done. */
+function countedTasks(tasks: Task[]): Task[] {
+  const done = new Map<number, number>();
+  for (const e of state.taskLog) if (e.taskId !== null) done.set(e.taskId, (done.get(e.taskId) ?? 0) + 1);
+  return tasks.map((x) => ({ ...x, doneCount: done.get(x.id) ?? 0 }));
+}
+
+/** Mirrors diet::goal_tasks: cheapest first. */
+function goalTasks(): Task[] {
+  return countedTasks(state.tasks)
+    .filter((x) => state.goalTasks.includes(x.id))
+    .sort((a, b) => a.calories - b.calories || state.goalTasks.indexOf(a.id) - state.goalTasks.indexOf(b.id));
+}
+
+/** Mirrors diet::list_tasks_in: the cheapest first. */
+function listTasks(): Task[] {
+  return countedTasks(state.tasks).sort((a, b) => a.calories - b.calories || a.id - b.id);
+}
+
+/** Mirrors diet::earn_on: a 課題 done now, logged and paid as it says (no play mode). */
+function earnTask(taskId: number | null, taskName: string, taskIcon: string, calories: number): DailyStats {
+  const t = today();
+  state.taskLog.unshift({ id: state.nextId++, taskId, taskName, taskIcon, calories, doneAt: nowTs(), date: t });
+  daily(t).kcalEarned += calories;
+  save();
+  return { ...daily(t) };
+}
+
+/** Mirrors diet::bmi: kg over metres squared, to one decimal. */
+function bmi(weightKg: number, heightCm: number): number {
+  const m = heightCm / 100;
+  return Math.round((weightKg / (m * m)) * 10) / 10;
+}
+
+function weightPoint(date: string, w: StoredWeight): WeightPoint {
+  return { date, weightKg: w.weightKg, heightCm: w.heightCm, bmi: bmi(w.weightKg, w.heightCm) };
+}
+
+/** Mirrors diet::record_weight_in: today's weight; the first of a day pays, a correction does not. */
+function recordWeight(weightKg: number, heightCm: number): WeightResult {
+  if (!(Number.isFinite(weightKg) && weightKg >= 10 && weightKg <= 300)) throw new Error("体重は10〜300 kgの範囲で入力してください");
+  if (!(Number.isFinite(heightCm) && heightCm >= 50 && heightCm <= 250)) throw new Error("身長は50〜250 cmの範囲で入力してください");
+  const round1 = (v: number) => Math.round(v * 10) / 10;
+  const t = today();
+  const before = state.weights[t];
+  state.user.heightCm = round1(heightCm);
+  state.weights[t] = { weightKg: round1(weightKg), heightCm: round1(heightCm), bonus: before?.bonus ?? WEIGHT_BONUS_KCAL };
+  if (!before) daily(t).kcalEarned += WEIGHT_BONUS_KCAL;
+  save();
+  return { point: weightPoint(t, state.weights[t]), bonus: before ? 0 : WEIGHT_BONUS_KCAL, today: { ...daily(t) } };
 }
 
 /** Mirrors SNACK_COLS in commands.rs: every snack carries how often it has been eaten. */
@@ -2250,6 +2384,13 @@ function getStats(): Stats {
         return { tier, mode, kcal: v.kcal ?? 0, answered: v.answered, correct: v.correct };
       })
       .sort((a, b) => a.tier.localeCompare(b.tier) || a.mode.localeCompare(b.mode)),
+    // Mirrors diet::weights_since: the last two weeks' weights, oldest first.
+    weights: Object.entries(state.weights)
+      .filter(([date]) => date >= datePlus(-13))
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([date, w]) => weightPoint(date, w)),
+    heightCm: state.user.heightCm ?? null,
+    weightBonusKcal: WEIGHT_BONUS_KCAL,
   };
 }
 
@@ -2507,6 +2648,9 @@ export async function mockInvoke<T>(cmd: string, args: Record<string, unknown>):
         goalSnacks: goalSnacks(),
         eatenToday: [...new Set(state.consumption.filter((c) => c.date === t).map((c) => snackIdOf(c)).filter((id): id is number => id !== null))].sort((a, b) => a - b),
         snacks: counted(state.snacks).sort((a, b) => a.calories - b.calories),
+        goalTasks: goalTasks(),
+        doneToday: [...new Set(state.taskLog.flatMap((e) => (e.date === t && e.taskId !== null ? [e.taskId] : [])))].sort((a, b) => a - b),
+        tasks: listTasks(),
         categories,
         partsOfSpeech: (["noun", "verb", "adjective", "adverb"] as PartOfSpeech[]).map((pos) => ({
           pos,
@@ -2561,11 +2705,8 @@ export async function mockInvoke<T>(cmd: string, args: Record<string, unknown>):
     case "list_snacks":
       return counted(state.snacks).sort((a, b) => a.calories - b.calories) as T;
     case "add_snack": {
-      const name = String(args.name ?? "").trim();
-      const calories = Number(args.calories);
-      if (!name) throw new Error("お菓子の名前を入力してください");
-      if (!(calories >= 1 && calories <= 5000)) throw new Error("カロリーは1〜5000の範囲で入力してください");
-      const snack: Snack = { id: state.nextId++, name, calories, icon: String(args.icon || "🍬"), isBuiltin: false, eatenCount: 0 };
+      const { name, calories, icon } = checkedItem("お菓子", args, 5000, "🍬");
+      const snack: Snack = { id: state.nextId++, name, calories, icon, isBuiltin: false, eatenCount: 0 };
       state.snacks.push(snack);
       save();
       return snack as T;
@@ -2574,11 +2715,7 @@ export async function mockInvoke<T>(cmd: string, args: Record<string, unknown>):
       // Mirrors commands::update_snack_in: any snack, the first ones too.
       const snack = state.snacks.find((s) => s.id === Number(args.id));
       if (!snack) throw new Error("snack not found");
-      const name = String(args.name ?? "").trim();
-      const calories = Number(args.calories);
-      if (!name) throw new Error("お菓子の名前を入力してください");
-      if (!(calories >= 1 && calories <= 5000)) throw new Error("カロリーは1〜5000の範囲で入力してください");
-      Object.assign(snack, { name, calories, icon: String(args.icon || "🍬") });
+      Object.assign(snack, checkedItem("お菓子", args, 5000, "🍬"));
       save();
       return { ...snack } as T;
     }
@@ -2610,11 +2747,8 @@ export async function mockInvoke<T>(cmd: string, args: Record<string, unknown>):
     }
     case "log_one_off_snack": {
       // Mirrors commands::log_one_off: spent and logged, but neither in the book nor a goal.
-      const name = String(args.name ?? "").trim();
-      const calories = Number(args.calories);
-      if (!name) throw new Error("お菓子の名前を入力してください");
-      if (!(calories >= 1 && calories <= 5000)) throw new Error("カロリーは1〜5000の範囲で入力してください");
-      state.consumption.unshift({ id: state.nextId++, snackId: null, snackName: name, snackIcon: String(args.icon || "🍬"), calories, eatenAt: nowTs(), date: t, withTicket: false });
+      const { name, calories, icon } = checkedItem("お菓子", args, 5000, "🍬");
+      state.consumption.unshift({ id: state.nextId++, snackId: null, snackName: name, snackIcon: icon, calories, eatenAt: nowTs(), date: t, withTicket: false });
       daily(t).kcalConsumed += calories;
       save();
       return { ...daily(t) } as T;
@@ -2669,15 +2803,82 @@ export async function mockInvoke<T>(cmd: string, args: Record<string, unknown>):
       save();
       return mode as T;
     }
+    case "set_diet_mode":
+      state.user.dietMode = Boolean(args.on);
+      save();
+      return state.user.dietMode as T;
+    case "list_tasks":
+      return listTasks() as T;
+    case "add_task": {
+      const { name, calories, icon } = checkedItem("課題", args, TASK_MAX_KCAL, "💪");
+      const task: Task = { id: state.nextId++, name, calories, icon, isBuiltin: false, doneCount: 0 };
+      state.tasks.push(task);
+      save();
+      return task as T;
+    }
+    case "update_task": {
+      const task = state.tasks.find((x) => x.id === Number(args.id));
+      if (!task) throw new Error("task not found");
+      Object.assign(task, checkedItem("課題", args, TASK_MAX_KCAL, "💪"));
+      save();
+      return countedTasks([task])[0] as T;
+    }
+    case "delete_task": {
+      const id = Number(args.id);
+      state.tasks = state.tasks.filter((x) => x.id !== id);
+      state.goalTasks = state.goalTasks.filter((g) => g !== id);
+      save();
+      return undefined as T;
+    }
+    case "set_goal_task": {
+      const id = Number(args.id);
+      if (args.goal) {
+        if (!state.tasks.some((x) => x.id === id)) throw new Error("task not found");
+        if (!state.goalTasks.includes(id)) state.goalTasks.push(id);
+      } else {
+        state.goalTasks = state.goalTasks.filter((g) => g !== id);
+      }
+      save();
+      return goalTasks() as T;
+    }
+    case "log_task_done": {
+      const task = state.tasks.find((x) => x.id === Number(args.taskId));
+      if (!task) throw new Error("task not found");
+      return earnTask(task.id, task.name, task.icon, task.calories) as T;
+    }
+    case "log_one_off_task": {
+      const { name, calories, icon } = checkedItem("課題", args, TASK_MAX_KCAL, "💪");
+      return earnTask(null, name, icon, calories) as T;
+    }
+    case "get_today_tasks":
+      return state.taskLog.filter((e) => e.date === t).map(({ date: _d, taskId: _t, ...rest }) => rest) as T;
+    case "delete_task_done": {
+      // Mirrors diet::delete_done_in: out of the log, and its kcal back from its day.
+      const entry = state.taskLog.find((e) => e.id === Number(args.id));
+      if (entry) {
+        state.taskLog = state.taskLog.filter((e) => e.id !== entry.id);
+        const d = daily(entry.date);
+        d.kcalEarned = Math.max(0, d.kcalEarned - entry.calories);
+        save();
+      }
+      return { ...daily(t) } as T;
+    }
+    case "record_weight":
+      return recordWeight(Number(args.weightKg), Number(args.heightCm)) as T;
     case "get_stats":
       return getStats() as T;
     case "reset_progress": {
       // Like the snacks, the word list and the goals are the learner's own, not learning history
       // (reset_progress in Rust leaves recipe_words and goal_snacks alone too, forgetting only the
       // day each word last paid, which went with the day's kcal).
-      const { snacks, recipe, goals, favorites } = state;
-      const playMode = state.user.playMode;
+      const { snacks, recipe, goals, favorites, tasks, goalTasks, weights, nextId } = state;
+      const { playMode, dietMode, heightCm } = state.user;
       state = freshState();
+      // The 課題 list, its goals and the weights stay, as tasks, goal_tasks and weight_log do in
+      // Rust (only task_log goes, with the day's kcal); ids go on from where they were, so nothing
+      // kept is given the id of something new.
+      Object.assign(state, { tasks, goalTasks, weights, nextId });
+      Object.assign(state.user, { dietMode, heightCm });
       state.snacks = snacks;
       state.recipe = recipe;
       state.goals = goals;

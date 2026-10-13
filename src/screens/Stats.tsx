@@ -1,4 +1,5 @@
 import BackupPanel from "../components/BackupPanel";
+import { SwitchViewButton } from "../components/IconButtons";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { api } from "../lib/api";
 import {
@@ -8,6 +9,7 @@ import {
   type Mode,
   type StatCell,
   type Stats as StatsData,
+  type WeightPoint,
 } from "../types";
 
 /** The totals that open a breakdown by tab and mode when clicked. */
@@ -21,12 +23,27 @@ const MODES: Mode[] = ["choice", "typing", "speaking", "listening"];
 const MODE_SHORT: Record<Mode, string> = { choice: "選択", typing: "記入", speaking: "発音", listening: "ヒアリング" };
 
 interface Props {
+  /** ダイエット機能: the fortnight's chart can switch to the weight and BMI */
+  dietMode: boolean;
   onChanged: () => void;
   toast: (msg: string) => void;
 }
 
-export default function Stats({ onChanged, toast }: Props) {
+/** The fortnight's kcal, or (ダイエット機能) the weight and BMI: the chart card shows one, kept for the next time. */
+type Chart = "kcal" | "weight";
+const CHART_KEY = "cq-stats-chart";
+
+function loadChart(): Chart {
+  try {
+    return localStorage.getItem(CHART_KEY) === "weight" ? "weight" : "kcal";
+  } catch {
+    return "kcal";
+  }
+}
+
+export default function Stats({ dietMode, onChanged, toast }: Props) {
   const [stats, setStats] = useState<StatsData | null>(null);
+  const [chart, setChart] = useState<Chart>(loadChart);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [confirmReset, setConfirmReset] = useState(false);
   /** the breakdown on show, or none; clicking its total again closes it */
@@ -65,6 +82,19 @@ export default function Stats({ onChanged, toast }: Props) {
   }
 
   const toggle = (m: Metric) => setMetric((cur) => (cur === m ? null : m));
+  // The weight is there only with ダイエット機能 on; turned off, the chart is the kcal's again.
+  const showWeight = dietMode && chart === "weight";
+  const switchChart = () => {
+    const next: Chart = showWeight ? "kcal" : "weight";
+    setChart(next);
+    try {
+      localStorage.setItem(CHART_KEY, next);
+    } catch {
+      /* ignore */
+    }
+  };
+  const today = stats.last14Days[stats.last14Days.length - 1]?.date;
+  const todayWeight = stats.weights.find((w) => w.date === today);
   // Per day studied: the days without study are left out of what the totals are divided by.
   const perStudyDay = (total: number) =>
     stats.totalStudyDays > 0 ? `${Math.round(total / stats.totalStudyDays)} kcal` : "—";
@@ -116,8 +146,39 @@ export default function Stats({ onChanged, toast }: Props) {
       )}
 
       <section className="card">
-        <h2>この2週間の獲得・消費カロリー</h2>
-        <KcalLineChart days={stats.last14Days} />
+        <div className="section-head chart-head">
+          <h2 className="title-with-switch">
+            {showWeight ? "体重・BMIの推移" : "この2週間の獲得・消費カロリー"}
+            {dietMode && (
+              <SwitchViewButton
+                label={showWeight ? "獲得・消費カロリーのグラフに切り替える" : "体重・BMIのグラフに切り替える"}
+                onClick={switchChart}
+              />
+            )}
+          </h2>
+          {showWeight && (
+            <WeightForm
+              heightCm={stats.heightCm ?? null}
+              todayWeight={todayWeight?.weightKg ?? null}
+              bonus={stats.weightBonusKcal}
+              onRecorded={() => {
+                load();
+                onChanged();
+              }}
+              toast={toast}
+            />
+          )}
+        </div>
+        {showWeight ? (
+          <WeightChart
+            dates={stats.last14Days.map((d) => d.date)}
+            weights={stats.weights}
+            heightCm={stats.heightCm ?? null}
+            bonus={stats.weightBonusKcal}
+          />
+        ) : (
+          <KcalLineChart days={stats.last14Days} />
+        )}
       </section>
 
       <section className="card">
@@ -184,7 +245,10 @@ export default function Stats({ onChanged, toast }: Props) {
           </button>
         ) : (
           <div className="row">
-            <span>学習履歴・カロリー・貯蓄・ストリーク・チケット・引換券を消去します（お菓子図鑑・レシピ・お気に入りは残ります）。</span>
+            <span>
+              学習履歴・カロリー・貯蓄・ストリーク・チケット・引換券{dietMode ? "・課題の達成記録" : ""}を消去します（お菓子図鑑・レシピ・お気に入り
+              {dietMode ? "・課題一覧・体重の記録" : ""}は残ります）。
+            </span>
             <button
               className="btn btn-danger"
               onClick={() => {
@@ -546,6 +610,165 @@ function EatenPopover({
             ))}
           </ul>
         )}
+      </div>
+    </div>
+  );
+}
+
+/** BMI: kg over metres squared, to one decimal (as diet::bmi works it out). */
+function bmiOf(weightKg: number, heightCm: number): number {
+  const m = heightCm / 100;
+  return Math.round((weightKg / (m * m)) * 10) / 10;
+}
+
+/**
+ * 身長 / 体重 / 記録, at the top right of the weight chart: today's weight at the height given (the
+ * height is kept for the next time). The first record of a day pays `bonus` kcal; recording again
+ * that day corrects it.
+ */
+function WeightForm({
+  heightCm,
+  todayWeight,
+  bonus,
+  onRecorded,
+  toast,
+}: {
+  heightCm: number | null;
+  todayWeight: number | null;
+  bonus: number;
+  onRecorded: () => void;
+  toast: (msg: string) => void;
+}) {
+  const [height, setHeight] = useState(heightCm !== null ? String(heightCm) : "");
+  const [weight, setWeight] = useState(todayWeight !== null ? String(todayWeight) : "");
+  const [busy, setBusy] = useState(false);
+  const recorded = todayWeight !== null;
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    try {
+      const r = await api.recordWeight(Number(weight), Number(height));
+      const what = `体重 ${r.point.weightKg.toFixed(1)} kg（BMI ${r.point.bmi.toFixed(1)}）`;
+      toast(r.bonus > 0 ? `⚖️ 今日の${what}を記録しました +${r.bonus} kcal` : `⚖️ 今日の${what}に直しました（カロリーは1日1回だけです）`);
+      onRecorded();
+    } catch (err) {
+      toast(String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <form className="weight-form" onSubmit={(e) => void submit(e)}>
+      <label>
+        身長
+        <input type="number" inputMode="decimal" step="0.1" min={50} max={250} value={height} onChange={(e) => setHeight(e.target.value)} />
+        cm
+      </label>
+      <label>
+        体重
+        <input type="number" inputMode="decimal" step="0.1" min={10} max={300} value={weight} onChange={(e) => setWeight(e.target.value)} />
+        kg
+      </label>
+      <button
+        className="btn btn-primary btn-small"
+        type="submit"
+        disabled={busy || !height || !weight}
+        title={recorded ? "今日の体重を直します（カロリーは1日1回だけです）" : `今日の体重を記録します（1日1回 +${bonus} kcal）`}
+      >
+        {recorded ? "直す" : `記録 +${bonus} kcal`}
+      </button>
+    </form>
+  );
+}
+
+/**
+ * The fortnight's weight as one line through the days weighed (a day not weighed is passed over),
+ * on a kg axis at the left; the axis at the right reads the same heights as BMI at the height last
+ * given, so the line is both. A dot's tooltip has the day's own weight and BMI.
+ */
+function WeightChart({
+  dates,
+  weights,
+  heightCm,
+  bonus,
+}: {
+  dates: string[];
+  weights: WeightPoint[];
+  heightCm: number | null;
+  bonus: number;
+}) {
+  const day = (date: string) => date.slice(5).replace("-", "/");
+  if (weights.length === 0) {
+    return (
+      <div className="weight-empty muted">
+        まだ体重の記録がありません。右上に身長と今日の体重を入れて「記録」を押すと、BMI も一緒に記録されます（1日1回 +{bonus} kcal）。
+      </div>
+    );
+  }
+  const values = weights.map((w) => w.weightKg);
+  // Half a kilo of room either side, so a single day or a flat fortnight sits inside the axis.
+  const { lo, hi, step } = axis(Math.min(...values) - 0.5, Math.max(...values) + 0.5);
+  const last = weights[weights.length - 1];
+  const height = heightCm ?? last.heightCm;
+  const W = 700;
+  const H = 240;
+  const left = 52;
+  const right = 52;
+  // room above the top tick for the units (kg / BMI)
+  const top = 26;
+  const bottom = 32;
+  const x = (date: string) => left + (Math.max(0, dates.indexOf(date)) * (W - left - right)) / Math.max(1, dates.length - 1);
+  const y = (v: number) => top + (H - top - bottom) * (1 - (v - lo) / (hi - lo));
+  const ticks: number[] = [];
+  for (let v = lo; v <= hi + step / 1000; v += step) ticks.push(Math.round(v * 100) / 100);
+  const path = weights.map((w, i) => `${i ? "L" : "M"}${f1(x(w.date))},${f1(y(w.weightKg))}`).join(" ");
+  const change = Math.round((last.weightKg - weights[0].weightKg) * 10) / 10;
+  // One decimal always (21.0, not 21), as the scale reads them.
+  const d1 = (n: number) => n.toFixed(1);
+  return (
+    <div className="line-chart">
+      <div className="muted small line-chart-legend">
+        <span className="lc-key weight">
+          <i className="lc-swatch" />
+          体重（左の目盛り）・BMI（右の目盛り） 最新 <b>{d1(last.weightKg)}</b> kg・BMI <b>{d1(last.bmi)}</b>（{day(last.date)}）
+        </span>
+        {weights.length > 1 && (
+          <span>
+            この2週間で <b>{change > 0 ? `+${d1(change)}` : change < 0 ? `−${d1(-change)}` : "±0.0"}</b> kg
+          </span>
+        )}
+      </div>
+      <div className="lc-plot">
+        <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label="この2週間の体重とBMIの折れ線グラフ">
+          {ticks.map((t) => (
+            <g key={t}>
+              <line className="lc-grid" x1={left} x2={W - right} y1={y(t)} y2={y(t)} />
+              <text className="lc-axis" x={left - 8} y={y(t)} textAnchor="end" dominantBaseline="middle">
+                {t}
+              </text>
+              <text className="lc-axis" x={W - right + 8} y={y(t)} textAnchor="start" dominantBaseline="middle">
+                {bmiOf(t, height).toFixed(1)}
+              </text>
+            </g>
+          ))}
+          <text className="lc-unit" x={left - 8} y={top - 14} textAnchor="end">
+            kg
+          </text>
+          <text className="lc-unit" x={W - right + 8} y={top - 14} textAnchor="start">
+            BMI
+          </text>
+          <path className="lc-line weight" d={path} />
+          {weights.map((w) => (
+            <circle key={w.date} className="lc-dot weight" cx={x(w.date)} cy={y(w.weightKg)} r={3.5}>
+              <title>{`${day(w.date)} 体重 ${d1(w.weightKg)} kg・BMI ${d1(w.bmi)}（身長 ${w.heightCm} cm）`}</title>
+            </circle>
+          ))}
+          {dates.map((d) => (
+            <text key={d} className="lc-axis" x={x(d)} y={H - 10} textAnchor="middle">
+              {day(d)}
+            </text>
+          ))}
+        </svg>
       </div>
     </div>
   );

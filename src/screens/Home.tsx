@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import CalorieBar from "../components/CalorieBar";
-import GoalAdder from "../components/GoalAdder";
-import { DeleteButton, EatButton } from "../components/IconButtons";
+import GoalAdder, { SNACK_GOALS, TASK_GOALS } from "../components/GoalAdder";
+import { DeleteButton, DoneButton, EatButton, SwitchViewButton } from "../components/IconButtons";
 import PencilIcon from "../components/PencilIcon";
 import { api } from "../lib/api";
-import { playCrunch, playFanfare } from "../lib/sfx";
+import { playCrunch, playDone, playFanfare } from "../lib/sfx";
 import {
   ALL_CATEGORIES,
   categoryIcon,
@@ -21,6 +21,7 @@ import {
   type Mode,
   type SessionMode,
   type Snack,
+  type Task,
 } from "../types";
 
 interface Props {
@@ -60,6 +61,26 @@ function saveStudyChoice(tier: TierChoice, category: string) {
   }
 }
 
+/** 目標のお菓子 or, with ダイエット機能, 目標の課題: the goal card shows one, kept for the next time. */
+type GoalTab = "snacks" | "tasks";
+const GOAL_TAB_KEY = "cq-home-goal-tab";
+
+function loadGoalTab(): GoalTab {
+  try {
+    return localStorage.getItem(GOAL_TAB_KEY) === "tasks" ? "tasks" : "snacks";
+  } catch {
+    return "snacks";
+  }
+}
+
+function saveGoalTab(tab: GoalTab) {
+  try {
+    localStorage.setItem(GOAL_TAB_KEY, tab);
+  } catch {
+    /* ignore */
+  }
+}
+
 const MODES: Array<{ mode: Mode; icon: ReactNode; title: string; desc: [string, string] }> = [
   { mode: "choice", icon: "👆", title: "選択問題", desc: ["4択でテンポよく", "単語の意味や文法の穴埋め"] },
   { mode: "typing", icon: <PencilIcon />, title: "記入問題", desc: ["日本語に合う英語をタイピング", "スペルを定着"] },
@@ -92,7 +113,16 @@ export default function Home({
   const [redeeming, setRedeeming] = useState(false);
   const [busy, setBusy] = useState(false);
   const [adding, setAdding] = useState(false);
-  const { today, user, goalSnacks, eatenToday, kcalRates, savings } = dash;
+  const [goalTab, setGoalTab] = useState<GoalTab>(loadGoalTab);
+  const { today, user, goalSnacks, goalTasks, eatenToday, doneToday, kcalRates, savings } = dash;
+  // The 課題 are there only with ダイエット機能 on; turned off, the card is the snacks' again.
+  const showTasks = user.dietMode && goalTab === "tasks";
+  const switchGoals = () => {
+    const next: GoalTab = showTasks ? "snacks" : "tasks";
+    setGoalTab(next);
+    saveGoalTab(next);
+    setAdding(false);
+  };
 
   // What is still left to spend today; a goal is within reach once it fits in there.
   const budget = remainingKcal(today);
@@ -127,6 +157,17 @@ export default function Home({
     act(async () => {
       await api.setGoalSnack(s.id, false);
       toast(`${s.icon} ${s.name} を目標から外しました（お菓子図鑑には残っています）`);
+    });
+  const doTask = (t: Task) =>
+    act(async () => {
+      await api.logTaskDone(t.id);
+      playDone();
+      toast(`💪 ${t.icon} ${t.name} を達成しました（+${t.calories} kcal）。取り消しはお菓子図鑑から`);
+    });
+  const dropTask = (t: Task) =>
+    act(async () => {
+      await api.setGoalTask(t.id, false);
+      toast(`${t.icon} ${t.name} を目標から外しました（課題一覧には残っています）`);
     });
 
   const countFor = (c: CategoryInfo) => (tier === "mixed" ? c.total : c[tier]);
@@ -223,78 +264,128 @@ export default function Home({
 
       <section className="card goal">
         <div className="section-head">
-          <h2>目標のお菓子</h2>
+          <h2 className="title-with-switch">
+            {showTasks ? "目標の課題" : "目標のお菓子"}
+            {user.dietMode && (
+              <SwitchViewButton label={showTasks ? "目標のお菓子に切り替える" : "目標の課題に切り替える"} onClick={switchGoals} />
+            )}
+          </h2>
           <button className="btn-link" aria-expanded={adding} onClick={() => setAdding((a) => !a)}>
-            {adding ? "閉じる" : "＋ 目標追加"}
+            {adding ? "閉じる" : showTasks ? "＋ 課題追加" : "＋ 目標追加"}
           </button>
         </div>
-        {ticketMode && (
-          <p className="ticket-note">
-            🎟 引換券を使うお菓子の「引換券」を押してください。カロリーを使わずに食べられます
-            {goalSnacks.length === 0 ? "（目標のお菓子がないので、お菓子図鑑から使えます）" : "（目標にないお菓子はお菓子図鑑から）"}。
-          </p>
-        )}
-        {adding && (
-          <GoalAdder
-            snacks={dash.snacks}
-            goalIds={new Set(goalSnacks.map((g) => g.id))}
-            onAdded={onChanged}
-            onClose={() => setAdding(false)}
-            toast={toast}
-          />
-        )}
-        {goalSnacks.length > 0 ? (
-          <ul className="goal-list">
-            {goalSnacks.map((g) => {
-              const remaining = Math.max(0, g.calories - budget);
-              const ate = eatenToday.includes(g.id);
-              const filled = Math.min(100, (Math.max(0, budget) / g.calories) * 100);
-              // One line per goal: the word count leads, the other kinds of question are in the tooltip.
-              const breakdown =
-                `あと ${remaining} kcal：英単語なら ${need(remaining, kcalRates.wordChoice)} 問、` +
-                `複合語・文法・慣用句・フレーズ・例文の選択問題なら ${need(remaining, kcalRates.choice)} 問`;
-              return (
-                <li key={g.id} className={"goal-row" + (ate ? " eaten" : "") + (remaining === 0 ? " reached" : "")}>
-                  <span className="goal-icon">{g.icon}</span>
-                  <span className="goal-name" title={g.name}>
-                    {g.name}
-                    <span className="goal-kcal">{g.calories} kcal</span>
-                    {ate && <span className="pill eaten">✓ 今日食べた</span>}
-                  </span>
-                  <span className="goal-meter" aria-hidden="true">
-                    <span style={{ width: `${filled}%` }} />
-                  </span>
-                  {remaining === 0 ? (
-                    <span className="goal-status reached">🎉 食べられます</span>
-                  ) : (
-                    <span className="goal-status" title={breakdown}>
-                      あと <b>{need(remaining, kcalRates.wordChoice)}</b> 問<span className="goal-status-kind">英単語</span>
-                    </span>
-                  )}
-                  <div className="goal-actions">
-                    <EatButton affordable={remaining === 0} disabled={busy} onClick={() => void eat(g)} />
-                    {ticketMode && (
-                      <button
-                        className="btn-small ticket"
-                        disabled={busy}
-                        title="お菓子引換券を1枚使って、カロリーを使わずに食べます"
-                        onClick={() => void eatWithTicket(g)}
-                      >
-                        🎟 引換券
-                      </button>
-                    )}
-                    <DeleteButton label="目標から外す（お菓子図鑑には残ります）" disabled={busy} onClick={() => void dropGoal(g)} />
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
+        {showTasks ? (
+          <>
+            {adding && (
+              <GoalAdder
+                kind={TASK_GOALS}
+                items={dash.tasks}
+                goalIds={new Set(goalTasks.map((g) => g.id))}
+                onAdded={onChanged}
+                onClose={() => setAdding(false)}
+                toast={toast}
+              />
+            )}
+            {goalTasks.length > 0 ? (
+              <ul className="goal-list">
+                {goalTasks.map((t) => {
+                  const did = doneToday.includes(t.id);
+                  return (
+                    <li key={t.id} className={"goal-row task-row" + (did ? " eaten" : "")}>
+                      <span className="goal-icon">{t.icon}</span>
+                      <span className="goal-name" title={t.name}>
+                        {t.name}
+                        <span className="goal-kcal earned">+{t.calories} kcal</span>
+                        {did && <span className="pill eaten">✓ 今日やった</span>}
+                      </span>
+                      <div className="goal-actions">
+                        <DoneButton disabled={busy} onClick={() => void doTask(t)} />
+                        <DeleteButton label="目標から外す（課題一覧には残ります）" disabled={busy} onClick={() => void dropTask(t)} />
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            ) : (
+              !adding && (
+                <p className="muted goal-empty">
+                  目標の課題を決めると、ここからすぐ達成を記録できます（💪 を押すとカロリーがもらえます）。「＋ 課題追加」から、いくつでも登録できます。
+                </p>
+              )
+            )}
+          </>
         ) : (
-          !adding && (
-            <p className="muted goal-empty">
-              目標のお菓子を決めると「あと何問で食べられるか」が表示されます。「＋ 目標追加」から、いくつでも登録できます。
-            </p>
-          )
+          <>
+            {ticketMode && (
+              <p className="ticket-note">
+                🎟 引換券を使うお菓子の「引換券」を押してください。カロリーを使わずに食べられます
+                {goalSnacks.length === 0 ? "（目標のお菓子がないので、お菓子図鑑から使えます）" : "（目標にないお菓子はお菓子図鑑から）"}。
+              </p>
+            )}
+            {adding && (
+              <GoalAdder
+                kind={SNACK_GOALS}
+                items={dash.snacks}
+                goalIds={new Set(goalSnacks.map((g) => g.id))}
+                onAdded={onChanged}
+                onClose={() => setAdding(false)}
+                toast={toast}
+              />
+            )}
+            {goalSnacks.length > 0 ? (
+              <ul className="goal-list">
+                {goalSnacks.map((g) => {
+                  const remaining = Math.max(0, g.calories - budget);
+                  const ate = eatenToday.includes(g.id);
+                  const filled = Math.min(100, (Math.max(0, budget) / g.calories) * 100);
+                  // One line per goal: the word count leads, the other kinds of question are in the tooltip.
+                  const breakdown =
+                    `あと ${remaining} kcal：英単語なら ${need(remaining, kcalRates.wordChoice)} 問、` +
+                    `複合語・文法・慣用句・フレーズ・例文の選択問題なら ${need(remaining, kcalRates.choice)} 問`;
+                  return (
+                    <li key={g.id} className={"goal-row" + (ate ? " eaten" : "") + (remaining === 0 ? " reached" : "")}>
+                      <span className="goal-icon">{g.icon}</span>
+                      <span className="goal-name" title={g.name}>
+                        {g.name}
+                        <span className="goal-kcal">{g.calories} kcal</span>
+                        {ate && <span className="pill eaten">✓ 今日食べた</span>}
+                      </span>
+                      <span className="goal-meter" aria-hidden="true">
+                        <span style={{ width: `${filled}%` }} />
+                      </span>
+                      {remaining === 0 ? (
+                        <span className="goal-status reached">🎉 食べられます</span>
+                      ) : (
+                        <span className="goal-status" title={breakdown}>
+                          あと <b>{need(remaining, kcalRates.wordChoice)}</b> 問<span className="goal-status-kind">英単語</span>
+                        </span>
+                      )}
+                      <div className="goal-actions">
+                        <EatButton affordable={remaining === 0} disabled={busy} onClick={() => void eat(g)} />
+                        {ticketMode && (
+                          <button
+                            className="btn-small ticket"
+                            disabled={busy}
+                            title="お菓子引換券を1枚使って、カロリーを使わずに食べます"
+                            onClick={() => void eatWithTicket(g)}
+                          >
+                            🎟 引換券
+                          </button>
+                        )}
+                        <DeleteButton label="目標から外す（お菓子図鑑には残ります）" disabled={busy} onClick={() => void dropGoal(g)} />
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            ) : (
+              !adding && (
+                <p className="muted goal-empty">
+                  目標のお菓子を決めると「あと何問で食べられるか」が表示されます。「＋ 目標追加」から、いくつでも登録できます。
+                </p>
+              )
+            )}
+          </>
         )}
       </section>
 

@@ -172,7 +172,9 @@ CREATE TABLE IF NOT EXISTS users (
   goal_snack_id INTEGER,
   created_at TEXT NOT NULL,
   savings_kcal INTEGER NOT NULL DEFAULT 0,
-  play_mode TEXT NOT NULL DEFAULT 'normal'
+  play_mode TEXT NOT NULL DEFAULT 'normal',
+  diet_mode INTEGER NOT NULL DEFAULT 0,
+  height_cm REAL
 );
 CREATE TABLE IF NOT EXISTS questions (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -338,6 +340,38 @@ CREATE TABLE IF NOT EXISTS favorites (
   UNIQUE (user_id, question_id, mode),
   UNIQUE (user_id, exam_id)
 );
+-- ダイエット機能: 課題（やるとカロリーがもらえること）、目標の課題、やった記録、体重の記録（1日1件）。
+CREATE TABLE IF NOT EXISTS tasks (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  calories INTEGER NOT NULL,
+  icon TEXT NOT NULL,
+  is_builtin INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS goal_tasks (
+  task_id INTEGER PRIMARY KEY,
+  added_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS task_log (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL,
+  task_id INTEGER,
+  task_name TEXT NOT NULL,
+  task_icon TEXT NOT NULL,
+  calories INTEGER NOT NULL,
+  date TEXT NOT NULL,
+  done_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS weight_log (
+  user_id INTEGER NOT NULL,
+  date TEXT NOT NULL,
+  weight_kg REAL NOT NULL,
+  height_cm REAL NOT NULL,
+  bonus_kcal INTEGER NOT NULL DEFAULT 0,
+  recorded_at TEXT NOT NULL,
+  PRIMARY KEY (user_id, date)
+);
 CREATE INDEX IF NOT EXISTS idx_history_due ON learning_history (user_id, needs_review, next_due_at);
 CREATE INDEX IF NOT EXISTS idx_log_date ON answer_log (user_id, answered_at);
 ";
@@ -459,6 +493,9 @@ fn setup(conn: Connection) -> rusqlite::Result<Connection> {
     ensure_column(&conn, "daily_stats", "carried_kcal", "INTEGER NOT NULL DEFAULT 0")?;
     // がんばり（×0.5）/ 通常 / お気軽（×1.5）。
     ensure_column(&conn, "users", "play_mode", "TEXT NOT NULL DEFAULT 'normal'")?;
+    // ダイエット機能のオン・オフと、BMI を出す身長。
+    ensure_column(&conn, "users", "diet_mode", "INTEGER NOT NULL DEFAULT 0")?;
+    ensure_column(&conn, "users", "height_cm", "REAL")?;
     // レシピの単語がその日はじめて正解した日（同じ日の2回目からは半分を払う）。
     ensure_column(&conn, "recipe_words", "paid_on", "TEXT")?;
     ensure_column(&conn, "recipe_words", "kind", "TEXT NOT NULL DEFAULT 'word'")?;
@@ -513,6 +550,7 @@ fn setup(conn: Connection) -> rusqlite::Result<Connection> {
     conn.execute("UPDATE users SET goal_snack_id = NULL WHERE goal_snack_id IS NOT NULL", [])?;
     seed_questions(&conn)?;
     seed_snacks(&conn)?;
+    crate::diet::seed_tasks(&conn)?;
     Ok(conn)
 }
 

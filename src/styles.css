@@ -144,7 +144,8 @@ p {
 .tabs button {
   white-space: nowrap;
 }
-/* Five tabs with お気に入り: a little tighter so they stay on one line at the default width. */
+/* Five tabs with お気に入り, and the ダイエット switch: a little tighter so they stay on one line at
+   the default width, with room for a four-digit kcal. */
 @media (max-width: 1240px) {
   .topbar {
     gap: 10px;
@@ -152,15 +153,16 @@ p {
   .brand-name {
     font-size: 18px;
   }
-  .tabs {
+  /* .topbar: the plain .tabs rules come later in the file and would win */
+  .topbar .tabs {
     gap: 2px;
     margin-left: 0;
   }
-  .tabs button {
+  .topbar .tabs button {
     padding: 8px 8px;
     font-size: 13.5px;
   }
-  .topbar-stats {
+  .topbar .topbar-stats {
     gap: 8px;
   }
 }
@@ -439,6 +441,39 @@ main {
 .icon-btn.undo:hover:not(:disabled) {
   color: var(--choco);
   background: var(--cream-2);
+}
+/* 💪 達成: the knife and fork's brown and size */
+.icon-btn.done {
+  color: var(--choco);
+  transition: transform 0.12s ease;
+}
+.icon-btn.done svg {
+  width: 21px;
+  height: 21px;
+}
+.icon-btn.done:hover:not(:disabled) {
+  transform: scale(1.12);
+}
+/* ⇄ beside a heading: 目標のお菓子 ⇄ 目標の課題, the kcal chart ⇄ the weight chart */
+.icon-btn.switch-view {
+  width: 30px;
+  height: 28px;
+  color: var(--choco-light);
+  border-color: var(--line);
+  background: #fff;
+}
+.icon-btn.switch-view svg {
+  width: 17px;
+  height: 17px;
+}
+.icon-btn.switch-view:hover:not(:disabled) {
+  color: var(--choco);
+  background: var(--cream-2);
+}
+.title-with-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
 }
 .segmented {
   display: inline-flex;
@@ -1515,8 +1550,8 @@ button.recipe-bulk:hover:not(:disabled) {
   top: 8px;
   right: 10px;
 }
-/* 間違いやすい語を優先: an on/off switch beside 選択式 / 記入式 */
-.recipe-priority {
+/* An on/off switch with its words (components/DietSwitch.tsx, the recipe's 間違いやすい語を優先) */
+.switch-btn {
   display: inline-flex;
   align-items: center;
   gap: 8px;
@@ -1528,21 +1563,22 @@ button.recipe-bulk:hover:not(:disabled) {
   font-size: 13px;
   cursor: pointer;
 }
-.recipe-priority.on {
+.switch-btn.on {
   color: var(--berry);
   border-color: #f2c4c2;
   background: var(--berry-bg);
   font-weight: 600;
 }
-.recipe-priority-switch {
+.switch-knob {
   position: relative;
+  flex: none;
   width: 30px;
   height: 17px;
   border-radius: 999px;
   background: var(--line);
   transition: background 0.15s;
 }
-.recipe-priority-switch::after {
+.switch-knob::after {
   content: "";
   position: absolute;
   top: 2px;
@@ -1554,13 +1590,27 @@ button.recipe-bulk:hover:not(:disabled) {
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
   transition: transform 0.15s;
 }
-.recipe-priority.on .recipe-priority-switch {
+.switch-btn.on .switch-knob {
   background: var(--berry);
 }
-.recipe-priority.on .recipe-priority-switch::after {
+.switch-btn.on .switch-knob::after {
   transform: translateX(13px);
 }
-
+/* ダイエット機能 in the top bar: smaller, and green when on */
+.diet-switch {
+  padding: 3px 10px 3px 4px;
+  font-size: 12.5px;
+  font-weight: 600;
+  gap: 6px;
+}
+.diet-switch.on {
+  color: var(--mint);
+  border-color: #c6e3cf;
+  background: var(--mint-bg);
+}
+.diet-switch.on .switch-knob {
+  background: var(--mint);
+}
 /* 文中の用法: one block per word of the sentence */
 .used-word + .used-word {
   margin-top: 10px;
@@ -1833,6 +1883,13 @@ button.recipe-bulk:hover:not(:disabled) {
   font-size: 13px;
   font-weight: 600;
   color: var(--muted);
+}
+.goal-kcal.earned {
+  color: var(--mint);
+}
+/* 目標の課題: the name and the buttons (no meter: a 課題 is done, not waited for) */
+.goal-row.task-row {
+  grid-template-columns: 28px minmax(0, 1fr) auto;
 }
 .goal-row .pill.eaten {
   margin-left: 8px;
@@ -2894,6 +2951,10 @@ button.wp-link.open {
   font-weight: 700;
   color: var(--berry);
 }
+/* a 課題 done (ダイエット機能): kcal earned, in green */
+.log-kcal.earned {
+  color: var(--mint);
+}
 .sort-bar {
   display: flex;
   align-items: center;
@@ -3032,6 +3093,9 @@ button.wp-link.open {
   text-align: right;
   white-space: nowrap;
 }
+.task-list .snack-row-kcal {
+  color: var(--mint);
+}
 .snack-row-actions {
   display: flex;
   align-items: center;
@@ -3152,6 +3216,42 @@ button.wp-link.open {
 }
 .breakdown-table td.grand {
   color: var(--caramel-dark);
+}
+/* 体重・BMI (ダイエット機能): the form at the top right of the card, the line in blue */
+.chart-head {
+  flex-wrap: wrap;
+  gap: 8px 16px;
+}
+.weight-form {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.weight-form label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.weight-form input {
+  width: 74px;
+  padding: 4px 8px;
+  font-size: 14px;
+}
+.weight-empty {
+  padding: 28px 8px;
+  text-align: center;
+}
+.lc-key.weight .lc-swatch {
+  background: var(--sky);
+}
+.lc-line.weight {
+  stroke: var(--sky);
+}
+.lc-dot.weight {
+  stroke: var(--sky);
 }
 /* The fortnight's kcal as a line, over an axis from the lowest day to the highest */
 .line-chart svg {
