@@ -24,6 +24,8 @@ const MODES: Mode[] = ["choice", "typing", "speaking", "listening"];
 const MODE_SHORT: Record<Mode, string> = { choice: "選択", typing: "記入", speaking: "発音", listening: "ヒアリング" };
 
 interface Props {
+  /** today (the dashboard's): a new day reads the record again (the app left open past midnight) */
+  day?: string;
   /** ダイエット機能: the fortnight's chart can switch to the weight and BMI */
   dietMode: boolean;
   onChanged: () => void;
@@ -42,7 +44,7 @@ function loadChart(): Chart {
   }
 }
 
-export default function Stats({ dietMode, onChanged, toast }: Props) {
+export default function Stats({ day, dietMode, onChanged, toast }: Props) {
   const [stats, setStats] = useState<StatsData | null>(null);
   const [chart, setChart] = useState<Chart>(loadChart);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -58,8 +60,9 @@ export default function Stats({ dietMode, onChanged, toast }: Props) {
       .catch((e) => setLoadError(String(e)));
   }, []);
 
-  // Again when ダイエット機能 is switched: its kcal are in the totals and the chart only while it is on.
-  useEffect(load, [load, dietMode]);
+  // Again when ダイエット機能 is switched (its kcal are in the totals and the chart only while it is
+  // on), and on a new day (today's weight, the fortnight).
+  useEffect(load, [load, dietMode, day]);
 
   // A failed load used to leave "集計しています…" on screen for good, with the reason gone
   // after a three-second toast.

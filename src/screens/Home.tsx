@@ -119,11 +119,12 @@ export default function Home({
   const { today, user, goalSnacks, goalTasks, eatenToday, doneToday, kcalRates, savings } = dash;
   // The 課題 are there only with ダイエット機能 on; turned off, the card is the snacks' again.
   const showTasks = user.dietMode && goalTab === "tasks";
+  // A form open for one side is not left open on the other (by ⇄, or ダイエット機能 turned off in the top bar).
+  useEffect(() => setAdding(false), [showTasks]);
   const switchGoals = () => {
     const next: GoalTab = showTasks ? "snacks" : "tasks";
     setGoalTab(next);
     saveGoalTab(next);
-    setAdding(false);
   };
 
   // What is still left to spend today; a goal is within reach once it fits in there.

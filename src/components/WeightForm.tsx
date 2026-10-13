@@ -48,6 +48,8 @@ export default function WeightForm({
       const r = await api.recordWeight(Number(weight));
       playDone();
       toast(`⚖️ 体重記録のデイリーボーナス${r.bonus}kcal獲得（${d1(r.point.weightKg)} kg・BMI ${d1(r.point.bmi)}）`, 4000);
+      // Not kept for the next day's form (left open past midnight, it would offer yesterday's weight).
+      setWeight("");
       onRecorded();
     } catch (err) {
       toast(String(err));

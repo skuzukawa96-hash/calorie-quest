@@ -257,7 +257,7 @@ export default function App() {
               <Favorites rates={dash.kcalRates} overview={dash.exam} playMode={dash.user.playMode} toast={showToast} />
             ) : null
           ) : (
-            <Stats dietMode={dash?.user.dietMode ?? false} onChanged={() => void refresh()} toast={showToast} />
+            <Stats day={dash?.today.date} dietMode={dash?.user.dietMode ?? false} onChanged={() => void refresh()} toast={showToast} />
           )}
         </main>
 
