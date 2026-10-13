@@ -17,7 +17,10 @@ interface Props {
   toast: (msg: string) => void;
 }
 
-/** The お菓子図鑑, or (ダイエット機能) the 課題一覧 in its place: kept for the next time. */
+/**
+ * The snacks, or (ダイエット機能) the 課題 in their place: the day's history in the 家計簿 and the
+ * list under it switch together, and the choice is kept for the next time.
+ */
 type Book = "snacks" | "tasks";
 const BOOK_KEY = "cq-snacks-book";
 
@@ -40,27 +43,28 @@ interface LogEntry {
   withTicket: boolean;
 }
 
-function logEntries(eaten: ConsumptionEntry[], done: TaskEntry[]): LogEntry[] {
-  return [
-    ...eaten.map((e): LogEntry => ({
-      kind: "snack",
-      id: e.id,
-      name: e.snackName,
-      icon: e.snackIcon,
-      calories: e.calories,
-      at: e.eatenAt,
-      withTicket: e.withTicket,
-    })),
-    ...done.map((e): LogEntry => ({
-      kind: "task",
-      id: e.id,
-      name: e.taskName,
-      icon: e.taskIcon,
-      calories: e.calories,
-      at: e.doneAt,
-      withTicket: false,
-    })),
-  ];
+function eatenLog(eaten: ConsumptionEntry[]): LogEntry[] {
+  return eaten.map((e) => ({
+    kind: "snack",
+    id: e.id,
+    name: e.snackName,
+    icon: e.snackIcon,
+    calories: e.calories,
+    at: e.eatenAt,
+    withTicket: e.withTicket,
+  }));
+}
+
+function doneLog(done: TaskEntry[]): LogEntry[] {
+  return done.map((e) => ({
+    kind: "task",
+    id: e.id,
+    name: e.taskName,
+    icon: e.taskIcon,
+    calories: e.calories,
+    at: e.doneAt,
+    withTicket: false,
+  }));
 }
 
 /** The same snack eaten (or 課題 done) again and again in a day, kept as one row: 飴一粒 ×8 −240 kcal. */
@@ -73,7 +77,8 @@ interface LogStack {
 /**
  * The day's log with each snack's records stacked: the same name, icon and calories (and whether a
  * ticket paid for it) are the same snack, and a 課題 stacks the same way. A stack is placed by the
- * time of its first record, the time it shows, newest first as the log is.
+ * time of its last record, the time it shows (when it was last eaten or done), newest first as the
+ * log is.
  */
 function stackLog(log: LogEntry[]): LogStack[] {
   const byKey = new Map<string, LogEntry[]>();
@@ -84,7 +89,7 @@ function stackLog(log: LogEntry[]): LogStack[] {
   const inOrder = (a: LogEntry, b: LogEntry) => a.at.localeCompare(b.at) || a.id - b.id;
   return [...byKey]
     .map(([key, entries]) => ({ key, entries: entries.slice().sort(inOrder) }))
-    .sort((a, b) => inOrder(b.entries[0], a.entries[0]));
+    .sort((a, b) => inOrder(b.entries[b.entries.length - 1], a.entries[a.entries.length - 1]));
 }
 
 /** What a row of the log did to the day: −50 kcal eaten, 🎟 引換券, +30 kcal done. */
@@ -144,14 +149,18 @@ export default function Snacks({ dash, onChanged, ticketMode, onTicketMode, toas
       /* ignore */
     }
   };
+  // Beside the history and beside the list: either switches both.
   const switcher = diet && (
-    <SwitchViewButton label={showTasks ? "お菓子図鑑に切り替える" : "課題一覧に切り替える"} onClick={switchBook} />
+    <SwitchViewButton
+      label={showTasks ? "お菓子（食べた記録と図鑑）に切り替える" : "課題（達成した記録と課題一覧）に切り替える"}
+      onClick={switchBook}
+    />
   );
   const { today, savings } = dash;
   const budget = remainingKcal(today);
   const tickets = savings.snackTickets;
   const showTickets = ticketMode && tickets > 0;
-  const log = logEntries(eaten, done);
+  const log = showTasks ? doneLog(done) : eatenLog(eaten);
 
   const run = (fn: () => Promise<void>) => {
     void (async () => {
@@ -219,16 +228,23 @@ export default function Snacks({ dash, onChanged, ticketMode, onTicketMode, toas
             {savings.perTicket.toLocaleString()} kcal たまるごとに、好きなお菓子をカロリーを使わずに1つ食べられる引換券になります。
           </div>
         </div>
+        {diet && (
+          <div className="log-head title-with-switch">
+            <h3>{showTasks ? "今日達成した課題" : "今日食べたお菓子"}</h3>
+            {switcher}
+          </div>
+        )}
         {log.length === 0 ? (
           <div className="muted">
-            {diet
-              ? "まだ何も記録していません。食べたら図鑑のナイフとフォーク、課題をやったら課題一覧の 💪 で記録しましょう。"
+            {showTasks
+              ? "まだ課題を達成していません。やったら課題一覧の力こぶのボタンで記録しましょう。"
               : "まだ何も食べていません。食べたら図鑑のナイフとフォークのボタンで記録しましょう。"}
           </div>
         ) : (
           <ul className="log-list">
             {stackLog(log).map(({ key, entries }) => {
               const first = entries[0];
+              const last = entries[entries.length - 1];
               if (entries.length === 1) {
                 return (
                   <li key={key}>
@@ -236,7 +252,7 @@ export default function Snacks({ dash, onChanged, ticketMode, onTicketMode, toas
                   </li>
                 );
               }
-              // A stack: one row with the count, the calories of them all and the time of the first;
+              // A stack: one row with the count, the calories of them all and the time of the last;
               // its undo opens the records one by one, each undone on its own.
               const open = openStack === key;
               const total = entries.reduce((n, e) => n + e.calories, 0);
@@ -250,7 +266,7 @@ export default function Snacks({ dash, onChanged, ticketMode, onTicketMode, toas
                       {first.name} <b className="log-count">×{entries.length}</b>
                     </span>
                     <span className={"log-kcal" + (first.kind === "task" ? " earned" : "")}>{logKcal(first, total)}</span>
-                    <span className="muted small">{first.at.slice(11, 16)}</span>
+                    <span className="muted small">{last.at.slice(11, 16)}</span>
                     <UndoButton
                       label={open ? "一覧を閉じる" : "1つずつ取り消す（一覧を開く）"}
                       expanded={open}

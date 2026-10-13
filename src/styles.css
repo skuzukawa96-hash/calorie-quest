@@ -2903,6 +2903,15 @@ button.wp-link.open {
   gap: 16px;
   font-size: 15px;
 }
+/* ダイエット機能: which history the 家計簿 shows (今日食べたお菓子 / 今日達成した課題), with its ⇄ */
+.log-head {
+  margin: 4px 0 8px;
+}
+.log-head h3 {
+  margin: 0;
+  font-size: 15px;
+  color: var(--choco);
+}
 .log-list {
   list-style: none;
   padding: 0;
