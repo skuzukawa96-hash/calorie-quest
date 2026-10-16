@@ -358,14 +358,11 @@ export interface PartOfSpeechInfo {
   total: number;
 }
 
-/** A 文法項目 of the 文法 tab (時制, 接続詞…, or その他) and its questions: a chip of the home. */
+/** A 文法項目 of the 文法 tab (時制, 接続詞…) and its questions: a chip of the home. */
 export interface GrammarPointInfo {
   point: string;
   total: number;
 }
-
-/** The chip of the 文法 tab's sentences that have no 文法項目 (mirrors db::NO_GRAMMAR_POINT). */
-export const NO_GRAMMAR_POINT = "その他";
 
 /**
  * The questions of one tab, genre and part of speech each mode can ask, counted as a session picks
@@ -445,7 +442,7 @@ export interface Dashboard {
   categories: CategoryInfo[];
   /** 英単語 by part of speech, for the chips above the genres */
   partsOfSpeech: PartOfSpeechInfo[];
-  /** 文法 by 文法項目 (時制, 接続詞… and その他), for the chips above the genres */
+  /** 文法 by 文法項目 (時制, 接続詞…), for the chips above the genres */
   grammarPoints: GrammarPointInfo[];
   /** how many questions each mode can ask, by tab, genre and part of speech */
   modeCounts: ModeCount[];

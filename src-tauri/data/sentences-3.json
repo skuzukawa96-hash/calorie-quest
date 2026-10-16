@@ -9,8 +9,8 @@
   {"key":"s121","kind":"sentence","difficulty":"high","category":"日常生活","group":"日常生活","en":"I heard a strange sound coming from the garage last night.","ja":"昨夜、車庫から変な音が聞こえた。","modes":["choice","typing","speaking"]},
   {"key":"s122","kind":"sentence","difficulty":"high","category":"日常生活","group":"日常生活","en":"He pushed the door instead of pulling it and everyone laughed.","ja":"彼はドアを引かずに押してしまい、みんなが笑った。","modes":["choice","typing","speaking"]},
 
-  {"key":"s123","kind":"sentence","difficulty":"high","category":"旅行・交通","group":"旅行・交通","en":"Our departure was delayed by two hours because of the typhoon.","ja":"台風のため、出発が2時間遅れた。","modes":["choice","typing","speaking"]},
-  {"key":"s124","kind":"sentence","difficulty":"high","category":"旅行・交通","group":"旅行・交通","en":"You need a visa to stay in that country for more than three months.","ja":"その国に3か月以上滞在するにはビザが必要です。","modes":["choice","typing","speaking"]},
+  {"key":"s123","kind":"sentence","difficulty":"high","category":"旅行・交通","group":"旅行・交通","en":"Our departure was delayed by two hours because of the typhoon.","ja":"台風のため、出発が2時間遅れた。","modes":["typing","speaking"],"point":"conjunction"},
+  {"key":"s124","kind":"sentence","difficulty":"high","category":"旅行・交通","group":"旅行・交通","en":"You need a visa to stay in that country for more than three months.","ja":"その国に3か月以上滞在するにはビザが必要です。","modes":["typing","speaking"],"point":"infinitive-purpose"},
   {"key":"s125","kind":"sentence","difficulty":"high","category":"旅行・交通","group":"旅行・交通","en":"Wait at the crosswalk until the traffic light turns green.","ja":"信号が青になるまで横断歩道で待ってください。","modes":["choice","typing","speaking"]},
   {"key":"s126","kind":"sentence","difficulty":"high","category":"旅行・交通","group":"旅行・交通","en":"We took the ferry instead of the train to enjoy the view.","ja":"景色を楽しむため、電車ではなくフェリーに乗った。","modes":["choice","typing","speaking"]},
 
@@ -19,10 +19,10 @@
   {"key":"s129","kind":"sentence","difficulty":"high","category":"学校・仕事","group":"学校・仕事","en":"Our department has to finish this task before the semester ends.","ja":"私たちの部署は学期が終わる前にこの業務を終えなければならない。","modes":["choice","typing","speaking"]},
   {"key":"s130","kind":"sentence","difficulty":"high","category":"学校・仕事","group":"学校・仕事","en":"He worked overtime every night to meet the deadline.","ja":"彼は締め切りに間に合わせるため毎晩残業した。","modes":["choice","typing","speaking"]},
 
-  {"key":"s131","kind":"sentence","difficulty":"high","category":"自然・天気","group":"自然・天気","en":"The air was so humid that my shirt was wet in minutes.","ja":"空気がとても蒸し暑く、数分でシャツがぬれてしまった。","modes":["choice","typing","speaking"]},
+  {"key":"s131","kind":"sentence","difficulty":"high","category":"自然・天気","group":"自然・天気","en":"The air was so humid that my shirt was wet in minutes.","ja":"空気がとても蒸し暑く、数分でシャツがぬれてしまった。","modes":["typing","speaking"],"point":"so-such-too-enough"},
   {"key":"s132","kind":"sentence","difficulty":"high","category":"自然・天気","group":"自然・天気","en":"We walked along the stream until we reached a small waterfall.","ja":"小川沿いを歩き、小さな滝にたどり着いた。","modes":["choice","typing","speaking"]},
   {"key":"s133","kind":"sentence","difficulty":"high","category":"自然・天気","group":"自然・天気","en":"There was frost on the field early this morning.","ja":"今朝早く、畑に霜が降りていた。","modes":["choice","typing","speaking"]},
-  {"key":"s134","kind":"sentence","difficulty":"high","category":"自然・天気","group":"自然・天気","en":"The weather has been mild since the middle of last week.","ja":"先週の半ばから穏やかな天気が続いている。","modes":["choice","typing","speaking"]},
+  {"key":"s134","kind":"sentence","difficulty":"high","category":"自然・天気","group":"自然・天気","en":"The weather has been mild since the middle of last week.","ja":"先週の半ばから穏やかな天気が続いている。","modes":["typing","speaking"],"point":"present-perfect"},
 
   {"key":"s135","kind":"sentence","difficulty":"high","category":"気持ち・性格","group":"気持ち・性格","en":"I was embarrassed when I forgot my client's name.","ja":"顧客の名前を忘れてしまい、恥ずかしかった。","modes":["choice","typing","speaking"]},
   {"key":"s136","kind":"sentence","difficulty":"high","category":"気持ち・性格","group":"気持ち・性格","en":"She is patient with beginners and never loses her temper.","ja":"彼女は初心者に忍耐強く、決してかっとならない。","modes":["choice","typing","speaking"]},

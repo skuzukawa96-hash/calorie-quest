@@ -32,7 +32,7 @@
   {"key":"p3672","kind":"phrase","difficulty":"mid","category":"買い物","group":"買い物","en":"She waited for the coupon to become valid.","ja":"彼女はそのクーポンが有効になるのを待ちました。","modes":["choice","typing","speaking"]},
   {"key":"p3673","kind":"phrase","difficulty":"mid","category":"買い物","group":"買い物","en":"We picked up a few groceries on the way home.","ja":"私たちは帰り道にいくつかの食料品を買いました。","modes":["choice","typing","speaking"]},
   {"key":"p3674","kind":"phrase","difficulty":"mid","category":"買い物","group":"買い物","en":"He noticed the price tag was slightly torn.","ja":"彼はその値札が少し破れていることに気づきました。","modes":["choice","typing","speaking"]},
-  {"key":"p3675","kind":"phrase","difficulty":"mid","category":"買い物","group":"買い物","en":"She asked if they had a smaller box available.","ja":"彼女はもっと小さい箱があるか尋ねました。","modes":["choice","typing","speaking"]},
+  {"key":"p3675","kind":"phrase","difficulty":"mid","category":"買い物","group":"買い物","en":"She asked if they had a smaller box available.","ja":"彼女はもっと小さい箱があるか尋ねました。","modes":["typing","speaking"],"point":"comparative"},
   {"key":"p3676","kind":"phrase","difficulty":"mid","category":"学校・仕事","group":"学校・仕事","en":"He organized his notes by subject before the exam.","ja":"彼はその試験の前に科目別にノートを整理しました。","modes":["choice","typing","speaking"]},
   {"key":"p3677","kind":"phrase","difficulty":"mid","category":"学校・仕事","group":"学校・仕事","en":"She emailed her professor about the assignment.","ja":"彼女はその課題について教授にメールしました。","modes":["choice","typing","speaking"]},
   {"key":"p3678","kind":"phrase","difficulty":"mid","category":"学校・仕事","group":"学校・仕事","en":"We reviewed the meeting notes before the follow-up.","ja":"私たちはそのフォローアップの前に会議メモを確認しました。","modes":["choice","typing","speaking"]},

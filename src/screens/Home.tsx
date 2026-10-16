@@ -11,7 +11,6 @@ import {
   ALL_CATEGORIES,
   categoryIcon,
   grammarPointCategory,
-  NO_GRAMMAR_POINT,
   PLAY_MODE_INFO,
   POS_LABEL,
   posCategory,
@@ -199,7 +198,7 @@ export default function Home({
         effectiveCategory !== ALL_CATEGORIES &&
         m.category !== effectiveCategory &&
         `pos:${m.pos}` !== effectiveCategory &&
-        grammarPointCategory(m.grammarPoint ?? NO_GRAMMAR_POINT) !== effectiveCategory
+        (!m.grammarPoint || grammarPointCategory(m.grammarPoint) !== effectiveCategory)
       )
         continue;
       for (const mode of MODES) totals[mode.mode] += m[mode.mode];
@@ -450,7 +449,6 @@ export default function Home({
             <button
               key={p.point}
               className={"chip chip-main " + (effectiveCategory === grammarPointCategory(p.point) ? "active" : "")}
-              title={p.point === NO_GRAMMAR_POINT ? "文法タブの例文・長文のうち、文法項目のないもの" : undefined}
               onClick={() => setCategory(grammarPointCategory(p.point))}
             >
               {p.point}（{p.total}）

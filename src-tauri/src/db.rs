@@ -433,10 +433,6 @@ struct SeedQuestion {
 /// them (its 文法項目順 and the range of its review): the exam questions' points, and 冠詞 and
 /// 文の種類, which only grammar notes have. `src/types.ts` has the same list; a test keeps the data
 /// to it, and the home's chips of the 文法 tab come in its order.
-/// The home's chip for the sentences of the 文法 tab that have no 文法項目 (example sentences
-/// filed under 文法 by tiers.json, which name no grammar point).
-pub const NO_GRAMMAR_POINT: &str = "その他";
-
 pub const POINT_CATEGORIES: &[&str] = &[
     "時制", "主語と動詞の一致", "助動詞", "受け身", "仮定法", "不定詞・動名詞", "分詞", "文型", "構文", "文の種類",
     "関係詞", "接続詞", "接続副詞", "前置詞", "代名詞", "冠詞", "数量", "比較", "品詞", "語彙", "文挿入",
@@ -2694,10 +2690,54 @@ mod tests {
             assert!(note.body.chars().count() >= 20, "{} has too thin an explanation", note.point);
             assert!(!note.example.trim().is_empty(), "{} has no example", note.point);
         }
-        // Only grammar questions carry a point: anywhere else it would be dead weight in the row.
+        // Only grammar questions and the sentences of the 文法 tab carry a point: anywhere else it
+        // would be dead weight in the row.
         for q in &seed.questions {
-            assert!(q.kind == "grammar" || q.point.is_none(), "{} is not a grammar question", q.key);
+            assert!(
+                q.kind == "grammar" || q.point.is_none() || tier_of(&q.kind, &q.key, &q.en) == "grammar",
+                "{} is not in the 文法 tab",
+                q.key
+            );
         }
+    }
+
+    /// The example and long sentences of the 文法 tab are there for their grammar: each names its
+    /// grammar point (its explanation after an answer, its chip on the home), is not asked for its
+    /// meaning, and has a fill-in question of the same sentence on the same point, which asks its
+    /// grammar as the 選択問題 in place of the meaning.
+    #[test]
+    fn the_grammar_tab_asks_each_sentence_by_its_grammar() {
+        let seed = load_seed();
+        let fill_ins: HashSet<(String, &str)> = seed
+            .questions
+            .iter()
+            .filter(|q| q.kind == "grammar")
+            .map(|q| {
+                let sentence = crate::util::fill_blank(q.prompt.as_deref().unwrap_or(""), &q.en);
+                (sentence, q.point.as_deref().unwrap_or(""))
+            })
+            .collect();
+        let mut wrong = Vec::new();
+        let mut sentences = 0;
+        for q in seed.questions.iter().filter(|q| q.kind != "grammar") {
+            if tier_of(&q.kind, &q.key, &q.en) != "grammar" {
+                continue;
+            }
+            sentences += 1;
+            let Some(point) = q.point.as_deref() else {
+                wrong.push(format!("{}: no grammar point", q.key));
+                continue;
+            };
+            if q.modes.iter().any(|m| m == "choice") {
+                wrong.push(format!("{}: asked for its meaning", q.key));
+            }
+            if !fill_ins.contains(&(q.en.clone(), point)) {
+                wrong.push(format!("{}: no fill-in of \"{}\" on {point}", q.key, q.en));
+            }
+        }
+        assert!(sentences > 0, "the 文法 tab has sentences");
+        assert!(wrong.is_empty(), "{}", wrong.join("
+"));
     }
 
     /// Every sound in the IPA table is one the app can explain, and the table covers the words of
