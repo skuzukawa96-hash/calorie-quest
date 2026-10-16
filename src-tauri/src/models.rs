@@ -857,8 +857,9 @@ pub struct Stats {
 pub struct StatCell {
     pub tier: String,
     pub mode: String,
-    /// what they earned at 通常, in kcal (the play mode left aside)
-    pub kcal: i64,
+    /// what they earned after the play mode, in kcal (0.5 under がんばり), as the totals count it;
+    /// an answer from before that was kept counts at 通常
+    pub kcal: f64,
     pub answered: i64,
     pub correct: i64,
 }

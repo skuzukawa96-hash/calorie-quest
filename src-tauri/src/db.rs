@@ -225,7 +225,8 @@ CREATE TABLE IF NOT EXISTS answer_log (
   score REAL,
   kcal INTEGER NOT NULL,
   is_review INTEGER NOT NULL DEFAULT 0,
-  answered_at TEXT NOT NULL
+  answered_at TEXT NOT NULL,
+  points_eighths INTEGER
 );
 CREATE TABLE IF NOT EXISTS daily_stats (
   user_id INTEGER NOT NULL,
@@ -508,6 +509,9 @@ fn setup(conn: Connection) -> rusqlite::Result<Connection> {
         )?;
     }
     ensure_column(&conn, "daily_stats", "kcal_eighths", "INTEGER NOT NULL DEFAULT 0")?;
+    // What an answer paid after the play mode, in eighths of a kcal (the 記録's table by tab and
+    // mode). Answers from before it have none and count as 通常.
+    ensure_column(&conn, "answer_log", "points_eighths", "INTEGER")?;
     // 食べすぎて終わった日から持ち越したマイナス（0 以下）。
     ensure_column(&conn, "daily_stats", "carried_kcal", "INTEGER NOT NULL DEFAULT 0")?;
     // がんばり（×0.5）/ 通常 / お気軽（×1.5）。

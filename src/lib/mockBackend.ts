@@ -2392,11 +2392,11 @@ function submitAnswer(p: AnswerPayload): AnswerResult {
   const d = daily(t);
   d.answered += 1;
   d.correct += p.correct ? 1 : 0;
-  // Mirrors answer_log (kcal at 通常), for the 記録 by tab and mode.
+  // Mirrors answer_log (what it paid after the play mode), for the 記録 by tab and mode.
   const cellKey = `${q.tier}|${p.mode}`;
   const cell = state.answerTotals[cellKey] ?? { kcal: 0, answered: 0, correct: 0 };
   state.answerTotals[cellKey] = {
-    kcal: (cell.kcal ?? 0) + kcal,
+    kcal: (cell.kcal ?? 0) + paid.points,
     answered: cell.answered + 1,
     correct: cell.correct + (p.correct ? 1 : 0),
   };

@@ -1123,9 +1123,12 @@ pub fn record_answer(conn: &mut Connection, payload: &AnswerPayload) -> Result<A
     )
     .map_err(err)?;
 
+    // The log keeps what the question pays (kcal) and what it paid after the play mode
+    // (points_eighths), which is what the day got.
+    let paid = credit(&tx, &today, kcal * srs::EIGHTHS).map_err(err)?;
     tx.execute(
-        "INSERT INTO answer_log (user_id, question_id, mode, correct, score, kcal, is_review, answered_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+        "INSERT INTO answer_log (user_id, question_id, mode, correct, score, kcal, is_review, answered_at, points_eighths)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
         params![
             USER_ID,
             payload.question_id,
@@ -1134,13 +1137,11 @@ pub fn record_answer(conn: &mut Connection, payload: &AnswerPayload) -> Result<A
             payload.score,
             kcal,
             is_due_review as i64,
-            now
+            now,
+            paid.eighths
         ],
     )
     .map_err(err)?;
-
-    // The log keeps what the question pays; the play mode scales it on the way to the day.
-    let paid = credit(&tx, &today, kcal * srs::EIGHTHS).map_err(err)?;
     tx.execute(
         "UPDATE daily_stats SET answered = answered + 1, correct = correct + ?3 WHERE user_id = ?1 AND date = ?2",
         params![USER_ID, today, payload.correct as i64],
@@ -1633,13 +1634,14 @@ pub fn load_stats(conn: &Connection) -> CmdResult<Stats> {
         )
         .map_err(err)?;
 
-    // The study answers by tab and mode: what they earned at 通常 (the play mode left aside), how
-    // many, how many right. Recipe reviews, exams and the cheat-day bonus are not questions of a
-    // tab, so they are not here.
+    // The study answers by tab and mode: what they earned after the play mode (as the totals and
+    // the chart count it; an answer from before that was kept counts as 通常), how many, how many
+    // right. Recipe reviews, exams and the cheat-day bonus are not questions of a tab, so they are
+    // not here.
     let breakdown = {
         let mut stmt = conn
             .prepare(
-                "SELECT q.tier, a.mode, COALESCE(SUM(a.kcal), 0), COUNT(*), COALESCE(SUM(a.correct), 0)
+                "SELECT q.tier, a.mode, COALESCE(SUM(COALESCE(a.points_eighths, a.kcal * 8)), 0), COUNT(*), COALESCE(SUM(a.correct), 0)
                  FROM answer_log a JOIN questions q ON q.id = a.question_id
                  WHERE a.user_id = ?1 GROUP BY q.tier, a.mode ORDER BY q.tier, a.mode",
             )
@@ -1649,7 +1651,7 @@ pub fn load_stats(conn: &Connection) -> CmdResult<Stats> {
                 Ok(StatCell {
                     tier: r.get(0)?,
                     mode: r.get(1)?,
-                    kcal: r.get(2)?,
+                    kcal: r.get::<_, i64>(2)? as f64 / srs::EIGHTHS as f64,
                     answered: r.get(3)?,
                     correct: r.get(4)?,
                 })
@@ -1814,9 +1816,14 @@ mod tests {
         let s = load_stats(&c).unwrap();
         let cell = |tier: &str, mode: &str| s.breakdown.iter().find(|b| b.tier == tier && b.mode == mode).cloned();
         let w = cell("word", "choice").expect("英単語 × 選択");
-        assert_eq!((w.kcal, w.answered, w.correct), (2, 2, 1));
+        assert_eq!((w.kcal, w.answered, w.correct), (2.0, 2, 1));
         let i = cell("idiom", "typing").expect("慣用句 × 記入");
-        assert_eq!((i.kcal, i.answered, i.correct), (5, 1, 1), "counted at 通常 though がんばり paid 2.5");
+        assert_eq!((i.kcal, i.answered, i.correct), (2.5, 1, 1), "what がんばり paid, as the totals count it");
+        // An answer from before what it paid was kept counts as 通常.
+        c.execute("UPDATE answer_log SET points_eighths = NULL WHERE question_id = ?1", params![idiom]).unwrap();
+        let old = load_stats(&c).unwrap();
+        let i = old.breakdown.iter().find(|b| b.tier == "idiom" && b.mode == "typing").unwrap();
+        assert_eq!(i.kcal, 5.0);
         assert!(cell("word", "typing").is_none(), "a pair never answered has no cell");
         assert_eq!(s.breakdown.iter().map(|b| b.answered).sum::<i64>(), s.total_answered);
 

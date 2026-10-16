@@ -3,6 +3,7 @@ import { SwitchViewButton } from "../components/IconButtons";
 import WeightForm, { d1, HeightSetting } from "../components/WeightForm";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { api } from "../lib/api";
+import { formatKcal } from "../lib/scoring";
 import {
   TIER_LABEL,
   TIERS,
@@ -156,7 +157,7 @@ export default function Stats({ day, dietMode, onChanged, toast }: Props) {
             }
           />
           <p className="muted small">
-            学習の問題（英単語〜例文）の分で、獲得カロリーは がんばり・お気軽 にかかわらず通常モードの値です。
+            学習の問題（英単語〜例文）の分で、獲得カロリーは がんばり・お気軽 の倍率込みの、実際に獲得した値です。
             {stats.dietKcal && metric === "kcal" && "課題と体重記録（ダイエット機能）は、書いてあるカロリーのまま合計に入ります。"}
             レシピ・試験・チートデイの分は、上の累計にだけ入ります。
           </p>
@@ -348,7 +349,7 @@ function metricText(metric: Metric, cells: StatCell[]): string {
   const kcal = cells.reduce((s, c) => s + c.kcal, 0);
   const answered = cells.reduce((s, c) => s + c.answered, 0);
   const correct = cells.reduce((s, c) => s + c.correct, 0);
-  if (metric === "kcal") return String(kcal);
+  if (metric === "kcal") return formatKcal(kcal);
   if (metric === "answered") return String(answered);
   return answered > 0 ? `${Math.round((correct / answered) * 100)}%` : "—";
 }
@@ -412,7 +413,7 @@ function Breakdown({ metric, cells, extra }: { metric: Metric; cells: StatCell[]
               </td>
             ))}
             <td className="total grand">
-              {rows.length > 0 ? `${Number(metricText(metric, cells)) + rows.reduce((n, r) => n + r.kcal, 0)} kcal` : cell(cells)}
+              {rows.length > 0 ? `${formatKcal(cells.reduce((n, c) => n + c.kcal, 0) + rows.reduce((n, r) => n + r.kcal, 0))} kcal` : cell(cells)}
             </td>
           </tr>
         </tfoot>
