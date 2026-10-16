@@ -358,6 +358,15 @@ export interface PartOfSpeechInfo {
   total: number;
 }
 
+/** A 文法項目 of the 文法 tab (時制, 接続詞…, or その他) and its questions: a chip of the home. */
+export interface GrammarPointInfo {
+  point: string;
+  total: number;
+}
+
+/** The chip of the 文法 tab's sentences that have no 文法項目 (mirrors db::NO_GRAMMAR_POINT). */
+export const NO_GRAMMAR_POINT = "その他";
+
 /**
  * The questions of one tab, genre and part of speech each mode can ask, counted as a session picks
  * them (ヒアリング takes the questions with English to say as well).
@@ -366,6 +375,8 @@ export interface ModeCount {
   tier: Tier;
   category: string;
   pos?: PartOfSpeech | null;
+  /** the 文法項目 of grammar questions (時制…); none for the others */
+  grammarPoint?: string | null;
   choice: number;
   typing: number;
   speaking: number;
@@ -374,6 +385,8 @@ export interface ModeCount {
 
 /** The category a session asks for to get the words of one part of speech. */
 export const posCategory = (pos: PartOfSpeech) => `pos:${pos}`;
+/** A 文法項目 asked for as a session's category ("gp:時制"), as a part of speech is ("pos:noun"). */
+export const grammarPointCategory = (point: string) => `gp:${point}`;
 
 /** The boxed tags before a meaning: 自動詞・他動詞, 名詞, 形容詞, 副詞. */
 export type PosTag = "自" | "他" | "名" | "形" | "副";
@@ -409,6 +422,7 @@ export interface TagSense {
 /** How a session's category reads: 名詞 for a part of speech, the icon and name for a genre. */
 export function categoryLabel(category: string): string {
   const pos = category.startsWith("pos:") ? POS_LABEL[category.slice(4) as PartOfSpeech] : undefined;
+  if (category.startsWith("gp:")) return category.slice(3);
   return pos ?? `${categoryIcon(category)} ${category}`;
 }
 
@@ -431,6 +445,8 @@ export interface Dashboard {
   categories: CategoryInfo[];
   /** 英単語 by part of speech, for the chips above the genres */
   partsOfSpeech: PartOfSpeechInfo[];
+  /** 文法 by 文法項目 (時制, 接続詞… and その他), for the chips above the genres */
+  grammarPoints: GrammarPointInfo[];
   /** how many questions each mode can ask, by tab, genre and part of speech */
   modeCounts: ModeCount[];
   dueReviewCount: number;

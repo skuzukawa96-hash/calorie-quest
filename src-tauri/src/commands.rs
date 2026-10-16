@@ -396,22 +396,39 @@ fn parts_of_speech(conn: &Connection) -> rusqlite::Result<Vec<PartOfSpeechInfo>>
 
 /// How many questions each mode can ask, by tab, genre and part of speech, as `session_questions`
 /// picks them: a mode by its `modes`, ヒアリング also by "speaking".
+/// The 文法項目 of the 文法 tab with their questions, in the order of [`db::POINT_CATEGORIES`] (those
+/// no question has left out), and その他 for the tab's sentences with none: the home's chips, asked
+/// for as the category "gp:時制".
+fn grammar_points(conn: &Connection) -> rusqlite::Result<Vec<GrammarPointInfo>> {
+    let mut stmt = conn.prepare(
+        "SELECT COALESCE(grammar_point, ?1), COUNT(*) FROM questions WHERE tier = 'grammar' GROUP BY grammar_point",
+    )?;
+    let counts: HashMap<String, i64> =
+        stmt.query_map(params![db::NO_GRAMMAR_POINT], |r| Ok((r.get(0)?, r.get(1)?)))?.collect::<Result<_, _>>()?;
+    Ok(db::POINT_CATEGORIES
+        .iter()
+        .chain([&db::NO_GRAMMAR_POINT])
+        .filter_map(|p| counts.get(*p).map(|&total| GrammarPointInfo { point: p.to_string(), total }))
+        .collect())
+}
+
 fn mode_counts(conn: &Connection) -> rusqlite::Result<Vec<ModeCount>> {
     let mut stmt = conn.prepare(
-        "SELECT tier, category, pos,
+        "SELECT tier, category, pos, grammar_point,
                 SUM(modes LIKE '%\"choice\"%'), SUM(modes LIKE '%\"typing\"%'), SUM(modes LIKE '%\"speaking\"%'),
                 SUM(modes LIKE '%\"listening\"%' OR modes LIKE '%\"speaking\"%')
-         FROM questions GROUP BY tier, category, pos",
+         FROM questions GROUP BY tier, category, pos, grammar_point",
     )?;
     let rows = stmt.query_map([], |r| {
         Ok(ModeCount {
             tier: r.get(0)?,
             category: r.get(1)?,
             pos: r.get(2)?,
-            choice: r.get(3)?,
-            typing: r.get(4)?,
-            speaking: r.get(5)?,
-            listening: r.get(6)?,
+            grammar_point: r.get(3)?,
+            choice: r.get(4)?,
+            typing: r.get(5)?,
+            speaking: r.get(6)?,
+            listening: r.get(7)?,
         })
     })?;
     rows.collect()
@@ -894,7 +911,8 @@ fn review_mode_for(q: &Question, missed_in: Option<String>) -> String {
 /// Due reviews first (at most 60% of the session), then unseen/fresh questions; shuffled.
 /// A review joins only sessions of the mode it was missed in. `tier` is a tab (word / compound /
 /// grammar / idiom / phrase / example) or "mixed", `category` a genre name, a part of speech of
-/// the word tab ("pos:noun" / "pos:verb" / "pos:adjective" / "pos:adverb") or "all"; `mode` may also be
+/// the word tab ("pos:noun" / "pos:verb" / "pos:adjective" / "pos:adverb"), a 文法項目 of the 文法
+/// tab ("gp:時制"; "gp:その他" for the sentences of the tab with none) or "all"; `mode` may also be
 /// [`REVIEW_SESSION`].
 pub fn session_questions(
     conn: &Connection,
@@ -923,14 +941,14 @@ pub fn session_questions(
          JOIN learning_history h ON h.question_id = q.id
          WHERE h.user_id = ?1 AND h.needs_review = 1 AND h.next_due_at IS NOT NULL AND h.next_due_at <= ?2
            AND {mode_clause} AND (?4 = 'mixed' OR q.tier = ?4)
-           AND (?5 = 'all' OR q.category = ?5 OR ('pos:' || q.pos) = ?5)
+           AND (?5 = 'all' OR q.category = ?5 OR ('pos:' || q.pos) = ?5 OR ('gp:' || COALESCE(q.grammar_point, ?8)) = ?5)
            AND (h.review_mode IS NULL OR h.review_mode = ?7)
          ORDER BY h.next_due_at ASC, RANDOM() LIMIT ?6"
     );
     let reviews: Vec<Question> = {
         let mut stmt = conn.prepare(&review_sql)?;
         let rows = stmt.query_map(
-            params![USER_ID, today, mode_like, tier, category, max_reviews, mode],
+            params![USER_ID, today, mode_like, tier, category, max_reviews, mode, db::NO_GRAMMAR_POINT],
             db::row_to_question,
         )?;
         rows.collect::<Result<_, _>>()?
@@ -948,14 +966,14 @@ pub fn session_questions(
         "SELECT {Q_COLS} FROM questions q
          LEFT JOIN learning_history h ON h.question_id = q.id AND h.user_id = ?1
          WHERE {fresh_mode_clause} AND (?3 = 'mixed' OR q.tier = ?3)
-           AND (?4 = 'all' OR q.category = ?4 OR ('pos:' || q.pos) = ?4)
+           AND (?4 = 'all' OR q.category = ?4 OR ('pos:' || q.pos) = ?4 OR ('gp:' || COALESCE(q.grammar_point, ?6)) = ?4)
            AND (h.needs_review IS NULL OR h.needs_review = 0) {exclude_clause}
          ORDER BY (h.last_studied_at IS NOT NULL), RANDOM() LIMIT ?5"
     );
     let fresh: Vec<Question> = {
         let mut stmt = conn.prepare(&fresh_sql)?;
         let rows = stmt.query_map(
-            params![USER_ID, mode_like, tier, category, remaining],
+            params![USER_ID, mode_like, tier, category, remaining, db::NO_GRAMMAR_POINT],
             db::row_to_question,
         )?;
         rows.collect::<Result<_, _>>()?
@@ -980,12 +998,13 @@ fn review_session(conn: &Connection, tier: &str, category: &str, count: i64) -> 
         "SELECT {Q_COLS}, h.review_mode FROM questions q
          JOIN learning_history h ON h.question_id = q.id
          WHERE h.user_id = ?1 AND h.needs_review = 1 AND h.next_due_at IS NOT NULL AND h.next_due_at <= ?2
-           AND (?3 = 'mixed' OR q.tier = ?3) AND (?4 = 'all' OR q.category = ?4 OR ('pos:' || q.pos) = ?4)
+           AND (?3 = 'mixed' OR q.tier = ?3)
+           AND (?4 = 'all' OR q.category = ?4 OR ('pos:' || q.pos) = ?4 OR ('gp:' || COALESCE(q.grammar_point, ?6)) = ?4)
          ORDER BY h.next_due_at ASC, RANDOM() LIMIT ?5"
     );
     let due: Vec<(Question, Option<String>)> = {
         let mut stmt = conn.prepare(&sql)?;
-        let rows = stmt.query_map(params![USER_ID, today(), tier, category, count], |r| {
+        let rows = stmt.query_map(params![USER_ID, today(), tier, category, count, db::NO_GRAMMAR_POINT], |r| {
             Ok((db::row_to_question(r)?, r.get(db::Q_COL_COUNT)?))
         })?;
         rows.collect::<Result<_, _>>()?
@@ -1234,6 +1253,7 @@ pub fn load_dashboard(conn: &Connection) -> CmdResult<Dashboard> {
         weight_today: crate::diet::today_weight(conn).map_err(err)?,
         categories: category_infos(conn).map_err(err)?,
         parts_of_speech: parts_of_speech(conn).map_err(err)?,
+        grammar_points: grammar_points(conn).map_err(err)?,
         mode_counts: mode_counts(conn).map_err(err)?,
         due_review_count: due_review_count(conn).map_err(err)?,
         tickets_available: tickets_available(conn).map_err(err)?,
@@ -1944,6 +1964,42 @@ mod tests {
         let r = answer(&mut c, stale, "choice", false, None);
         assert!(!r.is_review);
         assert_eq!(r.next_due.as_deref(), Some(date_plus(1).as_str()));
+    }
+
+    /// The 文法 tab can be narrowed to one 文法項目 as the 英単語 tab to a part of speech: the chips
+    /// count every question of the tab once (その他 for its sentences with no grammar point), and a
+    /// session of a 文法項目 asks only grammar questions whose explanation is of it.
+    #[test]
+    fn a_grammar_session_can_be_narrowed_to_one_point() {
+        let c = db::init_in_memory().unwrap();
+        let points = grammar_points(&c).unwrap();
+        let tab: i64 = c.query_row("SELECT COUNT(*) FROM questions WHERE tier = 'grammar'", [], |r| r.get(0)).unwrap();
+        assert_eq!(points.iter().map(|p| p.total).sum::<i64>(), tab, "each question of the tab once");
+        let order: Vec<usize> = points
+            .iter()
+            .map(|p| db::POINT_CATEGORIES.iter().position(|c| *c == p.point).unwrap_or(usize::MAX))
+            .collect();
+        assert!(order.windows(2).all(|w| w[0] < w[1]), "in the order of POINT_CATEGORIES, その他 last");
+        let tense = points.iter().find(|p| p.point == "時制").expect("時制 has questions").total;
+
+        let asked = session_questions(&c, "choice", "grammar", "gp:時制", 50).unwrap();
+        assert!(!asked.is_empty());
+        for q in &asked {
+            assert_eq!(q.grammar_note.as_ref().map(|n| n.category.as_str()), Some("時制"), "{}", q.question.key);
+        }
+        let counted: i64 = mode_counts(&c)
+            .unwrap()
+            .iter()
+            .filter(|m| m.tier == "grammar" && m.grammar_point.as_deref() == Some("時制"))
+            .map(|m| m.choice)
+            .sum();
+        assert_eq!(counted, tense, "the 選択問題 of 時制 counted on the home");
+
+        if points.iter().any(|p| p.point == db::NO_GRAMMAR_POINT) {
+            let rest = session_questions(&c, "typing", "grammar", &format!("gp:{}", db::NO_GRAMMAR_POINT), 50).unwrap();
+            assert!(!rest.is_empty());
+            assert!(rest.iter().all(|q| q.question.tier == "grammar" && q.question.point.is_none()));
+        }
     }
 
     /// The home's count of a mode for a tab and a genre is what a session of them can ask: none

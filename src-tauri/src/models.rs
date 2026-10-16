@@ -350,6 +350,13 @@ pub struct CategoryInfo {
 }
 
 #[derive(Debug, Clone, Serialize)]
+pub struct GrammarPointInfo {
+    /// 時制 / 接続詞 … or その他; a session asks for it as the category "gp:時制"
+    pub point: String,
+    pub total: i64,
+}
+
+#[derive(Debug, Clone, Serialize)]
 pub struct PartOfSpeechInfo {
     /// noun / verb / adjective / adverb; a session asks for it as the category "pos:noun"
     pub pos: String,
@@ -377,6 +384,8 @@ pub struct Dashboard {
     pub categories: Vec<CategoryInfo>,
     /// 英単語 by part of speech (noun / verb / adjective / adverb), for the chips above the genres
     pub parts_of_speech: Vec<PartOfSpeechInfo>,
+    /// 文法 by 文法項目 (時制, 接続詞… and その他), for the chips above the genres
+    pub grammar_points: Vec<GrammarPointInfo>,
     /// how many questions each mode can ask, by tab, genre and part of speech: the home's mode
     /// cards add up those of what is picked, and a mode with none cannot be started
     pub mode_counts: Vec<ModeCount>,
@@ -396,6 +405,8 @@ pub struct ModeCount {
     pub tier: String,
     pub category: String,
     pub pos: Option<String>,
+    /// the 文法項目 of grammar questions (時制…); none for the others
+    pub grammar_point: Option<String>,
     pub choice: i64,
     pub typing: i64,
     pub speaking: i64,

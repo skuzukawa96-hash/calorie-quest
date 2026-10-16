@@ -10,6 +10,8 @@ import { playCrunch, playDone, playFanfare } from "../lib/sfx";
 import {
   ALL_CATEGORIES,
   categoryIcon,
+  grammarPointCategory,
+  NO_GRAMMAR_POINT,
   PLAY_MODE_INFO,
   POS_LABEL,
   posCategory,
@@ -176,11 +178,15 @@ export default function Home({
   const countFor = (c: CategoryInfo) => (tier === "mixed" ? c.total : c[tier]);
   const visibleCategories = dash.categories.filter((c) => countFor(c) > 0);
   const totalCount = visibleCategories.reduce((s, c) => s + countFor(c), 0);
-  // 英単語 can also be narrowed to a part of speech; the genres come in the row below.
+  // 英単語 can also be narrowed to a part of speech, and 文法 to a 文法項目 (時制, 接続詞…); the
+  // genres come in the row below.
   const partsOfSpeech = tier === "word" ? dash.partsOfSpeech.filter((p) => p.total > 0) : [];
-  // If the selected genre or part of speech has nothing in this tab, fall back to "all" silently.
+  const grammarPoints = tier === "grammar" ? dash.grammarPoints.filter((p) => p.total > 0) : [];
+  // If the selected genre, part of speech or 文法項目 has nothing in this tab, fall back to "all" silently.
   const effectiveCategory =
-    visibleCategories.some((c) => c.name === category) || partsOfSpeech.some((p) => posCategory(p.pos) === category)
+    visibleCategories.some((c) => c.name === category) ||
+    partsOfSpeech.some((p) => posCategory(p.pos) === category) ||
+    grammarPoints.some((p) => grammarPointCategory(p.point) === category)
       ? category
       : ALL_CATEGORIES;
 
@@ -189,7 +195,13 @@ export default function Home({
     const totals: Record<Mode, number> = { choice: 0, typing: 0, speaking: 0, listening: 0 };
     for (const m of dash.modeCounts) {
       if (tier !== "mixed" && m.tier !== tier) continue;
-      if (effectiveCategory !== ALL_CATEGORIES && m.category !== effectiveCategory && `pos:${m.pos}` !== effectiveCategory) continue;
+      if (
+        effectiveCategory !== ALL_CATEGORIES &&
+        m.category !== effectiveCategory &&
+        `pos:${m.pos}` !== effectiveCategory &&
+        grammarPointCategory(m.grammarPoint ?? NO_GRAMMAR_POINT) !== effectiveCategory
+      )
+        continue;
       for (const mode of MODES) totals[mode.mode] += m[mode.mode];
     }
     return totals;
@@ -432,6 +444,16 @@ export default function Home({
               onClick={() => setCategory(posCategory(p.pos))}
             >
               {POS_LABEL[p.pos]}（{p.total}）
+            </button>
+          ))}
+          {grammarPoints.map((p) => (
+            <button
+              key={p.point}
+              className={"chip chip-main " + (effectiveCategory === grammarPointCategory(p.point) ? "active" : "")}
+              title={p.point === NO_GRAMMAR_POINT ? "文法タブの例文・長文のうち、文法項目のないもの" : undefined}
+              onClick={() => setCategory(grammarPointCategory(p.point))}
+            >
+              {p.point}（{p.total}）
             </button>
           ))}
         </div>

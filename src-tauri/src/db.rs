@@ -194,7 +194,8 @@ CREATE TABLE IF NOT EXISTS questions (
   example_ja TEXT,
   point TEXT,
   tier TEXT NOT NULL DEFAULT '',
-  pos TEXT
+  pos TEXT,
+  grammar_point TEXT
 );
 CREATE TABLE IF NOT EXISTS learning_history (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -430,9 +431,12 @@ struct SeedQuestion {
 
 /// The 文法項目 a grammar note or an exam question belongs to, in the order the お気に入り lists
 /// them (its 文法項目順 and the range of its review): the exam questions' points, and 冠詞 and
-/// 文の種類, which only grammar notes have. `src/types.ts` has the same list (it orders them); here
-/// a test keeps the data to it.
-#[cfg(test)]
+/// 文の種類, which only grammar notes have. `src/types.ts` has the same list; a test keeps the data
+/// to it, and the home's chips of the 文法 tab come in its order.
+/// The home's chip for the sentences of the 文法 tab that have no 文法項目 (example sentences
+/// filed under 文法 by tiers.json, which name no grammar point).
+pub const NO_GRAMMAR_POINT: &str = "その他";
+
 pub const POINT_CATEGORIES: &[&str] = &[
     "時制", "主語と動詞の一致", "助動詞", "受け身", "仮定法", "不定詞・動名詞", "分詞", "文型", "構文", "文の種類",
     "関係詞", "接続詞", "接続副詞", "前置詞", "代名詞", "冠詞", "数量", "比較", "品詞", "語彙", "文挿入",
@@ -471,6 +475,8 @@ fn setup(conn: Connection) -> rusqlite::Result<Connection> {
     ensure_column(&conn, "questions", "point", "TEXT")?;
     ensure_column(&conn, "questions", "tier", "TEXT NOT NULL DEFAULT ''")?;
     ensure_column(&conn, "questions", "pos", "TEXT")?;
+    // 文法項目（時制・接続詞…）: 文法問題の解説の category。起動のたびに grammar-notes.json から埋め直す。
+    ensure_column(&conn, "questions", "grammar_point", "TEXT")?;
     ensure_column(&conn, "users", "savings_kcal", "INTEGER NOT NULL DEFAULT 0")?;
     ensure_column(&conn, "consumption_log", "ticket_id", "INTEGER")?;
     // A day's leftover kcal moves to savings once the day is over; `saved_kcal` records how much,
@@ -564,6 +570,7 @@ fn setup(conn: Connection) -> rusqlite::Result<Connection> {
     )?;
     conn.execute("UPDATE users SET goal_snack_id = NULL WHERE goal_snack_id IS NOT NULL", [])?;
     seed_questions(&conn)?;
+    sync_grammar_points(&conn)?;
     seed_snacks(&conn)?;
     crate::diet::seed_tasks(&conn)?;
     Ok(conn)
@@ -661,6 +668,28 @@ fn seed_questions(conn: &Connection) -> rusqlite::Result<()> {
     }
     meta_set(&tx, "seed_version", &seed.version.to_string())?;
     tx.commit()
+}
+
+/// Each grammar question's 文法項目 (`questions.grammar_point`) as its explanation in
+/// grammar-notes.json says, written again on every start in one pass, so a category changed in the
+/// notes needs no new seed version. The other questions have none.
+fn sync_grammar_points(conn: &Connection) -> rusqlite::Result<()> {
+    let notes = grammar_notes();
+    let mut cases = String::new();
+    let mut values: Vec<String> = Vec::with_capacity(notes.len() * 2);
+    for (point, note) in notes {
+        cases.push_str(&format!(" WHEN ?{} THEN ?{}", values.len() + 1, values.len() + 2));
+        values.push(point.clone());
+        values.push(note.category.clone());
+    }
+    conn.execute(
+        &format!(
+            "UPDATE questions SET grammar_point = CASE point{cases} ELSE NULL END
+             WHERE grammar_point IS NOT (CASE point{cases} ELSE NULL END)"
+        ),
+        rusqlite::params_from_iter(values.iter()),
+    )?;
+    Ok(())
 }
 
 fn seed_snacks(conn: &Connection) -> rusqlite::Result<()> {

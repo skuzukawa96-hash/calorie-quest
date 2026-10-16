@@ -82,7 +82,7 @@ import type {
   WordPart,
   WordUsage,
 } from "../types";
-import { PLAY_MODES } from "../types";
+import { NO_GRAMMAR_POINT, PLAY_MODES, POINT_CATEGORIES } from "../types";
 
 interface SeedQuestion {
   key: string;
@@ -245,9 +245,19 @@ const STALE_REVIEW_DAYS = RATES.staleReviewDays;
 /** Mirrors db::word_pos: a one-word word question's part of speech, by key. */
 const posOf = wordPos as Record<string, PartOfSpeech>;
 
-/** Mirrors the category clause of session_questions: a genre, "pos:noun" …, or "all". */
+/** Mirrors the category clause of session_questions: a genre, "pos:noun" …, "gp:時制" …, or "all". */
 function inCategory(q: Question, category: string): boolean {
-  return category === "all" || q.category === category || `pos:${posOf[q.key]}` === category;
+  return (
+    category === "all" ||
+    q.category === category ||
+    `pos:${posOf[q.key]}` === category ||
+    `gp:${grammarPointOf(q) ?? NO_GRAMMAR_POINT}` === category
+  );
+}
+
+/** Mirrors questions.grammar_point (db::sync_grammar_points): a grammar question's explanation's 文法項目. */
+function grammarPointOf(q: Question): string | null {
+  return (q.point && notesByPoint.get(q.point)?.category) || null;
 }
 // v2 keys history by question key. v1 keyed it by array position, and those numbers no longer
 // mean anything, so a v1 blob is dropped rather than read back onto the wrong questions.
@@ -2699,10 +2709,11 @@ export async function mockInvoke<T>(cmd: string, args: Record<string, unknown>):
       const modeCounts = new Map<string, ModeCount>();
       for (const q of questions) {
         const pos = q.kind === "word" ? (posOf[q.key] ?? null) : null;
-        const id = `${q.tier}|${q.category}|${pos}`;
+        const grammarPoint = grammarPointOf(q);
+        const id = `${q.tier}|${q.category}|${pos}|${grammarPoint}`;
         let m = modeCounts.get(id);
         if (!m) {
-          m = { tier: q.tier, category: q.category, pos, choice: 0, typing: 0, speaking: 0, listening: 0 };
+          m = { tier: q.tier, category: q.category, pos, grammarPoint, choice: 0, typing: 0, speaking: 0, listening: 0 };
           modeCounts.set(id, m);
         }
         for (const mode of ["choice", "typing", "speaking", "listening"] as const) if (offersMode(q, mode)) m[mode] += 1;
@@ -2723,6 +2734,13 @@ export async function mockInvoke<T>(cmd: string, args: Record<string, unknown>):
           total: questions.filter((q) => q.tier === "word" && posOf[q.key] === pos).length,
         })),
         modeCounts: [...modeCounts.values()],
+        // Mirrors commands::grammar_points: the 文法 tab by 文法項目, その他 last.
+        grammarPoints: [...POINT_CATEGORIES, NO_GRAMMAR_POINT]
+          .map((point) => ({
+            point,
+            total: questions.filter((q) => q.tier === "grammar" && (grammarPointOf(q) ?? NO_GRAMMAR_POINT) === point).length,
+          }))
+          .filter((p) => p.total > 0),
         dueReviewCount: dueCount(),
         ticketsAvailable: ticketsAvailable(),
         kcalRates: { ...RATES },
