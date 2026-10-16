@@ -1733,18 +1733,57 @@ button.recipe-bulk:hover:not(:disabled) {
 
 /* ---------- home ---------- */
 .hero-top {
-  display: flex;
-  justify-content: space-between;
-  gap: 16px;
-  align-items: flex-start;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "title badges"
+    "lead tickets";
+  column-gap: 16px;
+  align-items: center;
   margin-bottom: 16px;
 }
+.hero-top h1 {
+  grid-area: title;
+}
+.hero-lead {
+  grid-area: lead;
+}
 .hero-badges {
+  grid-area: badges;
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
   justify-content: flex-end;
+}
+/* お菓子引換券 and チートデイチケット: under the badges, right-aligned, no taller than the lead's line */
+.hero-tickets {
+  grid-area: tickets;
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.hero-tickets .badge {
+  font-size: 13px;
+  line-height: 1.4;
+  padding: 1px 10px;
+  gap: 4px;
+}
+/* too narrow for the badges beside the title: everything in one column */
+@media (max-width: 860px) {
+  .hero-top {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      "title"
+      "lead"
+      "badges"
+      "tickets";
+    row-gap: 8px;
+  }
+  .hero-badges,
+  .hero-tickets {
+    justify-content: flex-start;
+  }
 }
 .calorie-bar-head {
   display: flex;
@@ -2117,7 +2156,7 @@ button.recipe-bulk:hover:not(:disabled) {
 }
 .goal-suggest-goal {
   font-size: 11.5px;
-  color: #c97b91;
+  color: #e9668b;
 }
 .goal-suggest-goal .heart {
   width: 11px;
@@ -2307,9 +2346,9 @@ button.recipe-bulk:hover:not(:disabled) {
   background: #fff6d6;
   color: #9a6b00;
 }
+/* paid today already: a check mark in the place of the kcal */
 .feedback-kcal.fav-review-note {
-  font-size: 13px;
-  color: #9a6b00;
+  color: var(--mint);
 }
 .prompt-label {
   color: var(--muted);
@@ -3080,7 +3119,7 @@ button.wp-link.open {
 /* 目標: a heart in a calm pink, apart from the ★ of お気に入り */
 .icon-btn.goal {
   width: 26px;
-  color: #e2bcc6;
+  color: #f2a7bb;
 }
 .icon-btn.goal svg {
   width: 19px;
@@ -3088,7 +3127,7 @@ button.wp-link.open {
 }
 .icon-btn.goal.on,
 .icon-btn.goal:hover:not(:disabled) {
-  color: #c97b91;
+  color: #e9668b;
 }
 /* A drawn icon (components/ItemIcon.tsx) in an emoji's place: a little larger than the text, as the emoji are */
 .item-icon {
@@ -4245,7 +4284,7 @@ button.wp-link.open {
 }
 /* the ♡ of a goal named in a sentence (お菓子図鑑 / 課題一覧) */
 .inline-heart {
-  color: #c97b91;
+  color: #e9668b;
 }
 .inline-heart .heart {
   width: 1em;

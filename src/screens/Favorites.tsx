@@ -409,7 +409,7 @@ export default function Favorites({ rates, overview, playMode, onProgress, toast
   const reviewButton = (kind: "study" | "exam", label: string, items: Favorite[], start: (items: Favorite[], round: number) => void) => {
     const unpaid = items.filter((f) => !f.paidToday).length;
     const note =
-      unpaid === items.length ? `${items.length}問` : unpaid > 0 ? `残り${unpaid}問` : `${items.length}問・今日は獲得済み`;
+      unpaid === items.length ? `${items.length}問` : unpaid > 0 ? `残り${unpaid}問` : `${items.length}問 ✓`;
     const title =
       unpaid === items.length
         ? "正解すると1問につき1日1回カロリーがもらえます（英単語 1 kcal、ほかは 2 kcal）"

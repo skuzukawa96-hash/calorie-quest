@@ -223,13 +223,11 @@ export default function Home({
   return (
     <div className="screen home">
       <section className="card hero">
+        {/* The title and the lead on the left; the streak, days and savings on the right of the
+            title, and the tickets (when there are any) under them, on the line of the lead. */}
         <div className="hero-top">
-          <div>
-            <h1>今日のおやつ予算</h1>
-            <p className="muted">
-              英語の問題を解くほど、今日食べていいお菓子のカロリーが増えます。
-            </p>
-          </div>
+          <h1>今日のおやつ予算</h1>
+          <p className="muted hero-lead">英語の問題を解くほど、今日食べていいお菓子のカロリーが増えます。</p>
           <div className="hero-badges">
             <div className="badge streak" title="連続学習日数">
               🔥 連続 {user.currentStreak} 日
@@ -244,6 +242,8 @@ export default function Home({
             >
               🐷 貯蓄 {savings.balance.toLocaleString()} / {savings.perTicket.toLocaleString()} kcal
             </button>
+          </div>
+          <div className="hero-tickets">
             {savings.snackTickets > 0 && (
               <button
                 className={"badge ticket" + (ticketMode ? " active" : "")}
