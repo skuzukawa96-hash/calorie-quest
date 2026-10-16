@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { DoneButton, EatButton, SwitchViewButton, UndoButton } from "../components/IconButtons";
+import { DoneButton, EatButton, Heart, SwitchViewButton, UndoButton } from "../components/IconButtons";
 import { iconLabel, ItemIcon } from "../components/ItemIcon";
 import { AddCard, BookCard, SNACK_MAX_KCAL, SNACK_WORDS, TASK_MAX_KCAL, TASK_WORDS } from "../components/ItemBook";
 import { api } from "../lib/api";
@@ -301,7 +301,15 @@ export default function Snacks({ dash, onChanged, ticketMode, onTicketMode, toas
               </>
             }
             switcher={switcher}
-            intro="💪 を押すと達成になり、書いてあるカロリーがもらえます（遊び方モードの倍率は掛かりません。取り消しは上の家計簿から）。☆ を押すと目標になり、ホームの「目標の課題」からも達成を記録できます。初めから入っている課題も、鉛筆で修正したり、× で削除したりできます。"
+            intro={
+              <>
+                💪 を押すと達成になり、書いてあるカロリーがもらえます（遊び方モードの倍率は掛かりません。取り消しは上の家計簿から）。
+                <span className="inline-heart">
+                  <Heart on={false} />
+                </span>{" "}
+                を押すと目標になり、ホームの「目標の課題」からも達成を記録できます。鉛筆で修正したり、× で削除したりもできます。
+              </>
+            }
             items={tasks}
             words={TASK_WORDS}
             icons={TASK_ICONS}
@@ -353,7 +361,14 @@ export default function Snacks({ dash, onChanged, ticketMode, onTicketMode, toas
               </>
             }
             switcher={switcher}
-            intro="☆ を押すと目標になり、ホームに「あと何問で食べられるか」が表示されます（いくつでも登録できます）。初めから入っているお菓子も、鉛筆で名前・カロリー・アイコンを修正したり、× で削除したりできます。"
+            intro={
+              <>
+                <span className="inline-heart">
+                  <Heart on={false} />
+                </span>{" "}
+                を押すと目標になり、ホームに「あと何問で食べられるか」が表示されます（いくつでも登録できます）。鉛筆で名前・カロリー・アイコンを修正したり、× で削除したりもできます。
+              </>
+            }
             note={
               showTickets && <p className="ticket-note">🎟 引換券を使うお菓子の「引換券」を押してください。カロリーを使わずに食べられます。</p>
             }

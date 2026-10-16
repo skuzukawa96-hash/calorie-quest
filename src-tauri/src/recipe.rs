@@ -246,13 +246,17 @@ pub(crate) fn trim_passage_examples(conn: &Connection) -> rusqlite::Result<usize
     Ok(changed)
 }
 
-/// The meanings of every pattern of 用法, for the wrong options when a pattern saved to the recipe
-/// is reviewed: a meaning like 「AとBを比較する」 among nouns would give itself away.
-pub fn usage_meanings() -> Vec<String> {
-    let mut out: Vec<String> =
-        crate::db::word_usages().values().flat_map(|us| us.iter().map(|u| u.ja.clone())).collect();
+/// The meanings of every pattern of 用法, each with a pattern it is the meaning of (`(meaning,
+/// pattern)`; of several, the first in order), for the wrong options when a pattern saved to the
+/// recipe is reviewed: a meaning like 「AとBを比較する」 among nouns would give itself away. Once
+/// answered, a wrong option shows its pattern.
+pub fn usage_meanings() -> Vec<(String, String)> {
+    let mut out: Vec<(String, String)> = crate::db::word_usages()
+        .values()
+        .flat_map(|us| us.iter().map(|u| (u.ja.clone(), u.pattern.clone())))
+        .collect();
     out.sort();
-    out.dedup();
+    out.dedup_by(|a, b| a.0 == b.0);
     out
 }
 
@@ -449,7 +453,7 @@ pub fn set_recipe_words_favorite(state: State<'_, AppState>, ids: Vec<i64>, favo
 }
 
 #[tauri::command]
-pub fn get_usage_meanings() -> Vec<String> {
+pub fn get_usage_meanings() -> Vec<(String, String)> {
     usage_meanings()
 }
 
@@ -502,7 +506,11 @@ mod tests {
         assert_eq!(r.entry.word, "compare A with B");
         let word = add(&c, &input("compare", "")).unwrap().entry;
         assert_eq!((word.kind.as_str(), word.pos.as_str()), ("word", "verb"));
-        assert!(usage_meanings().contains(&"Aを訪れる（to は付けない）".to_string()));
+        let meanings = usage_meanings();
+        assert!(meanings.contains(&("Aを訪れる（to は付けない）".to_string(), "visit A".to_string())));
+        // A meaning of several patterns is one option, with the first of them.
+        let afraid: Vec<&String> = meanings.iter().filter(|(ja, _)| ja == "Aを怖がる").map(|(_, p)| p).collect();
+        assert_eq!(afraid, ["be afraid of A"]);
     }
 
     #[test]

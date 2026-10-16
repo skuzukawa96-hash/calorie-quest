@@ -155,7 +155,8 @@ export const api = {
   /** × in 除外中: deleted for good */
   deleteRecipeWords: (ids: number[]) => call<number>("delete_recipe_words", { ids }),
   /** the meanings of every pattern of 用法: wrong options for a pattern saved to the recipe */
-  getUsageMeanings: () => call<string[]>("get_usage_meanings"),
+  /** every pattern's meaning with a pattern of it: [meaning, pattern] */
+  getUsageMeanings: () => call<Array<[string, string]>>("get_usage_meanings"),
   logDebug: (message: string) => call<void>("log_debug", { message }).catch(() => undefined),
 
   // Native speech (Tauri only; the mock backend reports "unavailable").

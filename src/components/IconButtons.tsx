@@ -1,6 +1,6 @@
 // Icon-only buttons used across the screens: a knife and fork records a snack as eaten, a flexed arm a 課題
-// done, a red × deletes, a brown curved arrow undoes, two arrows switch a view. Each keeps its words in the
-// tooltip and the accessible name.
+// done, a pink heart makes a goal, a red × deletes, a brown curved arrow undoes, two arrows switch a view.
+// Each keeps its words in the tooltip and the accessible name.
 
 interface Common {
   disabled?: boolean;
@@ -46,6 +46,42 @@ export function DoneButton({ label = "達成！（カロリーを獲得）", dis
           strokeLinejoin="round"
         />
       </svg>
+    </button>
+  );
+}
+
+/**
+ * A heart as wide as it is tall (♡ in a font leans one way or the other), filled when `on`: the mark
+ * of a goal, apart from the ★ that stars a question into お気に入り.
+ */
+export function Heart({ on }: { on: boolean }) {
+  return (
+    <svg className="heart" viewBox="0 0 24 24" aria-hidden="true">
+      <path
+        d="M12 21C9.5 19.2 3.5 14.9 3.5 9.4a4.25 4.25 0 0 1 8.5-1.2 4.25 4.25 0 0 1 8.5 1.2C20.5 14.9 14.5 19.2 12 21z"
+        fill={on ? "currentColor" : "none"}
+        stroke="currentColor"
+        strokeWidth="1.9"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+/** ♡ of a row of the お菓子図鑑 or the 課題一覧: pressed, the row is a goal and the heart filled. */
+export function GoalButton({ on, disabled, onClick }: Common & { on: boolean }) {
+  const label = on ? "目標から外す" : "目標にする（いくつでも登録できます）";
+  return (
+    <button
+      type="button"
+      className={"icon-btn goal" + (on ? " on" : "")}
+      disabled={disabled}
+      aria-pressed={on}
+      title={label}
+      aria-label={label}
+      onClick={onClick}
+    >
+      <Heart on={on} />
     </button>
   );
 }

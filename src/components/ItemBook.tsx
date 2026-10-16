@@ -1,10 +1,10 @@
 import { useState, type ReactNode } from "react";
-import { DeleteButton, EditButton } from "./IconButtons";
+import { DeleteButton, EditButton, GoalButton } from "./IconButtons";
 import { iconLabel, ItemIcon } from "./ItemIcon";
 
 /**
  * The お菓子図鑑 and the 課題一覧 (ダイエット機能) are the same kind of list: a name, kcal and icon a
- * row, made a goal with ☆, corrected with the pencil and taken out with ×, in the order picked.
+ * row, made a goal with ♡, corrected with the pencil and taken out with ×, in the order picked.
  * They differ in what a row's own buttons do (eat / done) and in a few words.
  */
 export interface BookItem {
@@ -12,7 +12,6 @@ export interface BookItem {
   name: string;
   calories: number;
   icon: string;
-  isBuiltin: boolean;
 }
 
 /** The words that differ between the snack book and the 課題一覧. */
@@ -181,7 +180,6 @@ export function BookCard<T extends BookItem>({
     setSort(next);
     saveSort(sortStorage, next);
   };
-  const sortInfo = sorts.find((s) => s.key === sort.key)!;
   const shown = sortItems(items, sort, icons, countOf);
 
   const saveEdit = (e: React.FormEvent) => {
@@ -205,21 +203,22 @@ export function BookCard<T extends BookItem>({
         <div className="sort-bar" role="group" aria-label="並び替え">
           <span className="muted small">並び替え</span>
           <div className="segmented">
-            {sorts.map((s) => (
-              <button
-                key={s.key}
-                className={sort.key === s.key ? "active" : ""}
-                title={sort.key === s.key ? "もう一度押すと逆順" : `${s.label}順（${s.dirs[s.first]}）`}
-                onClick={() => chooseSort(s.key)}
-              >
-                {s.label}
-                {sort.key === s.key && (sort.dir === "asc" ? " ↑" : " ↓")}
-              </button>
-            ))}
+            {sorts.map((s) => {
+              const on = sort.key === s.key;
+              const flipped = sort.dir === "asc" ? "desc" : "asc";
+              return (
+                <button
+                  key={s.key}
+                  className={on ? "active" : ""}
+                  title={on ? `${s.dirs[sort.dir]}（もう一度押すと${s.dirs[flipped]}）` : `${s.label}順（${s.dirs[s.first]}）`}
+                  onClick={() => chooseSort(s.key)}
+                >
+                  {s.label}
+                  {on && (sort.dir === "asc" ? " ↑" : " ↓")}
+                </button>
+              );
+            })}
           </div>
-          <button className="btn-link sort-dir" title="逆順にする" onClick={() => chooseSort(sort.key)}>
-            {sortInfo.dirs[sort.dir]}
-          </button>
         </div>
       </div>
       <p className="muted small">{intro}</p>
@@ -231,22 +230,12 @@ export function BookCard<T extends BookItem>({
           const count = countOf(s);
           return [
             <li key={s.id} className={"snack-row" + (isGoal ? " goal" : "") + (edit ? " editing" : "")}>
-              <button
-                className={"snack-star" + (isGoal ? " on" : "")}
-                disabled={busy}
-                aria-pressed={isGoal}
-                aria-label={isGoal ? "目標から外す" : "目標にする"}
-                title={isGoal ? "目標から外します" : "目標にします（いくつでも登録できます）"}
-                onClick={() => run(async () => { await setGoal(s.id, !isGoal); })}
-              >
-                {isGoal ? "★" : "☆"}
-              </button>
+              <GoalButton on={isGoal} disabled={busy} onClick={() => run(async () => { await setGoal(s.id, !isGoal); })} />
               <span className="snack-row-icon">
                 <ItemIcon icon={s.icon} />
               </span>
               <span className="snack-row-name" title={s.name}>
                 {s.name}
-                {!s.isBuiltin && <span className="pill snack-mine">自作</span>}
               </span>
               <span className="snack-row-count" title={words.countTitle}>
                 {count > 0 || sort.key === "count" ? `${count}回` : ""}
@@ -276,7 +265,6 @@ export function BookCard<T extends BookItem>({
               <li key={`${s.id}-delete`} className="snack-confirm">
                 <span>
                   <ItemIcon icon={s.icon} /> {s.name} を{words.book}から削除しますか？
-                  {s.isBuiltin && <span className="muted small">（初めから入っている{words.what}は元に戻せません）</span>}
                 </span>
                 <button
                   className="btn-small danger"

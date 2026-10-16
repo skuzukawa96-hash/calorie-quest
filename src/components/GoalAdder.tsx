@@ -3,7 +3,7 @@ import { api } from "../lib/api";
 import { playCrunch, playDone } from "../lib/sfx";
 import { SNACK_ICONS } from "../lib/snackIcons";
 import { DEFAULT_TASK_ICON, TASK_ICONS } from "../lib/taskIcons";
-import { DoneButton, EatButton } from "./IconButtons";
+import { DoneButton, EatButton, Heart } from "./IconButtons";
 import { iconLabel, ItemIcon } from "./ItemIcon";
 import { SNACK_MAX_KCAL, SNACK_WORDS, TASK_MAX_KCAL, TASK_WORDS, type BookItem, type BookWords } from "./ItemBook";
 
@@ -290,7 +290,11 @@ export default function GoalAdder({ kind, items, goalIds, onAdded, onClose, toas
                     <ItemIcon icon={s.icon} />
                   </span>
                   <span className="goal-suggest-name">{marked(s.name, name)}</span>
-                  {goalIds.has(s.id) && <span className="goal-suggest-goal">★ 目標中</span>}
+                  {goalIds.has(s.id) && (
+                    <span className="goal-suggest-goal">
+                      <Heart on /> 目標中
+                    </span>
+                  )}
                   <span className="goal-suggest-kcal">{words.kcal(s.calories)}</span>
                 </li>
               ))}

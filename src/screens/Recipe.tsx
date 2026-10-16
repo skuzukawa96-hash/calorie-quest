@@ -213,7 +213,7 @@ const STAND_INS: [RegExp, string][] = [
  * 原形／-ing" "begin doing". The English in ( ) is read ("It is easy for someone to do"), a note in
  * （ ） is not.
  */
-function readings(w: RecipeWord): string[] {
+function readings(w: Pick<RecipeWord, "kind" | "word">): string[] {
   if (w.kind !== "usage") return [w.word];
   const out = new Set<string>();
   let before = "";
@@ -237,12 +237,12 @@ function readings(w: RecipeWord): string[] {
 /** Two ways of a pattern are read this far apart. */
 const READINGS_GAP_MS = 400;
 
-/** Reads an entry aloud: a word, or a pattern's ways one after another. */
-function sayEntry(w: RecipeWord) {
+/** Reads an entry aloud: a word, or a pattern's ways one after another. Settles when it is read. */
+function sayEntry(w: Pick<RecipeWord, "kind" | "word">): Promise<void> {
   const ways = readings(w);
-  if (!isTtsSupported() || ways.length === 0) return;
-  if (ways.length === 1) say(ways[0]);
-  else speakInTurn(ways, READINGS_GAP_MS, () => undefined).catch(() => undefined);
+  if (!isTtsSupported() || ways.length === 0) return Promise.resolve();
+  const read = ways.length === 1 ? speak(ways[0]) : speakInTurn(ways, READINGS_GAP_MS, () => undefined);
+  return read.catch(() => undefined);
 }
 
 function shuffled<T>(items: T[]): T[] {
@@ -463,6 +463,22 @@ function optionEnglish(meaning: string, words: RecipeWord[], dict: Dictionary | 
 }
 
 /**
+ * The English an option of a review stands for, shown beside a wrong option once answered as the
+ * study's 選択問題 shows it: a pattern for a pattern's meaning (one of the recipe, else of 用法:
+ * `patterns`, meaning → pattern), a word for a word's.
+ */
+function optionSource(
+  word: RecipeWord,
+  meaning: string,
+  words: RecipeWord[],
+  dict: Dictionary | null,
+  patterns: Map<string, string>,
+): string | undefined {
+  if (word.kind === "usage") return words.find((w) => w.kind === "usage" && w.meaning === meaning)?.word ?? patterns.get(meaning);
+  return optionEnglish(meaning, words, dict);
+}
+
+/**
  * The options of a word's review as they are put: when the word has a nuance that tells it from its
  * near synonyms (admit: （事実・誤りを）しぶしぶ認める), every option with one shows its own.
  */
@@ -652,7 +668,7 @@ export default function Recipe({ playMode, onProgress, toast }: Props) {
   const [words, setWords] = useState<RecipeWord[] | null>(null);
   const [dict, setDict] = useState<Dictionary | null>(null);
   /** the meanings of every pattern of 用法, the wrong options for a pattern in review */
-  const [usagePool, setUsagePool] = useState<string[]>([]);
+  const [usagePool, setUsagePool] = useState<Array<[string, string]>>([]);
   const [filter, setFilter] = useState<RecipeTab>("all");
   const [reviewing, setReviewing] = useState<{ target: RecipeTab; mode: RecipeReviewMode; queue: RecipeWord[] } | null>(null);
   const [missedFirst, setMissedFirst] = useState(loadPriority);
@@ -1307,7 +1323,8 @@ function RecipeReview({
   /** the whole recipe, whose meanings serve as wrong options */
   words: RecipeWord[];
   dict: Dictionary | null;
-  usagePool: string[];
+  /** every pattern's meaning with a pattern of it (recipe::usage_meanings) */
+  usagePool: Array<[string, string]>;
   playMode: PlayMode;
   onAgain: (left: RecipeWord[]) => void;
   onDone: () => void;
@@ -1339,7 +1356,16 @@ function RecipeReview({
   const tags = useWordTags();
   const cues = tags?.cues ?? null;
   const options = useMemo(
-    () => (current && mode === "choice" ? meaningOptions(current, words, dict, usagePool, cues) : []),
+    () =>
+      current && mode === "choice"
+        ? meaningOptions(
+            current,
+            words,
+            dict,
+            usagePool.map(([ja]) => ja),
+            cues,
+          )
+        : [],
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [current, mode, dict === null, usagePool.length === 0, cues === null],
   );
@@ -1348,6 +1374,22 @@ function RecipeReview({
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [options, cues === null],
   );
+  // Once answered, each wrong option shows the English it stands for, as in the study's 選択問題:
+  // beside the Japanese, or all on a second line when one is long. A click on it reads it aloud.
+  const optionEn = useMemo(() => {
+    if (!current) return [];
+    const patterns = new Map(usagePool);
+    return options.map((o) => (o === current.meaning ? undefined : optionSource(current, o, words, dict, patterns)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [options]);
+  const enBelow = optionEn.some((en) => !!en && (en.split(" ").length > 3 || en.length > 22));
+  const [saying, setSaying] = useState<number | null>(null);
+  const sayOption = (i: number, en: string) => {
+    setSaying(i);
+    void sayEntry({ kind: current.kind === "usage" ? "usage" : "word", word: en }).finally(() =>
+      setSaying((cur) => (cur === i ? null : cur)),
+    );
+  };
   // A word with near synonyms is asked to be written from its nuance: （事実・誤りを）しぶしぶ認める.
   const asked = current && current.kind !== "usage" && cues ? (cuedMeaning(current.word, current.meaning, cues) ?? current.meaning) : current?.meaning;
   const gapped = useMemo(() => (current ? withGap(current) : null), [current]);
@@ -1635,17 +1677,44 @@ function RecipeReview({
                   if (opt === current.meaning) cls += " correct";
                   else if (opt === answered.given) cls += " wrong";
                 }
-                return (
-                  <button
-                    key={opt + i}
-                    className={cls}
-                    disabled={!!answered || saving}
-                    onClick={() => void answer(opt === current.meaning, opt)}
-                  >
+                const en = answered ? optionEn[i] : undefined;
+                const body = (
+                  <>
                     <span className="option-num">{i + 1}</span>
-                    <span>
-                      <EntryText w={current} text={labels[i] ?? opt} />
+                    <span className="option-text">
+                      <span>
+                        <EntryText w={current} text={labels[i] ?? opt} />
+                      </span>
+                      {en && (
+                        <span className={"option-en" + (enBelow ? " below" : "")} lang="en">
+                          {current.kind === "usage" ? (
+                            <SlotText text={en} />
+                          ) : (
+                            <GlossedText text={en} dict={dict} enabled={false} context="" speakOnClick={false} />
+                          )}
+                        </span>
+                      )}
                     </span>
+                  </>
+                );
+                // Answered, an option is something to read and hear rather than a control (a click
+                // inside a disabled button does not bubble past it in Chromium).
+                if (answered) {
+                  const speaks = !!en && isTtsSupported();
+                  return (
+                    <div
+                      key={opt + i}
+                      className={cls + (speaks ? " speaks" : "") + (saying === i ? " saying" : "")}
+                      title={speaks ? "クリックで読み上げ" : undefined}
+                      onClick={speaks ? () => sayOption(i, en) : undefined}
+                    >
+                      {body}
+                    </div>
+                  );
+                }
+                return (
+                  <button key={opt + i} className={cls} disabled={saving} onClick={() => void answer(opt === current.meaning, opt)}>
+                    {body}
                   </button>
                 );
               })}

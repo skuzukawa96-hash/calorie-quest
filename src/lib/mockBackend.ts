@@ -3135,9 +3135,12 @@ export async function mockInvoke<T>(cmd: string, args: Record<string, unknown>):
     case "open_backup_folder":
       // A backup is a file of the app's database; the browser preview keeps its data in the page.
       throw new Error("ブラウザのプレビューではバックアップできません（アプリでは使えます）");
-    case "get_usage_meanings":
-      // Mirrors recipe::usage_meanings.
-      return [...new Set((wordUsages as WordUsage[]).map((u) => u.ja))].sort() as T;
+    case "get_usage_meanings": {
+      // Mirrors recipe::usage_meanings: each meaning once, with the first of its patterns.
+      const pairs = (wordUsages as WordUsage[]).map((u) => [u.ja, u.pattern] as [string, string]);
+      pairs.sort(([a, p], [b, q]) => (a < b ? -1 : a > b ? 1 : p < q ? -1 : p > q ? 1 : 0));
+      return pairs.filter(([ja], i) => i === 0 || pairs[i - 1][0] !== ja) as T;
+    }
     case "delete_recipe_words": {
       const ids = new Set((args.ids as number[]).map(Number));
       const before = state.recipe.length;
