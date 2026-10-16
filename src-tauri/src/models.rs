@@ -35,6 +35,8 @@ pub struct Question {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GrammarNote {
+    /// the broad 文法項目 (時制, 比較…) the お気に入り sorts and reviews by
+    pub category: String,
     pub title: String,
     pub body: String,
     pub example: String,
@@ -472,8 +474,23 @@ pub struct Favorite {
     pub added_at: String,
     /// when it was last gone over in the favorites' review
     pub last_reviewed_at: Option<String>,
+    /// answered right in today's review already: it pays no more today, and the review asks the
+    /// favorites not yet paid for first
+    pub paid_today: bool,
     pub question: Option<SessionQuestion>,
     pub exam: Option<ExamQuestion>,
+}
+
+/// What an answer in お気に入りの復習 did: a favorite answered right pays once a day.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FavoriteReview {
+    /// what it paid, after the play mode (0 when wrong or paid already today)
+    pub points: f64,
+    /// whole kcal added to today's earnings now
+    pub kcal_earned: i64,
+    /// right, but it had paid already today
+    pub paid_before: bool,
 }
 
 /// One question of an exam, with its passage when it is part of one (長文穴埋め / 読解).

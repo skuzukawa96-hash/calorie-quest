@@ -1,4 +1,5 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import FavoriteKcal from "../components/FavoriteKcal";
 import FavoriteStar, { useFavorites } from "../components/FavoriteStar";
 import GlossedText from "../components/GlossedText";
 import { PlayModeTag } from "../components/PlayModeSwitch";
@@ -18,6 +19,7 @@ import {
   type ExamProgress,
   type ExamQuestion,
   type ExamResult,
+  type FavoriteReview,
   type PlayMode,
 } from "../types";
 
@@ -26,8 +28,8 @@ const LETTERS = ["A", "B", "C", "D"];
 const PART_ORDER: ExamPart[] = ["listening", "short", "text", "reading"];
 
 /**
- * One round of お気に入りの復習 of exam questions, graded here. It pays nothing and leaves the exam
- * review alone; only the time each was gone over is kept.
+ * One round of お気に入りの復習 of exam questions, graded here. A favorite answered right pays once a
+ * day (favorite::review); the exam review is left alone.
  */
 export interface ExamFavoriteRound {
   items: { favoriteId: number; question: ExamQuestion }[];
@@ -54,6 +56,8 @@ interface Answered {
   correct: boolean;
   /** the review pays for each question put right */
   kcal?: number;
+  /** お気に入りの復習: what the answer paid (once a day) */
+  fav?: FavoriteReview | null;
 }
 
 function loadGloss(): boolean {
@@ -154,7 +158,21 @@ export default function Exam({ kind, level, favorites, overview, playMode, onExi
     async (choice: string) => {
       if (!current || answered[current.id] || busy) return;
       const correct = choice === current.answer;
-      if (kind === "review") {
+      if (kind === "favorites") {
+        // お気に入りの復習 keeps when the favorite was gone over, and pays once a day when right.
+        const item = favorites?.items.find((i) => i.question.id === current.id);
+        setBusy(true);
+        try {
+          const fav = item ? await api.reviewFavorite(item.favoriteId, correct) : null;
+          setAnswered((a) => ({ ...a, [current.id]: { chosen: choice, correct, fav } }));
+          if (fav?.points) onProgress();
+        } catch (e) {
+          toast(String(e));
+          return;
+        } finally {
+          setBusy(false);
+        }
+      } else if (kind === "review") {
         setBusy(true);
         try {
           const r = await api.answerExamReview(current.id, choice);
@@ -176,9 +194,6 @@ export default function Exam({ kind, level, favorites, overview, playMode, onExi
           const kept = questions.filter((q) => now[q.id]).map((q) => ({ id: q.id, chosen: now[q.id].chosen }));
           api.saveExamProgress(level, questions.map((q) => q.id), kept).catch((e) => toast(String(e)));
         }
-        // お気に入りの復習 keeps only when the favorite was gone over.
-        const item = favorites?.items.find((i) => i.question.id === current.id);
-        if (kind === "favorites" && item) api.markFavoriteReviewed(item.favoriteId).catch((e) => toast(String(e)));
       }
       if (correct) playCrunch();
       else playWrong();
@@ -282,6 +297,7 @@ export default function Exam({ kind, level, favorites, overview, playMode, onExi
     );
   }
   if (reviewDone && questions && kind === "favorites") {
+    const earned = Object.values(answered).reduce((s, a) => s + (a.fav?.points ?? 0), 0);
     return (
       <div className="screen exam">
         <section className="card exam-result">
@@ -289,7 +305,10 @@ export default function Exam({ kind, level, favorites, overview, playMode, onExi
           <div className="exam-score">
             <b>{correctCount}</b> / {questions.length} 問正解
           </div>
-          <p className="muted">お気に入りの問題は何度でも見返せます。カロリーと試験の復習は変わりません。</p>
+          <div className="exam-kcal">
+            おやつ予算 +{formatKcal(earned)} kcal{earned > 0 && <PlayModeTag mode={playMode} />}
+          </div>
+          <p className="muted">お気に入りの復習のカロリーは、1問につき1日1回です。試験の復習は変わりません。</p>
           <div className="row">
             {favorites?.onAgain && (
               <button className="btn btn-primary" onClick={favorites.onAgain}>
@@ -464,13 +483,15 @@ export default function Exam({ kind, level, favorites, overview, playMode, onExi
           <div className={"feedback " + (mine.correct ? "ok" : "ng")}>
             <div className="feedback-main">
               <div className="feedback-title">{mine.correct ? "正解！" : "不正解…"}</div>
-              <div className={"feedback-kcal" + (kind === "favorites" ? " fav-review-note" : "")}>
-                {kind === "review"
-                  ? `+${formatKcal(mine.kcal ?? 0)} kcal`
-                  : kind === "favorites"
-                    ? "★ お気に入りの復習"
+              {kind === "favorites" ? (
+                <FavoriteKcal fav={mine.fav ?? null} playMode={playMode} />
+              ) : (
+                <div className="feedback-kcal">
+                  {kind === "review"
+                    ? `+${formatKcal(mine.kcal ?? 0)} kcal`
                     : `${correctCount} / ${Object.keys(answered).length} 問正解`}
-              </div>
+                </div>
+              )}
             </div>
             <div className="feedback-detail">
               <div>

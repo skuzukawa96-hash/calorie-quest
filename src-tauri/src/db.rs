@@ -337,6 +337,7 @@ CREATE TABLE IF NOT EXISTS favorites (
   exam_id TEXT,
   added_at TEXT NOT NULL,
   last_reviewed_at TEXT,
+  paid_on TEXT,
   UNIQUE (user_id, question_id, mode),
   UNIQUE (user_id, exam_id)
 );
@@ -427,10 +428,22 @@ struct SeedQuestion {
     point: Option<String>,
 }
 
+/// The 文法項目 a grammar note or an exam question belongs to, in the order the お気に入り lists
+/// them (its 文法項目順 and the range of its review): the exam questions' points, and 冠詞 and
+/// 文の種類, which only grammar notes have. `src/types.ts` has the same list (it orders them); here
+/// a test keeps the data to it.
+#[cfg(test)]
+pub const POINT_CATEGORIES: &[&str] = &[
+    "時制", "主語と動詞の一致", "助動詞", "受け身", "仮定法", "不定詞・動名詞", "分詞", "文型", "構文", "文の種類",
+    "関係詞", "接続詞", "接続副詞", "前置詞", "代名詞", "冠詞", "数量", "比較", "品詞", "語彙", "文挿入",
+];
+
 /// One entry of `data/grammar-notes.json`.
 #[derive(serde::Deserialize)]
 pub struct GrammarNoteSeed {
     pub point: String,
+    /// its 文法項目 (one of [`POINT_CATEGORIES`]): 現在完了進行形 is 時制, as the exam's 時制 questions are
+    pub category: String,
     pub title: String,
     pub body: String,
     pub example: String,
@@ -504,6 +517,8 @@ fn setup(conn: Connection) -> rusqlite::Result<Connection> {
     ensure_column(&conn, "recipe_words", "excluded_at", "TEXT")?;
     // ★（お気に入り）にした日時。
     ensure_column(&conn, "recipe_words", "favorited_at", "TEXT")?;
+    // お気に入りの復習でその日はじめて正解した日（カロリーは1日1回）。
+    ensure_column(&conn, "favorites", "paid_on", "TEXT")?;
     // 試験のセットを出した回数。それより前に出したセットは1回と数える。
     ensure_column(&conn, "exam_seen", "asked_count", "INTEGER NOT NULL DEFAULT 0")?;
     conn.execute("UPDATE exam_seen SET asked_count = 1 WHERE asked_count = 0", [])?;
@@ -2847,6 +2862,30 @@ mod tests {
         let mri = word_notes("MRI").and_then(|n| n.abbreviation).expect("MRI is spelled out");
         assert_eq!(mri.full, "[m]agnetic [r]esonance [i]maging");
         assert!(word_notes("a.m.").and_then(|n| n.abbreviation).is_some(), "a.m. with its last dot");
+    }
+
+    /// Every grammar note and every exam question's point is a 文法項目 of the list the お気に入り sorts
+    /// and reviews by (so 時制 gathers 現在完了進行形 with the exam's 時制), and each of the list is used.
+    #[test]
+    fn grammar_notes_and_exam_points_share_the_list_of_points() {
+        let mut used = HashSet::new();
+        for note in grammar_notes().values() {
+            assert!(POINT_CATEGORIES.contains(&note.category.as_str()), "{}: {}", note.point, note.category);
+            used.insert(note.category.clone());
+        }
+        for sets in crate::exam::sets().values() {
+            for set in sets {
+                for q in &set.questions {
+                    if let Some(point) = &q.point {
+                        assert!(POINT_CATEGORIES.contains(&point.as_str()), "{}: {point}", set.id);
+                        used.insert(point.clone());
+                    }
+                }
+            }
+        }
+        for category in POINT_CATEGORIES {
+            assert!(used.contains(*category), "{category} is used by nothing");
+        }
     }
 
     /// A word made from another shows it as its 元の語, with the base's own pieces under it where

@@ -254,7 +254,13 @@ export default function App() {
             <Recipe playMode={dash?.user.playMode ?? "normal"} onProgress={() => void refresh()} toast={showToast} />
           ) : tab === "favorites" ? (
             dash ? (
-              <Favorites rates={dash.kcalRates} overview={dash.exam} playMode={dash.user.playMode} toast={showToast} />
+              <Favorites
+                rates={dash.kcalRates}
+                overview={dash.exam}
+                playMode={dash.user.playMode}
+                onProgress={() => void refresh()}
+                toast={showToast}
+              />
             ) : null
           ) : (
             <Stats day={dash?.today.date} dietMode={dash?.user.dietMode ?? false} onChanged={() => void refresh()} toast={showToast} />

@@ -49,6 +49,7 @@ import type {
   ExamReviewResult,
   Favorite,
   FavoriteKeys,
+  FavoriteReview,
   IrregularVerb,
   GrammarNote,
   Level,
@@ -198,6 +199,8 @@ interface StoredFavorite {
   examId?: string;
   addedAt: string;
   lastReviewedAt?: string | null;
+  /** the day it was last answered right in its review, which pays once a day (mirrors favorites.paid_on) */
+  paidOn?: string | null;
 }
 
 interface ExamAttempt {
@@ -1136,7 +1139,7 @@ const notesByPoint = new Map(
 
 function grammarNoteFor(q: Question): GrammarNote | null {
   const note = q.point ? notesByPoint.get(q.point) : undefined;
-  return note ? { title: note.title, body: note.body, example: note.example } : null;
+  return note ? { category: note.category, title: note.title, body: note.body, example: note.example } : null;
 }
 
 /** Mirrors db::word_parts: a word's prefix, root and suffix (or base word), keyed by its English. */
@@ -2158,7 +2161,7 @@ function favoriteKeys(): FavoriteKeys {
 function listFavorites(): Favorite[] {
   const out: Favorite[] = [];
   for (const f of [...state.favorites].reverse()) {
-    const base = { id: f.id, addedAt: f.addedAt, lastReviewedAt: f.lastReviewedAt ?? null };
+    const base = { id: f.id, addedAt: f.addedAt, lastReviewedAt: f.lastReviewedAt ?? null, paidToday: f.paidOn === today() };
     if (f.examId) {
       const exam = examQuestion(f.examId);
       if (exam) out.push({ ...base, question: null, exam });
@@ -2170,10 +2173,27 @@ function listFavorites(): Favorite[] {
   return out;
 }
 
-function markFavoriteReviewed(id: number) {
+/** Mirrors favorite::KCAL_WORD / KCAL_OTHER: what a favorite answered right pays, once a day. */
+const FAVORITE_KCAL_WORD = 1;
+const FAVORITE_KCAL_OTHER = 2;
+
+/** Mirrors favorite::review: the time kept, and answered right it pays once a day. */
+function reviewFavorite(id: number, correct: boolean): FavoriteReview {
   const f = state.favorites.find((x) => x.id === id);
-  if (f) f.lastReviewedAt = nowTs();
+  if (!f) throw new Error("favorite not found");
+  const t = today();
+  f.lastReviewedAt = nowTs();
+  const paidBefore = correct && f.paidOn === t;
+  const out: FavoriteReview = { points: 0, kcalEarned: 0, paidBefore };
+  if (correct && !paidBefore) {
+    const word = f.questionKey ? questions.find((q) => q.key === f.questionKey)?.tier === "word" : false;
+    const paid = credit(t, (word ? FAVORITE_KCAL_WORD : FAVORITE_KCAL_OTHER) * 8);
+    f.paidOn = t;
+    out.points = paid.points;
+    out.kcalEarned = paid.whole;
+  }
   save();
+  return out;
 }
 
 function examReview(): ExamQuestion[] {
@@ -2742,8 +2762,8 @@ export async function mockInvoke<T>(cmd: string, args: Record<string, unknown>):
       return setExamFavorite(String(args.examId), Boolean(args.on)) as T;
     case "list_favorites":
       return listFavorites() as T;
-    case "mark_favorite_reviewed":
-      return markFavoriteReviewed(Number(args.id)) as T;
+    case "review_favorite":
+      return reviewFavorite(Number(args.id), Boolean(args.correct)) as T;
     case "get_session_questions":
       return getSessionQuestions(args.mode as SessionMode, String(args.tier), String(args.category || "all"), Number(args.count)) as T;
     case "submit_answer":
@@ -2933,7 +2953,8 @@ export async function mockInvoke<T>(cmd: string, args: Record<string, unknown>):
       state.recipe = recipe;
       state.goals = goals;
       // お気に入り are the learner's own too (reset_progress leaves favorites alone).
-      state.favorites = favorites;
+      // What a favorite paid went with the day's kcal (mirrors favorites.paid_on = NULL).
+      state.favorites = favorites.map((f) => ({ ...f, paidOn: null }));
       // The play mode is a setting, as users.play_mode is left alone in Rust.
       state.user.playMode = playMode;
       save();

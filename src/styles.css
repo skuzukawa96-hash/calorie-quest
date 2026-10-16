@@ -745,7 +745,8 @@ main {
   border-radius: 12px;
   box-shadow: var(--shadow);
 }
-.segmented .recipe-pos-menu button {
+.segmented .recipe-pos-menu button,
+.fav-range .recipe-pos-menu button {
   display: flex;
   justify-content: space-between;
   gap: 14px;
@@ -755,10 +756,12 @@ main {
   text-align: left;
   white-space: nowrap;
 }
-.segmented .recipe-pos-menu button:hover {
+.segmented .recipe-pos-menu button:hover,
+.fav-range .recipe-pos-menu button:hover {
   background: var(--cream);
 }
-.segmented .recipe-pos-menu button[aria-checked="true"] {
+.segmented .recipe-pos-menu button[aria-checked="true"],
+.fav-range .recipe-pos-menu button[aria-checked="true"] {
   background: var(--cream-2);
   font-weight: 700;
 }
@@ -3667,6 +3670,17 @@ button.wp-link.open {
 }
 
 /* ---------- お気に入り ---------- */
+/* the heading and the buttons centred on one line (h2's own bottom margin would lift the heading),
+   and the explanation close under them */
+.section-head.fav-head {
+  margin-bottom: 6px;
+}
+.fav-head h2 {
+  margin: 0;
+}
+.fav-head-star {
+  color: #f0b400;
+}
 .section-head .fav-total {
   margin-left: 6px;
   font-size: 14px;
@@ -3676,9 +3690,64 @@ button.wp-link.open {
   gap: 8px;
   flex-wrap: wrap;
   justify-content: flex-end;
+  align-items: center;
 }
 .fav-intro {
-  margin: 4px 0 0;
+  margin: 0;
+}
+/* 復習: 学習 in a light green with a notebook, 試験 in a light blue with the green pencil */
+.btn.fav-review {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  font-size: 13.5px;
+  box-shadow: none;
+}
+.btn.fav-review.study {
+  background: #eaf6ee;
+  border-color: #c6e3cf;
+  color: #2f7a47;
+}
+.btn.fav-review.study:hover:not(:disabled) {
+  background: #dcf0e3;
+}
+.btn.fav-review.exam {
+  background: #e9f1fc;
+  border-color: #c8daf3;
+  color: #2f5f9e;
+}
+.btn.fav-review.exam:hover:not(:disabled) {
+  background: #dbe8fa;
+}
+.fav-review-icon {
+  display: inline-flex;
+  font-size: 15px;
+}
+/* 範囲: one 文法項目 for the list and the review */
+.fav-range {
+  position: relative;
+}
+.fav-range-btn {
+  padding: 4px 11px;
+  font-size: 12.5px;
+}
+.fav-range .recipe-pos-menu button {
+  border: 0;
+  background: transparent;
+  font-size: 13px;
+}
+.fav-range .recipe-pos-menu,
+.fav-sort .recipe-pos-menu {
+  left: auto;
+  right: 0;
+}
+.fav-point-menu {
+  max-height: 340px;
+  overflow-y: auto;
+}
+.fav-sort {
+  margin-left: auto;
 }
 .fav-toolbar {
   display: flex;
@@ -3690,8 +3759,30 @@ button.wp-link.open {
 .segmented.fav-tabs {
   flex-wrap: wrap;
 }
+.segmented.fav-tabs {
+  gap: 3px;
+}
 .segmented.fav-tabs button {
   padding: 6px 11px;
+}
+/* 英単語 … 例文 in a light green, 試験 in a light blue, as the review buttons */
+.segmented.fav-tabs button.study {
+  background: #eaf6ee;
+  color: #2f7a47;
+}
+.segmented.fav-tabs button.exam {
+  background: #e9f1fc;
+  color: #2f5f9e;
+}
+.segmented.fav-tabs button.study.active {
+  background: #cdead7;
+  color: #1f5c34;
+  font-weight: 700;
+}
+.segmented.fav-tabs button.exam.active {
+  background: #d2e2f8;
+  color: #1f4a80;
+  font-weight: 700;
 }
 .fav-forms {
   display: flex;

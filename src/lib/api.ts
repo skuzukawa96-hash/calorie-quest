@@ -15,6 +15,7 @@ import type {
   ExamReviewResult,
   Favorite,
   FavoriteKeys,
+  FavoriteReview,
   Mode,
   NativeRecognition,
   PlayMode,
@@ -132,7 +133,8 @@ export const api = {
     call<void>("set_question_favorite", { questionId, mode, on }),
   setExamFavorite: (examId: string, on: boolean) => call<void>("set_exam_favorite", { examId, on }),
   listFavorites: () => call<Favorite[]>("list_favorites"),
-  markFavoriteReviewed: (id: number) => call<void>("mark_favorite_reviewed", { id }),
+  /** a favorite answered in its review: right, it pays once a day (英単語 1 kcal, the others 2 kcal) */
+  reviewFavorite: (id: number, correct: boolean) => call<FavoriteReview>("review_favorite", { id, correct }),
 
   // お菓子作りレシピ (the learner's word list)
   listRecipeWords: () => call<RecipeWord[]>("list_recipe_words"),

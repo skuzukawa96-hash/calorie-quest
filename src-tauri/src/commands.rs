@@ -858,6 +858,7 @@ fn grammar_note_for(q: &Question) -> Option<GrammarNote> {
     let point = q.point.as_deref()?;
     let note = db::grammar_notes().get(point)?;
     Some(GrammarNote {
+        category: note.category.clone(),
         title: note.title.clone(),
         body: note.body.clone(),
         example: note.example.clone(),
@@ -1667,6 +1668,7 @@ pub fn reset_progress(state: State<'_, AppState>) -> CmdResult<()> {
          UPDATE users SET total_study_days = 0, current_streak = 0, longest_streak = 0, last_study_date = NULL,
            savings_kcal = 0;
          UPDATE recipe_words SET paid_on = NULL;
+         UPDATE favorites SET paid_on = NULL;
          UPDATE weight_log SET bonus_kcal = 0;
          DELETE FROM exam_attempts; DELETE FROM exam_mistakes; DELETE FROM exam_progress; DELETE FROM exam_seen;",
     )

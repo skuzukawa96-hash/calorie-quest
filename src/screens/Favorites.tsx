@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 import GlossedText from "../components/GlossedText";
 import IpaLine from "../components/IpaLine";
+import PencilIcon from "../components/PencilIcon";
 import PronunciationTips from "../components/PronunciationTips";
 import WordNotesPanel from "../components/WordNotes";
 import { api } from "../lib/api";
@@ -11,6 +12,7 @@ import type { TipKey } from "../lib/scoring";
 import { isTtsSupported, speak, stopSpeaking } from "../lib/speech";
 import {
   EXAM_PART_LABEL,
+  POINT_CATEGORIES,
   TIER_LABEL,
   TIERS,
   type ExamOverview,
@@ -37,13 +39,60 @@ type Form = Mode | `part:${ExamPart}`;
 const MODES: Mode[] = ["choice", "typing", "speaking", "listening"];
 const MODE_SHORT: Record<Mode, string> = { choice: "選択", typing: "記入", speaking: "発音", listening: "ヒアリング" };
 const PART_ORDER: ExamPart[] = ["listening", "short", "text", "reading"];
-/** favorites gone over in one round of the review, those left longest first */
-const ROUND_SIZE = 10;
+/**
+ * What the blue tags are called: the broad point a grammar question (its explanation's) or an exam
+ * question asks about (時制, 比較, 代名詞…), by which the list is sorted and the review narrowed.
+ */
+const POINT_NOUN = "文法項目";
 
 const tabLabel = (t: FavTab) => (t === "all" ? "すべて" : t === "exam" ? "試験" : TIER_LABEL[t]);
 const formLabel = (f: Form) => (f.startsWith("part:") ? EXAM_PART_LABEL[f.slice(5) as ExamPart] : MODE_SHORT[f as Mode]);
 const classOf = (f: Favorite): Tier | "exam" => (f.exam ? "exam" : f.question!.question.tier);
 const formOf = (f: Favorite): Form => (f.exam ? `part:${f.exam.part}` : f.question!.mode);
+/** Its 文法項目: an exam question's point, or a grammar question's explanation's; none for the others. */
+const pointOf = (f: Favorite): string | null => (f.exam ? f.exam.point ?? null : f.question?.grammarNote?.category ?? null);
+/** Where a 文法項目 comes in the list: in the order of POINT_CATEGORIES, those with none last. */
+const pointRank = (p: string | null) => {
+  const i = p === null ? -1 : POINT_CATEGORIES.indexOf(p);
+  return i < 0 ? POINT_CATEGORIES.length : i;
+};
+
+/** 追加順 (newest first, or the other way round) and whether it goes by 文法項目, as last left. */
+const ORDER_STORAGE = "cq-fav-order";
+
+function loadOrder(): { reverse: boolean; grouped: boolean } {
+  try {
+    const v = JSON.parse(localStorage.getItem(ORDER_STORAGE) ?? "null");
+    return { reverse: v?.reverse === true, grouped: v?.grouped === true };
+  } catch {
+    return { reverse: false, grouped: false };
+  }
+}
+
+function saveOrder(reverse: boolean, grouped: boolean) {
+  try {
+    localStorage.setItem(ORDER_STORAGE, JSON.stringify({ reverse, grouped }));
+  } catch {
+    /* ignore */
+  }
+}
+
+/** A menu that closes on a click elsewhere or Escape. */
+function useClickAway(open: boolean, box: RefObject<HTMLElement | null>, setOpen: (open: boolean) => void) {
+  useEffect(() => {
+    if (!open) return;
+    const away = (e: MouseEvent) => {
+      if (!box.current?.contains(e.target as Node)) setOpen(false);
+    };
+    const esc = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    document.addEventListener("mousedown", away);
+    document.addEventListener("keydown", esc);
+    return () => {
+      document.removeEventListener("mousedown", away);
+      document.removeEventListener("keydown", esc);
+    };
+  }, [open, box, setOpen]);
+}
 
 function say(text: string) {
   if (isTtsSupported()) speak(text).catch(() => undefined);
@@ -62,9 +111,13 @@ function shuffle<T>(list: T[]): T[] {
   return out;
 }
 
-/** Up to a round of favorites: never gone over first, then those gone over longest ago. */
-function pickRound(items: Favorite[]): Favorite[] {
-  return [...items].sort((a, b) => (a.lastReviewedAt ?? "").localeCompare(b.lastReviewedAt ?? "")).slice(0, ROUND_SIZE);
+/**
+ * What a review asks: every favorite on show that has not paid today (a review left part-way goes
+ * on with those), or, once they all have, every one of them again (paying nothing more today).
+ */
+function roundOf(items: Favorite[]): Favorite[] {
+  const unpaid = items.filter((f) => !f.paidToday);
+  return unpaid.length > 0 ? unpaid : items;
 }
 
 /** `sentence` with the first `answer` in it bold: the word a grammar or exam blank asked for. */
@@ -102,6 +155,8 @@ interface Props {
   rates: KcalRates;
   overview: ExamOverview;
   playMode: PlayMode;
+  /** what the review paid is in today's kcal: the header reads it again */
+  onProgress: () => void;
   toast: (msg: string) => void;
 }
 
@@ -112,10 +167,12 @@ type Reviewing = { round: number } & ({ kind: "study"; study: FavoriteRound } | 
  * お気に入り: the questions starred (☆ → ★) in a study session or an exam, a line each (the English
  * and what it means; a grammar or exam sentence with its answer in bold), opening on a click to
  * the explanation without the wrong options. Tabs sort them by kind (英単語 … 例文, 試験) and chips
- * by how they were asked (選択 / 記入 / 発音 / ヒアリング, or the exam's parts). The review asks the
- * favorites on show again, ten at a time, paying nothing and recording nothing.
+ * by how they were asked (選択 / 記入 / 発音 / ヒアリング, or the exam's parts); 追加順 and 文法項目順
+ * order them, and one 文法項目 can be picked (from the sort or beside the review buttons) to list
+ * and review only it. The review asks every favorite on show not yet paid for today: answered right
+ * one pays once a day (英単語 1 kcal, the others 2 kcal).
  */
-export default function Favorites({ rates, overview, playMode, toast }: Props) {
+export default function Favorites({ rates, overview, playMode, onProgress, toast }: Props) {
   const [list, setList] = useState<Favorite[] | null>(null);
   const [tab, setTab] = useState<FavTab>("all");
   const [form, setForm] = useState<Form | "all">("all");
@@ -124,6 +181,19 @@ export default function Favorites({ rates, overview, playMode, toast }: Props) {
   const [unstarred, setUnstarred] = useState<Set<number>>(() => new Set());
   const [reviewing, setReviewing] = useState<Reviewing | null>(null);
   const [dict, setDict] = useState<Dictionary | null>(null);
+  /** 追加順: newest first, or (clicked again) oldest first */
+  const [reverse, setReverse] = useState(() => loadOrder().reverse);
+  /** 文法項目順: the list in 文法項目 (時制 → 主語と動詞の一致 → …), each under its heading */
+  const [grouped, setGrouped] = useState(() => loadOrder().grouped);
+  /** one 文法項目 only, for the list and the review (from the sort's menu or the 範囲 beside the buttons) */
+  const [only, setOnly] = useState<string | null>(null);
+  const [sortMenu, setSortMenu] = useState(false);
+  const [rangeMenu, setRangeMenu] = useState(false);
+  const sortBox = useRef<HTMLDivElement>(null);
+  const rangeBox = useRef<HTMLDivElement>(null);
+  useClickAway(sortMenu, sortBox, setSortMenu);
+  useClickAway(rangeMenu, rangeBox, setRangeMenu);
+  useEffect(() => saveOrder(reverse, grouped), [reverse, grouped]);
 
   const load = useCallback(async () => {
     try {
@@ -170,18 +240,45 @@ export default function Favorites({ rates, overview, playMode, toast }: Props) {
     if (form !== "all" && !forms.includes(form)) setForm("all");
   }, [forms, form]);
 
-  const matches = useCallback(
+  const inTabAndForm = useCallback(
     (f: Favorite) => inTab(f, tab) && (form === "all" || formOf(f) === form),
     [inTab, tab, form],
   );
-  const shown = useMemo(() => (list ?? []).filter(matches), [list, matches]);
+  // The 文法項目 of the tab and form, with how many favorites each has, in their order.
+  const points = useMemo(() => {
+    const count = new Map<string, number>();
+    for (const f of starred) {
+      const p = pointOf(f);
+      if (p && inTabAndForm(f)) count.set(p, (count.get(p) ?? 0) + 1);
+    }
+    return [...count].sort(([a], [b]) => pointRank(a) - pointRank(b)).map(([point, n]) => ({ point, n }));
+  }, [starred, inTabAndForm]);
+  // A 文法項目 no favorite of the tab and form has any more lists them all again.
+  useEffect(() => {
+    if (only !== null && !points.some((p) => p.point === only)) setOnly(null);
+  }, [points, only]);
+
+  const matches = useCallback(
+    (f: Favorite) => inTabAndForm(f) && (only === null || pointOf(f) === only),
+    [inTabAndForm, only],
+  );
+  const shown = useMemo(() => {
+    const sign = reverse ? -1 : 1;
+    return (list ?? [])
+      .filter(matches)
+      .sort(
+        (a, b) =>
+          (grouped ? pointRank(pointOf(a)) - pointRank(pointOf(b)) : 0) ||
+          sign * (b.addedAt.localeCompare(a.addedAt) || b.id - a.id),
+      );
+  }, [list, matches, grouped, reverse]);
   const pool = shown.filter((f) => !unstarred.has(f.id));
   const studyPool = pool.filter((f) => f.question);
   const examPool = pool.filter((f) => f.exam);
 
   const startStudy = useCallback(
     (items: Favorite[], round: number) => {
-      const picked = shuffle(pickRound(items));
+      const picked = shuffle(roundOf(items));
       const study: FavoriteRound = {
         items: picked.map((f) => ({ favoriteId: f.id, question: f.question! })),
         onAgain: async () => {
@@ -199,7 +296,7 @@ export default function Favorites({ rates, overview, playMode, toast }: Props) {
   const startExam = useCallback(
     (items: Favorite[], round: number) => {
       // In the order of an exam: the parts in turn, a passage's blanks together.
-      const picked = pickRound(items).sort((a, b) => {
+      const picked = roundOf(items).sort((a, b) => {
         const x = a.exam!;
         const y = b.exam!;
         return (
@@ -268,6 +365,15 @@ export default function Favorites({ rates, overview, playMode, toast }: Props) {
       return next;
     });
 
+  // The first click lines the list up by 文法項目; after that it opens the menu.
+  const clickPointSort = () => (grouped || only !== null ? setSortMenu((m) => !m) : setGrouped(true));
+  const pickPoint = (point: string | null, group = true) => {
+    setOnly(point);
+    setGrouped(group);
+    setSortMenu(false);
+    setRangeMenu(false);
+  };
+
   if (reviewing?.kind === "study") {
     return (
       <Study
@@ -279,7 +385,7 @@ export default function Favorites({ rates, overview, playMode, toast }: Props) {
         playMode={playMode}
         favorites={reviewing.study}
         onExit={stopReview}
-        onProgress={() => undefined}
+        onProgress={onProgress}
         toast={toast}
       />
     );
@@ -293,48 +399,84 @@ export default function Favorites({ rates, overview, playMode, toast }: Props) {
         overview={overview}
         playMode={playMode}
         onExit={stopReview}
-        onProgress={() => undefined}
+        onProgress={onProgress}
         toast={toast}
       />
     );
   }
 
-  const roundNote = (n: number) => (n > ROUND_SIZE ? `${n}問から${ROUND_SIZE}問ずつ` : `${n}問`);
-  const reviewButton = (label: string, items: Favorite[], start: (items: Favorite[], round: number) => void) => (
-    <button
-      className="btn btn-primary"
-      disabled={items.length === 0}
-      title={items.length > ROUND_SIZE ? `しばらく復習していない問題から${ROUND_SIZE}問ずつ出題します` : undefined}
-      onClick={() => start(items, 1)}
-    >
-      ▶ {label}（{roundNote(items.length)}）
-    </button>
-  );
+  /** A review button: 学習 in a light green with a notebook, 試験 in a light blue with the green pencil. */
+  const reviewButton = (kind: "study" | "exam", label: string, items: Favorite[], start: (items: Favorite[], round: number) => void) => {
+    const unpaid = items.filter((f) => !f.paidToday).length;
+    const note =
+      unpaid === items.length ? `${items.length}問` : unpaid > 0 ? `残り${unpaid}問` : `${items.length}問・今日は獲得済み`;
+    const title =
+      unpaid === items.length
+        ? "正解すると1問につき1日1回カロリーがもらえます（英単語 1 kcal、ほかは 2 kcal）"
+        : unpaid > 0
+          ? `今日まだカロリーをもらっていない${unpaid}問を出題します（${items.length - unpaid}問は今日もらいました）`
+          : "今日はすべてカロリーをもらいました。最初から全部を出題します（今日はもうカロリーはつきません）";
+    return (
+      <button className={"btn fav-review " + kind} disabled={items.length === 0} title={title} onClick={() => start(items, 1)}>
+        <span className="fav-review-icon" aria-hidden="true">
+          {kind === "study" ? "📓" : <PencilIcon />}
+        </span>
+        {label}（{note}）
+      </button>
+    );
+  };
 
   return (
     <div className="screen favorites">
       <section className="card">
-        <div className="section-head">
+        <div className="section-head fav-head">
           <h2>
-            ★ お気に入り {list && <span className="muted fav-total">{starred.length}問</span>}
+            <span className="fav-head-star">★</span> お気に入り {list && <span className="muted fav-total">{starred.length}問</span>}
           </h2>
           {pool.length > 0 && (
             <div className="row fav-review-buttons">
+              {points.length > 0 && (
+                <div className="fav-range" ref={rangeBox}>
+                  <button
+                    className={"chip fav-range-btn" + (only ? " active" : "")}
+                    aria-haspopup="menu"
+                    aria-expanded={rangeMenu}
+                    title={`${POINT_NOUN}を選ぶと、その${POINT_NOUN}の問題だけを一覧に出して復習します`}
+                    onClick={() => setRangeMenu((m) => !m)}
+                  >
+                    範囲：{only ?? "すべて"} <span className="recipe-caret-small">▾</span>
+                  </button>
+                  {rangeMenu && (
+                    <div className="recipe-pos-menu fav-point-menu" role="menu">
+                      <button role="menuitemradio" aria-checked={only === null} onClick={() => pickPoint(null, grouped)}>
+                        <span>すべて</span>
+                        <span className="count">{starred.filter(inTabAndForm).length}</span>
+                      </button>
+                      {points.map(({ point, n }) => (
+                        <button key={point} role="menuitemradio" aria-checked={only === point} onClick={() => pickPoint(point, grouped)}>
+                          <span>{point}</span>
+                          <span className="count">{n}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
               {studyPool.length > 0 && examPool.length > 0 ? (
                 <>
-                  {reviewButton("学習の問題を復習", studyPool, startStudy)}
-                  {reviewButton("試験の問題を復習", examPool, startExam)}
+                  {reviewButton("study", "学習の問題を復習", studyPool, startStudy)}
+                  {reviewButton("exam", "試験の問題を復習", examPool, startExam)}
                 </>
               ) : studyPool.length > 0 ? (
-                reviewButton("この一覧を復習", studyPool, startStudy)
+                reviewButton("study", "この一覧を復習", studyPool, startStudy)
               ) : (
-                reviewButton("この一覧を復習", examPool, startExam)
+                reviewButton("exam", "この一覧を復習", examPool, startExam)
               )}
             </div>
           )}
         </div>
         <p className="muted small fav-intro">
-          学習や試験の問題の右上の <b>☆</b> を押すと、ここに集まります。行をクリックすると解説が開きます。復習では一覧に出ている問題を出題します（カロリーはつかず、学習の復習や記録も変わりません）。
+          学習や試験の問題の右上の <b>☆</b> を押すと、ここに集まります。行をクリックすると解説が開きます。復習では一覧に出ている問題をすべて出題し、正解すると1問につき1日1回カロリーがもらえます（英単語 1 kcal、ほかは 2 kcal）。途中でやめても、同じ日ならまだカロリーをもらっていない問題から続きます。
         </p>
       </section>
 
@@ -352,7 +494,11 @@ export default function Favorites({ rates, overview, playMode, toast }: Props) {
             <div className="fav-toolbar">
               <div className="segmented fav-tabs">
                 {tabs.map((t) => (
-                  <button key={t} className={tab === t ? "active" : ""} onClick={() => setTab(t)}>
+                  <button
+                    key={t}
+                    className={(tab === t ? "active " : "") + (t === "all" ? "" : t === "exam" ? "exam" : "study")}
+                    onClick={() => setTab(t)}
+                  >
                     {tabLabel(t)} {starred.filter((f) => inTab(f, t)).length}
                   </button>
                 ))}
@@ -360,6 +506,43 @@ export default function Favorites({ rates, overview, playMode, toast }: Props) {
               <button className="btn-small recipe-open-all" disabled={shown.length === 0} onClick={toggleAll}>
                 {allOpen ? "一括で詳細を閉じる" : "一括で詳細を開く"}
               </button>
+              <div className="segmented recipe-sort fav-sort" role="group" aria-label="並び替え">
+                {points.length > 0 && (
+                  <div className="recipe-pos" ref={sortBox}>
+                    <button
+                      className={grouped || only ? "active" : ""}
+                      aria-haspopup="menu"
+                      aria-expanded={sortMenu}
+                      title={grouped || only ? `${POINT_NOUN}を選ぶ` : `${POINT_NOUN}（時制・比較・代名詞…）ごとに並べる`}
+                      onClick={clickPointSort}
+                    >
+                      {only ? `${only}のみ` : `${POINT_NOUN}順`}
+                      {(grouped || only) && <span className="recipe-caret-small"> ▾</span>}
+                    </button>
+                    {sortMenu && (
+                      <div className="recipe-pos-menu fav-point-menu" role="menu">
+                        <button role="menuitemradio" aria-checked={grouped && only === null} onClick={() => pickPoint(null)}>
+                          <span>すべての{POINT_NOUN}</span>
+                          <span className="count">{starred.filter(inTabAndForm).length}</span>
+                        </button>
+                        {points.map(({ point, n }) => (
+                          <button key={point} role="menuitemradio" aria-checked={only === point} onClick={() => pickPoint(point)}>
+                            <span>{point}のみ</span>
+                            <span className="count">{n}</span>
+                          </button>
+                        ))}
+                        <hr />
+                        <button role="menuitem" onClick={() => pickPoint(null, false)}>
+                          <span>{POINT_NOUN}順をやめる</span>
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+                <button className="active" title="もう一度押すと逆順" onClick={() => setReverse((r) => !r)}>
+                  追加順<span className="recipe-dir">{reverse ? "古→新" : "新→古"}</span>
+                </button>
+              </div>
             </div>
             {forms.length > 0 && (
               <div className="fav-forms" role="group" aria-label="出題形式で絞り込む">
@@ -378,12 +561,20 @@ export default function Favorites({ rates, overview, playMode, toast }: Props) {
               <p className="muted">この条件のお気に入りはありません。</p>
             ) : (
               <ul className="recipe-list fav-list">
-                {shown.map((f) => {
+                {shown.map((f, i) => {
                   const isOpen = open.has(f.id);
                   const off = unstarred.has(f.id);
                   const s = summary(f);
                   const cls = classOf(f);
-                  return (
+                  const point = pointOf(f);
+                  const heading = grouped && (i === 0 || pointOf(shown[i - 1]) !== point);
+                  return [
+                    heading && (
+                      <li key={"point-" + (point ?? "none")} className="recipe-group">
+                        {point ?? `${POINT_NOUN}なし`}{" "}
+                        <span>{shown.filter((x) => pointOf(x) === point).length}</span>
+                      </li>
+                    ),
                     <li key={f.id} className={"recipe-item fav-item" + (isOpen ? " open" : "") + (off ? " off" : "")}>
                       <div
                         className="recipe-item-head fav-item-head"
@@ -449,14 +640,16 @@ export default function Favorites({ rates, overview, playMode, toast }: Props) {
                           )}
                           <div className="muted small fav-foot">
                             {tabLabel(cls)}・{formLabel(formOf(f))}
+                            {point && `・${point}`}
                             {f.exam && `・${overview.levels.find((l) => l.level === f.exam!.level)?.label ?? ""}`}・{stamp(f.addedAt)}{" "}
                             に追加
                             {f.lastReviewedAt && `・最後の復習 ${stamp(f.lastReviewedAt)}`}
+                            {f.paidToday && "・今日のカロリー獲得済み"}
                           </div>
                         </div>
                       )}
-                    </li>
-                  );
+                    </li>,
+                  ];
                 })}
               </ul>
             )}

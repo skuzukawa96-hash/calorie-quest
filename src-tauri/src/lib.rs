@@ -77,7 +77,7 @@ pub fn run() {
             favorite::set_question_favorite,
             favorite::set_exam_favorite,
             favorite::list_favorites,
-            favorite::mark_favorite_reviewed,
+            favorite::review_favorite,
             recipe::list_recipe_words,
             recipe::add_recipe_word,
             recipe::review_recipe_word,

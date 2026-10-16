@@ -162,6 +162,8 @@ export interface RelatedWord {
 
 /** The explanation shown with a grammar answer; one note serves every question on that point. */
 export interface GrammarNote {
+  /** the broad 文法項目 (時制, 比較…) the お気に入り sorts and reviews by */
+  category: string;
   title: string;
   body: string;
   example: string;
@@ -552,9 +554,29 @@ export interface Favorite {
   addedAt: string;
   /** when it was last gone over in the favorites' review */
   lastReviewedAt?: string | null;
+  /** answered right in today's review already: it pays no more today, and the review asks the others first */
+  paidToday: boolean;
   question?: SessionQuestion | null;
   exam?: ExamQuestion | null;
 }
+
+/** What an answer in お気に入りの復習 did: a favorite answered right pays once a day. */
+export interface FavoriteReview {
+  /** what it paid, after the play mode (0 when wrong or paid already today) */
+  points: number;
+  kcalEarned: number;
+  /** right, but it had paid already today */
+  paidBefore: boolean;
+}
+
+/**
+ * The 文法項目 a grammar question (its explanation's) or an exam question belongs to, in the order the
+ * お気に入り lists them: mirrors db::POINT_CATEGORIES.
+ */
+export const POINT_CATEGORIES = [
+  "時制", "主語と動詞の一致", "助動詞", "受け身", "仮定法", "不定詞・動名詞", "分詞", "文型", "構文", "文の種類",
+  "関係詞", "接続詞", "接続副詞", "前置詞", "代名詞", "冠詞", "数量", "比較", "品詞", "語彙", "文挿入",
+];
 
 export interface ExamReviewResult {
   correct: boolean;

@@ -3,6 +3,7 @@ import FavoriteStar, { useFavorites } from "../components/FavoriteStar";
 import GlossedText from "../components/GlossedText";
 import IpaLine from "../components/IpaLine";
 import PronunciationTips, { HighlightedText } from "../components/PronunciationTips";
+import FavoriteKcal from "../components/FavoriteKcal";
 import { PlayModeTag } from "../components/PlayModeSwitch";
 import WordNotesPanel from "../components/WordNotes";
 import { MeaningWithTags, useAskedMeaning, useOptionLabels } from "../components/PosTags";
@@ -43,6 +44,7 @@ import {
   TIER_LABEL,
   MODE_LABEL,
   type AnswerResult,
+  type FavoriteReview,
   type KcalRates,
   type PlayMode,
   type SessionMode,
@@ -56,8 +58,9 @@ const GLOSS_KEY = "cq-show-gloss";
 const TYPING_HINT_KEY = "cq-typing-hint";
 
 /**
- * One round of お気に入りの復習: these questions instead of a session's, graded here. It pays
- * nothing and leaves the review and the 記録 alone; only the time each was gone over is kept.
+ * One round of お気に入りの復習: these questions instead of a session's, graded here. A favorite
+ * answered right pays once a day (favorite::review); the study review and the answer log are left
+ * alone.
  */
 export interface FavoriteRound {
   items: { favoriteId: number; question: SessionQuestion }[];
@@ -84,8 +87,10 @@ interface Props {
 
 interface Feedback {
   correct: boolean;
-  /** what the answer earned and scheduled; none in お気に入りの復習, which records nothing */
+  /** what the answer earned and scheduled; none in お気に入りの復習, which has `fav` instead */
   result: AnswerResult | null;
+  /** お気に入りの復習: what the answer paid (once a day) */
+  fav?: FavoriteReview | null;
   given?: string;
   score?: PronunciationScore | null;
   /** typing: which words of the answer were off */
@@ -214,10 +219,11 @@ export default function Study({ mode, tier, category, rates, playMode, favorites
       const qMode = current.mode;
       setSubmitting(true);
       try {
-        // お気に入りの復習 records nothing but when the favorite was gone over.
+        // お気に入りの復習 keeps when the favorite was gone over, and pays once a day when right.
         const item = favorites?.items[idx];
         let result: AnswerResult | null = null;
-        if (item) await api.markFavoriteReviewed(item.favoriteId);
+        let fav: FavoriteReview | null = null;
+        if (item) fav = await api.reviewFavorite(item.favoriteId, correct);
         else
           result = await api.submitAnswer({
             questionId: current.question.id,
@@ -229,7 +235,7 @@ export default function Study({ mode, tier, category, rates, playMode, favorites
           });
         setTally((t) => ({
           correct: t.correct + (correct ? 1 : 0),
-          kcal: t.kcal + (result?.points ?? 0),
+          kcal: t.kcal + (result?.points ?? fav?.points ?? 0),
           reviews: t.reviews + (result?.isReview && !result.staysToday ? 1 : 0),
         }));
         if (result?.staysToday) {
@@ -242,8 +248,8 @@ export default function Study({ mode, tier, category, rates, playMode, favorites
           window.setTimeout(playFanfare, 350);
           toast("🎫 7日連続達成！チートデイチケット（+300 kcal）を獲得しました");
         }
-        setFeedback({ correct, result, given, score: ps, typing });
-        if (result) onProgress();
+        setFeedback({ correct, result, fav, given, score: ps, typing });
+        if (result || fav?.points) onProgress();
         // Read the English aloud after the answer sound so the learner hears the pronunciation.
         // Listening mode has just played it, so it only repeats when the answer was wrong.
         const repeat = qMode !== "speaking" && autoSpeak && isTtsSupported() && (qMode !== "listening" || !correct);
@@ -471,9 +477,7 @@ export default function Study({ mode, tier, category, rates, playMode, favorites
                   )}
                 </div>
               ) : (
-                <div className="feedback-kcal fav-review-note" title="お気に入りの復習はカロリーがつかず、学習の復習や記録も変わりません">
-                  ★ お気に入りの復習
-                </div>
+                <FavoriteKcal fav={feedback.fav ?? null} playMode={playMode} />
               )}
             </div>
             <div className="feedback-detail">
@@ -1159,7 +1163,7 @@ function Summary({
   onExit: () => void;
   /** none when there is nothing left to go on with (お気に入り: every favorite gone over) */
   onAgain: (() => void) | null;
-  /** お気に入りの復習: no kcal, no review bonus, and back to the favorites */
+  /** お気に入りの復習: no review bonus, and back to the favorites */
   favorites: boolean;
   /** reviews of the round not done, which stay in today's review until answered right */
   missedReviews: number;
@@ -1188,17 +1192,15 @@ function Summary({
             </div>
             <div className="muted">正解数（{rate}%）</div>
           </div>
+          <div>
+            <div className="summary-num accent">+{formatKcal(tally.kcal)} kcal</div>
+            <div className="muted">獲得カロリー</div>
+          </div>
           {!favorites && (
-            <>
-              <div>
-                <div className="summary-num accent">+{formatKcal(tally.kcal)} kcal</div>
-                <div className="muted">獲得カロリー</div>
-              </div>
-              <div>
-                <div className="summary-num">{tally.reviews}</div>
-                <div className="muted">復習ボーナス回数</div>
-              </div>
-            </>
+            <div>
+              <div className="summary-num">{tally.reviews}</div>
+              <div className="muted">復習ボーナス回数</div>
+            </div>
           )}
         </div>
         <p className="cheer">{cheer}</p>
