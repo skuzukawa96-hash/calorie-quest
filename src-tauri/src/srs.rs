@@ -16,9 +16,6 @@ pub fn misses_to_review_again(mode: &str) -> i64 {
     }
 }
 
-/// 選択問題は英単語 1 kcal、それ以外（複合語・慣用句・文法・フレーズ・例文）は 2 kcal。
-pub const KCAL_WORD_CHOICE: i64 = 1;
-pub const KCAL_CHOICE: i64 = 2;
 pub const REVIEW_MULTIPLIER: f64 = 1.5;
 pub const CHEAT_DAY_BONUS: i64 = 300;
 /// 使わずに残ったカロリーの貯蓄が、この量に達するごとにお菓子引換券1枚になる。
@@ -52,36 +49,48 @@ pub fn scored(kind: &str, tier: &str) -> Scored {
     }
 }
 
-/// 記入問題: 英単語 2、複合語 4、慣用句 5 kcal。文（例文・長文・フレーズ）は1語 1 kcal で、
+// The rewards are set so that, with the time a question takes (the explanation read too), an
+// hour of study is about 400 kcal: 30 minutes for a 200 kcal snack, the 間食 a day of the 食事
+// バランスガイド. What is written or said pays a little more a minute than what is picked.
+
+/// 選択問題: 英単語 2、複合語・慣用句 3、文（文法・フレーズ・例文）4 kcal。
+pub fn choice_kcal(s: Scored) -> i64 {
+    match s {
+        Scored::Word => 2,
+        Scored::Compound | Scored::Idiom => 3,
+        Scored::Sentence => 4,
+    }
+}
+
+/// 記入問題: 英単語 3、複合語 4、慣用句 5 kcal。文（例文・長文・フレーズ）は1語 1 kcal で、
 /// `per_word_kcal` が別に数える。
 pub fn typing_kcal(s: Scored) -> i64 {
     match s {
-        Scored::Word => 2,
+        Scored::Word => 3,
         Scored::Compound => 4,
         Scored::Idiom => 5,
         Scored::Sentence => 0,
     }
 }
 
-/// 聞く（ヒアリング）・話す（発音）問題: 英単語 1、複合語 2、慣用句 3、文法・フレーズ・例文 5 kcal。
+/// 聞く（ヒアリング）・話す（発音）問題: 英単語 2、複合語・慣用句 3、文（文法・フレーズ・例文・
+/// 会話）4 kcal。
 pub fn spoken_kcal(s: Scored) -> i64 {
     match s {
-        Scored::Word => 1,
-        Scored::Compound => 2,
-        Scored::Idiom => 3,
-        Scored::Sentence => 5,
+        Scored::Word => 2,
+        Scored::Compound | Scored::Idiom => 3,
+        Scored::Sentence => 4,
     }
 }
 
 /// kcal for a correct answer, by what the question is and how it was asked. Speaking is scaled
-/// by the recognizer's score (80 points of a 5 kcal sentence is 4).
+/// by the recognizer's score (75 points of a 4 kcal sentence is 3).
 pub fn kcal_for(s: Scored, mode: &str, correct: bool, score: Option<f64>) -> i64 {
     if !correct {
         return 0;
     }
     match mode {
-        "choice" if s == Scored::Word => KCAL_WORD_CHOICE,
-        "choice" => KCAL_CHOICE,
+        "choice" => choice_kcal(s),
         "typing" => typing_kcal(s),
         "speaking" => {
             let score = score.unwrap_or(100.0).clamp(0.0, 100.0);
@@ -239,21 +248,20 @@ mod tests {
         }
         assert_eq!(scored("phrase", "idiom"), Sentence, "a sentence using an idiom is a sentence");
 
-        // 選択: 英単語 1、それ以外 2。
-        assert_eq!(kcal_for(Word, "choice", true, None), 1);
-        for s in [Compound, Idiom, Sentence] {
-            assert_eq!(kcal_for(s, "choice", true, None), 2, "{s:?}");
+        // 選択: 英単語 2、複合語・慣用句 3、文（文法・フレーズ・例文）4。
+        for (s, kcal) in [(Word, 2), (Compound, 3), (Idiom, 3), (Sentence, 4)] {
+            assert_eq!(kcal_for(s, "choice", true, None), kcal, "{s:?}");
         }
-        // 記入: 英単語 2、複合語 4、慣用句 5。
-        assert_eq!(kcal_for(Word, "typing", true, None), 2);
+        // 記入: 英単語 3、複合語 4、慣用句 5。
+        assert_eq!(kcal_for(Word, "typing", true, None), 3);
         assert_eq!(kcal_for(Compound, "typing", true, None), 4);
         assert_eq!(kcal_for(Idiom, "typing", true, None), 5);
-        // ヒアリング・発音: 英単語 1、複合語 2、慣用句 3、文 5。発音はスコアで按分。
-        for (s, kcal) in [(Word, 1), (Compound, 2), (Idiom, 3), (Sentence, 5)] {
+        // ヒアリング・発音: 英単語 2、複合語・慣用句 3、文 4。発音はスコアで按分。
+        for (s, kcal) in [(Word, 2), (Compound, 3), (Idiom, 3), (Sentence, 4)] {
             assert_eq!(kcal_for(s, "listening", true, None), kcal, "{s:?}");
             assert_eq!(kcal_for(s, "speaking", true, Some(100.0)), kcal, "{s:?}");
         }
-        assert_eq!(kcal_for(Sentence, "speaking", true, Some(80.0)), 4);
+        assert_eq!(kcal_for(Sentence, "speaking", true, Some(75.0)), 3);
         assert_eq!(kcal_for(Idiom, "speaking", false, Some(20.0)), 0);
         assert_eq!(kcal_for(Sentence, "choice", false, None), 0);
         assert_eq!(apply_review_bonus(10), 15);

@@ -4252,3 +4252,9 @@ button.wp-link.open {
   height: 1em;
   vertical-align: -0.15em;
 }
+/* an exam level's bonus for trying, after its reward */
+.exam-effort {
+  font-weight: 400;
+  font-size: 12px;
+  color: var(--muted);
+}

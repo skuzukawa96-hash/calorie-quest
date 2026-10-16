@@ -34,7 +34,6 @@ const TEXT_SETS: usize = 1;
 /// 読解 questions in an exam, taken a passage at a time
 const READING: usize = 8;
 pub const PASS_PERCENT: i64 = 70;
-pub const EFFORT_KCAL: i64 = 30;
 pub const REVIEW_KCAL: i64 = 3;
 /// exam questions gone over in one review
 pub const REVIEW_SIZE: usize = 10;
@@ -57,6 +56,16 @@ pub fn reward(level: &str) -> i64 {
         "basic" => 100,
         "toeic600" => 150,
         _ => 200,
+    }
+}
+
+/// kcal for trying, when the exam is not passed: more for a harder level, which takes longer to
+/// read through, and well short of passing it.
+pub fn effort(level: &str) -> i64 {
+    match level {
+        "basic" => 30,
+        "toeic600" => 40,
+        _ => 50,
     }
 }
 
@@ -368,7 +377,7 @@ pub fn finish(conn: &mut Connection, level: &str, answers: &[ExamAnswer]) -> Res
     mark_seen(&tx, ids, &counted).map_err(err)?;
     // Handed in: nothing of this level is left part-way any more.
     tx.execute("DELETE FROM exam_progress WHERE user_id = ?1 AND level = ?2", params![USER_ID, level]).map_err(err)?;
-    let kcal = if passed { reward(level) } else { EFFORT_KCAL };
+    let kcal = if passed { reward(level) } else { effort(level) };
     tx.execute(
         "INSERT INTO exam_attempts (user_id, level, date, total, correct, passed, kcal, finished_at)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
@@ -615,6 +624,7 @@ pub fn overview(conn: &Connection) -> rusqlite::Result<ExamOverview> {
             level: level.to_string(),
             label: label(level).to_string(),
             reward: reward(level),
+            effort: effort(level),
             attempts,
             best_correct: best.map(|b| b.0),
             best_total: best.map(|b| b.1),
@@ -630,7 +640,6 @@ pub fn overview(conn: &Connection) -> rusqlite::Result<ExamOverview> {
         review_count: review_count(conn, None)?,
         question_count: EXAM_SIZE as i64,
         pass_percent: PASS_PERCENT,
-        effort_kcal: EFFORT_KCAL,
         review_kcal: REVIEW_KCAL,
     })
 }
@@ -787,17 +796,17 @@ mod tests {
         }
     }
 
-    /// 70% passes and pays the level's reward, less pays 30 for trying, every time an exam is
-    /// handed in.
+    /// 70% passes and pays the level's reward, less pays the level's effort bonus (30 / 40 / 50),
+    /// every time an exam is handed in.
     #[test]
     fn exams_pay_every_time() {
         let mut c = conn();
         let exam = build_exam("toeic600").unwrap();
         let fail = finish(&mut c, "toeic600", &answers(&exam, 20)).unwrap();
         assert!(!fail.passed);
-        assert_eq!(fail.kcal_earned, EFFORT_KCAL);
+        assert_eq!(fail.kcal_earned, 40);
         let again = finish(&mut c, "toeic600", &answers(&exam, 5)).unwrap();
-        assert_eq!(again.kcal_earned, EFFORT_KCAL, "a second try the same day pays too");
+        assert_eq!(again.kcal_earned, 40, "a second try the same day pays too");
         let pass = finish(&mut c, "toeic600", &answers(&exam, 21)).unwrap();
         assert!(pass.passed, "21 of 30 is 70%");
         assert_eq!(pass.kcal_earned, 150);
@@ -805,7 +814,8 @@ mod tests {
         let basic = build_exam("basic").unwrap();
         assert_eq!(finish(&mut c, "basic", &answers(&basic, 30)).unwrap().kcal_earned, 100);
         let today_kcal = load_daily(&c, &today()).unwrap().kcal_earned;
-        assert_eq!(today_kcal, EFFORT_KCAL * 2 + 150 * 2 + 100);
+        assert_eq!(today_kcal, 40 * 2 + 150 * 2 + 100);
+        assert_eq!([effort("basic"), effort("toeic600"), effort("toeic800")], [30, 40, 50]);
         let o = overview(&c).unwrap();
         let t600 = o.levels.iter().find(|l| l.level == "toeic600").unwrap();
         assert_eq!(t600.attempts, 4);

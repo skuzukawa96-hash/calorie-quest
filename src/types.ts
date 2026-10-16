@@ -290,8 +290,10 @@ export interface WeightResult {
 export interface KcalRates {
   /** a word picked from four: what the goals are counted in (あと何問) */
   wordChoice: number;
-  /** any other question picked from four */
-  choice: number;
+  /** a compound or an idiom picked from four */
+  phraseChoice: number;
+  /** a sentence picked from four: a grammar question, a phrase, an example */
+  sentenceChoice: number;
   reviewMultiplier: number;
   cheatDayBonus: number;
   /** days a review may be carried over before it goes back to the ordinary questions */
@@ -472,6 +474,8 @@ export interface ExamLevelInfo {
   label: string;
   /** kcal for passing, every time */
   reward: number;
+  /** kcal for trying when the exam is not passed, every time */
+  effort: number;
   attempts: number;
   bestCorrect: number | null;
   bestTotal: number | null;
@@ -503,8 +507,6 @@ export interface ExamOverview {
   reviewCount: number;
   questionCount: number;
   passPercent: number;
-  /** kcal for trying when the exam is not passed, once a day per level */
-  effortKcal: number;
   /** kcal for each question put right in the exam review */
   reviewKcal: number;
 }

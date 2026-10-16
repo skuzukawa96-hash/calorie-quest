@@ -289,13 +289,14 @@ export function scoredKind(kind: string, tier: string): Scored {
   return kind === "idiom" ? "idiom" : "sentence";
 }
 
-/** Mirrors srs::typing_kcal and srs::spoken_kcal (1 point = 1 kcal). */
-const TYPING_KCAL: Record<Scored, number> = { word: 2, compound: 4, idiom: 5, sentence: 0 };
-const SPOKEN_KCAL: Record<Scored, number> = { word: 1, compound: 2, idiom: 3, sentence: 5 };
+/** Mirrors srs::choice_kcal, srs::typing_kcal and srs::spoken_kcal (1 point = 1 kcal). */
+const CHOICE_KCAL: Record<Scored, number> = { word: 2, compound: 3, idiom: 3, sentence: 4 };
+const TYPING_KCAL: Record<Scored, number> = { word: 3, compound: 4, idiom: 5, sentence: 0 };
+const SPOKEN_KCAL: Record<Scored, number> = { word: 2, compound: 3, idiom: 3, sentence: 4 };
 
-/** Mirrors srs::kcal_for for a correct answer: choice 1 for a word and 2 for the rest. */
+/** Mirrors srs::kcal_for for a correct answer. */
 export function kcalFor(s: Scored, mode: string, score: number | null): number {
-  if (mode === "choice") return s === "word" ? 1 : 2;
+  if (mode === "choice") return CHOICE_KCAL[s];
   if (mode === "typing") return TYPING_KCAL[s];
   if (mode === "speaking") return Math.round((SPOKEN_KCAL[s] * Math.min(100, Math.max(0, score ?? 100))) / 100);
   return SPOKEN_KCAL[s];

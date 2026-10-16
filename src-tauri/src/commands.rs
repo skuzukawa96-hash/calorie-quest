@@ -435,8 +435,9 @@ fn mode_counts(conn: &Connection) -> rusqlite::Result<Vec<ModeCount>> {
 
 fn kcal_rates() -> KcalRates {
     KcalRates {
-        word_choice: srs::KCAL_WORD_CHOICE,
-        choice: srs::KCAL_CHOICE,
+        word_choice: srs::choice_kcal(srs::Scored::Word),
+        phrase_choice: srs::choice_kcal(srs::Scored::Compound),
+        sentence_choice: srs::choice_kcal(srs::Scored::Sentence),
         review_multiplier: srs::REVIEW_MULTIPLIER,
         cheat_day_bonus: srs::CHEAT_DAY_BONUS,
         stale_review_days: srs::STALE_REVIEW_DAYS,
@@ -1753,12 +1754,12 @@ mod tests {
     }
 
     #[test]
-    fn a_word_picked_from_four_earns_one_kcal() {
+    fn a_word_picked_from_four_earns_two_kcal() {
         let mut c = conn();
         let qid = question_id(&c, "w001");
         let r = answer(&mut c, qid, "choice", true, None);
-        assert_eq!(r.kcal_earned, 1);
-        assert_eq!(r.today_kcal, 1);
+        assert_eq!(r.kcal_earned, 2);
+        assert_eq!(r.today_kcal, 2);
         assert!(r.first_study_today);
         assert_eq!(r.streak, 1);
         assert!(!r.needs_review);
@@ -1803,14 +1804,14 @@ mod tests {
         let mut c = conn();
         let word = question_id(&c, "w001");
         let idiom = question_id(&c, "i002");
-        answer(&mut c, word, "choice", true, None); // 1 kcal
+        answer(&mut c, word, "choice", true, None); // 2 kcal
         answer(&mut c, word, "choice", false, None);
         set_play_mode_in(&c, "hard").unwrap();
         answer(&mut c, idiom, "typing", true, None); // 5 kcal at 通常, 2.5 paid
         let s = load_stats(&c).unwrap();
         let cell = |tier: &str, mode: &str| s.breakdown.iter().find(|b| b.tier == tier && b.mode == mode).cloned();
         let w = cell("word", "choice").expect("英単語 × 選択");
-        assert_eq!((w.kcal, w.answered, w.correct), (1, 2, 1));
+        assert_eq!((w.kcal, w.answered, w.correct), (2, 2, 1));
         let i = cell("idiom", "typing").expect("慣用句 × 記入");
         assert_eq!((i.kcal, i.answered, i.correct), (5, 1, 1), "counted at 通常 though がんばり paid 2.5");
         assert!(cell("word", "typing").is_none(), "a pair never answered has no cell");
@@ -1825,8 +1826,8 @@ mod tests {
         let s = load_stats(&c).unwrap();
         let day = s.last_14_days.last().unwrap();
         assert_eq!(day.date, today());
-        assert_eq!((day.kcal_earned, day.kcal_consumed), (3, 350), "1 + 2.5 under がんばり, the half kept for later");
-        assert_eq!((s.total_kcal, s.total_consumed, s.total_study_days), (3, 350, 1), "what the averages divide");
+        assert_eq!((day.kcal_earned, day.kcal_consumed), (4, 350), "2 + 2.5 under がんばり, the half kept for later");
+        assert_eq!((s.total_kcal, s.total_consumed, s.total_study_days), (4, 350, 1), "what the averages divide");
         let eaten: Vec<(&str, i64, i64)> = day.eaten.iter().map(|e| (e.name.as_str(), e.count, e.kcal)).collect();
         assert_eq!(eaten, vec![("プリン", 2, 300), ("クッキー 1枚", 1, 50)]);
         assert!(s.last_14_days[0].eaten.is_empty());
@@ -1875,7 +1876,7 @@ mod tests {
         // Then right: done, ×1.5, and as a pick missed today, back once more 3 days later.
         let r = answer(&mut c, qid, "choice", true, None);
         assert!(r.is_review && !r.stays_today && r.needs_review);
-        assert_eq!(r.kcal_earned, 2, "1 kcal × 1.5 rounded");
+        assert_eq!(r.kcal_earned, 3, "2 kcal × 1.5");
         assert_eq!(r.next_due.as_deref(), Some(date_plus(3).as_str()));
         assert_eq!(history(&c, qid), (1, 1, Some(date_plus(3))));
         assert_eq!(due_review_count(&c).unwrap(), 0);
@@ -2066,7 +2067,7 @@ mod tests {
 
         let r = answer(&mut c, qid, "choice", true, None);
         assert!(r.is_review && !r.needs_review);
-        assert_eq!(r.kcal_earned, 2, "1 kcal x 1.5 rounded");
+        assert_eq!(r.kcal_earned, 3, "2 kcal x 1.5");
         assert_eq!(history(&c, qid), (1, 0, None), "done: not asked again");
         assert_eq!(due_review_count(&c).unwrap(), 0);
     }
@@ -2158,22 +2159,22 @@ mod tests {
     #[test]
     fn speaking_score_scales_kcal_and_low_scores_go_to_review() {
         let mut c = conn();
-        let qid = question_id(&c, "p001"); // a sentence spoken: 5 kcal
+        let qid = question_id(&c, "p001"); // a sentence spoken: 4 kcal
         let r = answer(&mut c, qid, "speaking", true, Some(80.0));
-        assert_eq!(r.kcal_earned, 4);
+        assert_eq!(r.kcal_earned, 3, "3.2 rounds down");
         assert!(!r.needs_review);
         let r = answer(&mut c, qid, "speaking", true, Some(62.0));
-        assert_eq!(r.kcal_earned, 3, "3.1 rounds down");
+        assert_eq!(r.kcal_earned, 2, "2.48 rounds down");
         assert!(r.needs_review, "scores under 65 are scheduled for review");
         // 65 clears it, and still pays by the score.
         let cleared = question_id(&c, "p002");
         let r = answer(&mut c, cleared, "speaking", true, Some(65.0));
-        assert_eq!(r.kcal_earned, 3, "3.25 rounds down");
+        assert_eq!(r.kcal_earned, 3, "2.6 rounds up");
         assert!(!r.needs_review, "65 is the line a spoken question is cleared at");
     }
 
-    /// がんばり halves every reward, お気軽 makes it 1.5 times: a word picked pays 0.5 / 1 / 1.5 kcal,
-    /// and a fraction waits for the next reward of the day. The mode is the learner's setting.
+    /// がんばり halves every reward, お気軽 makes it 1.5 times: an idiom picked pays 1.5 / 3 / 4.5
+    /// kcal, and a fraction waits for the next reward of the day. The mode is the learner's setting.
     #[test]
     fn play_modes_scale_what_every_answer_pays() {
         let mut c = conn();
@@ -2182,25 +2183,25 @@ mod tests {
 
         set_play_mode_in(&c, "hard").unwrap();
         assert_eq!(load_user(&c).unwrap().play_mode, "hard");
-        let id = question_id(&c, "w001");
+        let id = question_id(&c, "i001");
         let first = answer(&mut c, id, "choice", true, None);
-        assert_eq!((first.points, first.kcal_earned, first.today_kcal, first.fraction_pending), (0.5, 0, 0, true));
-        let id = question_id(&c, "w002");
+        assert_eq!((first.points, first.kcal_earned, first.today_kcal, first.fraction_pending), (1.5, 1, 1, true));
+        let id = question_id(&c, "i003");
         let second = answer(&mut c, id, "choice", true, None);
-        assert_eq!((second.points, second.kcal_earned, second.today_kcal, second.fraction_pending), (0.5, 1, 1, false));
+        assert_eq!((second.points, second.kcal_earned, second.today_kcal, second.fraction_pending), (1.5, 2, 3, false));
 
         set_play_mode_in(&c, "easy").unwrap();
-        let id = question_id(&c, "w003");
+        let id = question_id(&c, "i004");
         let easy = answer(&mut c, id, "choice", true, None);
-        assert_eq!((easy.points, easy.kcal_earned, easy.today_kcal), (1.5, 1, 2));
+        assert_eq!((easy.points, easy.kcal_earned, easy.today_kcal, easy.fraction_pending), (4.5, 4, 7, true));
         let id = question_id(&c, "i002");
         let idiom = answer(&mut c, id, "typing", true, None);
-        assert_eq!((idiom.points, idiom.kcal_earned, idiom.today_kcal), (7.5, 8, 10), "0.5 pending + 7.5 = 8");
+        assert_eq!((idiom.points, idiom.kcal_earned, idiom.today_kcal), (7.5, 8, 15), "0.5 pending + 7.5 = 8");
 
         set_play_mode_in(&c, "normal").unwrap();
         let id = question_id(&c, "w004");
         let normal = answer(&mut c, id, "choice", true, None);
-        assert_eq!((normal.points, normal.kcal_earned, normal.today_kcal), (1.0, 1, 11));
+        assert_eq!((normal.points, normal.kcal_earned, normal.today_kcal), (2.0, 2, 17));
         let id = question_id(&c, "w005");
         let wrong = answer(&mut c, id, "choice", false, None);
         assert_eq!((wrong.points, wrong.kcal_earned), (0.0, 0));
@@ -2221,16 +2222,16 @@ mod tests {
         assert_eq!(r.today_kcal, 1, "the daily total only counts what was earned");
         let compound = compound_id(&c); // a compound typed: 4 kcal
         assert_eq!(answer_with_hints(&mut c, compound, "typing", true, None, Some(1)).kcal_earned, 2);
-        let word = question_id(&c, "w001"); // a word typed: 2 kcal, nothing with a hint
+        let word = question_id(&c, "w001"); // a word typed: 3 kcal, nothing with a hint
         assert_eq!(answer_with_hints(&mut c, word, "typing", true, None, Some(1)).kcal_earned, 0);
         let word = question_id(&c, "w002");
-        assert_eq!(answer_with_hints(&mut c, word, "typing", true, None, Some(0)).kcal_earned, 2);
+        assert_eq!(answer_with_hints(&mut c, word, "typing", true, None, Some(0)).kcal_earned, 3);
     }
 
     /// The points for each kind of question in each mode (1 point = 1 kcal): picked from four, a
-    /// word 1 and the rest 2; typed, a word 2, a compound 4, an idiom 5 and a sentence one a word;
-    /// heard or spoken, a word 1, a compound 2, an idiom 3 and a grammar, phrase or example
-    /// sentence 5. The level a question is marked with does not count.
+    /// word 2, a compound or an idiom 3 and a sentence (grammar, phrase, example) 4; typed, a word 3,
+    /// a compound 4, an idiom 5 and a sentence one a word; heard or spoken, a word 2, a compound or
+    /// an idiom 3 and a sentence or a dialogue 4. The level a question is marked with does not count.
     #[test]
     fn every_kind_pays_its_points_in_every_mode() {
         let mut c = conn();
@@ -2238,28 +2239,29 @@ mod tests {
         let word = question_id(&c, "w010");
         let idiom = question_id(&c, "i002");
         let sentence = question_id(&c, "s031");
+        let example = question_id(&c, "p001"); // asked for its meaning (s031 is asked for its grammar)
         let expression = question_id(&c, "x020"); // Anything you say.
         let grammar = question_id(&c, "g001");
         let dialogue: i64 = c.query_row("SELECT id FROM questions WHERE kind = 'dialogue' LIMIT 1", [], |r| r.get(0)).unwrap();
         for (id, mode, kcal) in [
-            (word, "choice", 1),
-            (compound, "choice", 2),
-            (idiom, "choice", 2),
-            (sentence, "choice", 2),
-            (grammar, "choice", 2),
-            (word, "typing", 2),
+            (word, "choice", 2),
+            (compound, "choice", 3),
+            (idiom, "choice", 3),
+            (example, "choice", 4),
+            (grammar, "choice", 4),
+            (word, "typing", 3),
             (compound, "typing", 4),
             (idiom, "typing", 5),
             (expression, "typing", 3),
-            (word, "listening", 1),
-            (compound, "listening", 2),
+            (word, "listening", 2),
+            (compound, "listening", 3),
             (idiom, "listening", 3),
-            (sentence, "listening", 5),
-            (dialogue, "listening", 5),
-            (word, "speaking", 1),
-            (compound, "speaking", 2),
+            (sentence, "listening", 4),
+            (dialogue, "listening", 4),
+            (word, "speaking", 2),
+            (compound, "speaking", 3),
             (idiom, "speaking", 3),
-            (expression, "speaking", 5),
+            (expression, "speaking", 4),
         ] {
             assert_eq!(answer(&mut c, id, mode, true, Some(100.0)).kcal_earned, kcal, "question {id} by {mode}");
         }
@@ -2281,7 +2283,7 @@ mod tests {
 
         // The same kind of phrase picked from four pays the flat choice rate.
         let other = question_id(&c, "p002");
-        assert_eq!(answer(&mut c, other, "choice", true, None).kcal_earned, srs::KCAL_CHOICE);
+        assert_eq!(answer(&mut c, other, "choice", true, None).kcal_earned, srs::choice_kcal(srs::Scored::Sentence));
 
         // A slip in one word costs that word only, and the question still comes back tomorrow.
         let slip = question_id(&c, "p004");
@@ -2493,7 +2495,7 @@ mod tests {
 
         let redeemed = redeem_ticket(&c).unwrap();
         assert_eq!(redeemed.kcal_added, srs::CHEAT_DAY_BONUS);
-        assert_eq!(redeemed.today_kcal, 2 + 2 + srs::CHEAT_DAY_BONUS);
+        assert_eq!(redeemed.today_kcal, 4 + 4 + srs::CHEAT_DAY_BONUS);
         assert_eq!(redeemed.tickets_left, 0);
         assert!(redeem_ticket(&c).is_err());
     }

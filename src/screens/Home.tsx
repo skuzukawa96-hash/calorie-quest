@@ -369,8 +369,9 @@ export default function Home({
                   const filled = Math.min(100, (Math.max(0, budget) / g.calories) * 100);
                   // One line per goal: the word count leads, the other kinds of question are in the tooltip.
                   const breakdown =
-                    `あと ${remaining} kcal：英単語なら ${need(remaining, kcalRates.wordChoice)} 問、` +
-                    `複合語・文法・慣用句・フレーズ・例文の選択問題なら ${need(remaining, kcalRates.choice)} 問`;
+                    `あと ${remaining} kcal（選択問題なら）：英単語 ${need(remaining, kcalRates.wordChoice)} 問、` +
+                    `複合語・慣用句 ${need(remaining, kcalRates.phraseChoice)} 問、` +
+                    `文法・フレーズ・例文 ${need(remaining, kcalRates.sentenceChoice)} 問`;
                   return (
                     <li key={g.id} className={"goal-row" + (ate ? " eaten" : "") + (remaining === 0 ? " reached" : "")}>
                       <span className="goal-icon">{g.icon}</span>
@@ -521,7 +522,7 @@ export default function Home({
         <p className="muted exam-intro">
           応答問題（リスニング）→ 短文穴埋め → 長文穴埋め → 読解問題の順に出題されます。
           <br />
-          合格すると難易度に応じたカロリー、不合格でも挑戦ボーナス {dash.exam.effortKcal} kcal（何回受けてももらえます）。
+          合格すると難易度に応じたカロリー、不合格でも難易度に応じた挑戦ボーナスがもらえます（何回受けてももらえます）。
         </p>
         <div className="mode-grid exam-grid">
           {dash.exam.levels.map((l) => {
@@ -543,7 +544,9 @@ export default function Home({
                   <span>{EXAM_DESC[l.level][1]}</span>
                 </div>
                 <div className="exam-level-foot">
-                  <span className="exam-reward">合格 +{l.reward} kcal</span>
+                  <span className="exam-reward" title={`不合格でも挑戦ボーナス +${l.effort} kcal`}>
+                    合格 +{l.reward} kcal<span className="exam-effort">・不合格 +{l.effort}</span>
+                  </span>
                   <span className="muted">{best ? `ベスト ${best}` : "未受験"}</span>
                 </div>
                 <div className="mode-cta">{dash.exam.questionCount}問に挑戦 →</div>

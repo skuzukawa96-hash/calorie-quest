@@ -220,7 +220,7 @@ interface SnackTicket {
   consumptionId: number | null;
 }
 
-const RATES = { wordChoice: 1, choice: 2, reviewMultiplier: 1.5, cheatDayBonus: 300, staleReviewDays: 7, weightBonus: 10 };
+const RATES = { wordChoice: 2, phraseChoice: 3, sentenceChoice: 4, reviewMultiplier: 1.5, cheatDayBonus: 300, staleReviewDays: 7, weightBonus: 10 };
 
 /**
  * Mirrors db::tier_of: the hand-sorted example sentences, else the kind decides the tab. A word of
@@ -1936,8 +1936,10 @@ const EXAM_SETS: Record<ExamLevel, ExamSetSeed[]> = {
   toeic600: exam600 as ExamSetSeed[],
   toeic800: exam800 as ExamSetSeed[],
 };
-const EXAM = { size: 30, listening: 6, textSets: 1, reading: 8, passPercent: 70, effortKcal: 30, reviewKcal: 3, reviewSize: 10 };
+const EXAM = { size: 30, listening: 6, textSets: 1, reading: 8, passPercent: 70, reviewKcal: 3, reviewSize: 10 };
 const EXAM_REWARD: Record<ExamLevel, number> = { basic: 100, toeic600: 150, toeic800: 200 };
+/** Mirrors exam::effort: what an exam not passed pays for trying. */
+const EXAM_EFFORT: Record<ExamLevel, number> = { basic: 30, toeic600: 40, toeic800: 50 };
 const EXAM_LABEL: Record<ExamLevel, string> = { basic: "中学～高校基礎", toeic600: "TOEIC 500〜700点目安", toeic800: "TOEIC 800点目安" };
 
 const examPasses = (correct: number, total: number) => total > 0 && correct * 100 >= total * EXAM.passPercent;
@@ -2102,7 +2104,7 @@ function finishExam(level: ExamLevel, answers: ExamAnswer[]): ExamResult {
   const t = today();
   const now = nowTs();
   // Every exam handed in pays (mirrors exam::finish).
-  const kcal = passed ? EXAM_REWARD[level] : EXAM.effortKcal;
+  const kcal = passed ? EXAM_REWARD[level] : EXAM_EFFORT[level];
   // Every question was asked, its sets counted once for this exam; nothing is left part-way.
   markExamSeen(answers, countedExamSets(level, answers));
   delete state.examProgress[level];
@@ -2280,6 +2282,7 @@ function examOverview(): ExamOverview {
       level,
       label: EXAM_LABEL[level],
       reward: EXAM_REWARD[level],
+      effort: EXAM_EFFORT[level],
       attempts: mine.length,
       bestCorrect: best ? best.correct : null,
       bestTotal: best ? best.total : null,
@@ -2296,7 +2299,6 @@ function examOverview(): ExamOverview {
     reviewCount: mistakes.length,
     questionCount: EXAM.size,
     passPercent: EXAM.passPercent,
-    effortKcal: EXAM.effortKcal,
     reviewKcal: EXAM.reviewKcal,
   };
 }

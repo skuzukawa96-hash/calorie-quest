@@ -325,8 +325,10 @@ pub struct WeightResult {
 pub struct KcalRates {
     /// a word picked from four: what the goals are counted in (あと何問)
     pub word_choice: i64,
-    /// any other question picked from four
-    pub choice: i64,
+    /// a compound or an idiom picked from four
+    pub phrase_choice: i64,
+    /// a sentence picked from four: a grammar question, a phrase, an example
+    pub sentence_choice: i64,
     pub review_multiplier: f64,
     pub cheat_day_bonus: i64,
     /// days a review may be carried over before it goes back to the ordinary questions
@@ -420,8 +422,10 @@ pub struct ExamLevelInfo {
     /// basic / toeic600 / toeic800
     pub level: String,
     pub label: String,
-    /// kcal for passing (70% or more), once a day per level
+    /// kcal for passing (70% or more), every time
     pub reward: i64,
+    /// kcal for trying when the exam is not passed, every time
+    pub effort: i64,
     pub attempts: i64,
     /// the best score so far, out of `best_total`
     pub best_correct: Option<i64>,
@@ -442,8 +446,6 @@ pub struct ExamOverview {
     pub review_count: i64,
     pub question_count: i64,
     pub pass_percent: i64,
-    /// kcal for trying, when the exam is not passed (once a day per level)
-    pub effort_kcal: i64,
     /// kcal for each question put right in the exam review
     pub review_kcal: i64,
 }
