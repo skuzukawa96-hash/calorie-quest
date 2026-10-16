@@ -121,6 +121,14 @@ export interface WordNotes {
   shift?: string | null;
   /** for an abbreviation: what it stands for (MRI: magnetic resonance imaging) */
   abbreviation?: Abbreviation | null;
+  /** for a word with an opposite in the sense asked or saved: that word (accept ⇔ refuse 断る) */
+  antonym?: Antonym | null;
+}
+
+/** A word's 対義語 and the meaning of it to show (light 軽い ⇔ heavy 重い). */
+export interface Antonym {
+  word: string;
+  meaning: string;
 }
 
 /**

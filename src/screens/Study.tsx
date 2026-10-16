@@ -6,6 +6,7 @@ import PronunciationTips, { HighlightedText } from "../components/PronunciationT
 import FavoriteKcal from "../components/FavoriteKcal";
 import { PlayModeTag } from "../components/PlayModeSwitch";
 import WordNotesPanel from "../components/WordNotes";
+import AntonymTag from "../components/AntonymTag";
 import { MeaningWithTags, useAskedMeaning, useOptionLabels } from "../components/PosTags";
 import { PHONEMES } from "../lib/phonemes";
 import { loadPronunciations, type Pronunciations } from "../lib/pronunciation";
@@ -515,17 +516,26 @@ export default function Study({ mode, tier, category, rates, playMode, favorites
                   {/^[\x20-\x7e]+$/.test(current.answer) ? (
                     <GlossedText text={current.answer} dict={dict} enabled={showGloss} {...recipeContext(current, current.answer)} />
                   ) : current.question.kind === "word" ? (
-                    // [名] 腕時計, [他] 承認する, [自] 走る ／ [他] 経営する
-                    <MeaningWithTags word={current.question.en} meaning={current.answer} dict={dict} />
+                    // A meaning picked (選択・ヒアリング) comes after the word it is the meaning of:
+                    // book [他] 予約する.
+                    <GlossedText
+                      text={current.question.en}
+                      dict={dict}
+                      enabled={false}
+                      {...recipeContext(current, current.question.en)}
+                    />
                   ) : (
                     current.answer
                   )}
                 </strong>
-                {current.question.kind === "word" && current.answer === current.question.en && (
-                  // An English answer has its meaning after it, for the tags.
+                {current.question.kind === "word" && (
+                  // The meaning after the English, for the tags: [名] 腕時計, [他] 承認する, [自] 走る ／ [他] 経営する
                   <span className="answer-meaning">
                     <MeaningWithTags word={current.question.en} meaning={current.question.ja} dict={dict} />
                   </span>
+                )}
+                {current.question.kind === "word" && current.notes?.antonym && (
+                  <AntonymTag antonym={current.notes.antonym} dict={dict} />
                 )}
                 {qMode === "choice" && current.subDisplay && <span className="muted">　{current.subDisplay}</span>}
                 {qMode !== "speaking" && (

@@ -5,6 +5,7 @@ import PencilIcon from "../components/PencilIcon";
 import { PlayModeTag } from "../components/PlayModeSwitch";
 import WordCardIcon from "../components/WordCardIcon";
 import WordNotesPanel from "../components/WordNotes";
+import AntonymTag from "../components/AntonymTag";
 import { CuedMeaningWithTags, MeaningWithTags, SlotText, useWordTags } from "../components/PosTags";
 import { cuedMeaning } from "../lib/pos";
 import { api } from "../lib/api";
@@ -1397,11 +1398,12 @@ function RecipeReview({
   // and patterns using it, an idiom's origin. Fetched with the card, shown once it is answered.
   const [notes, setNotes] = useState<{ word: string; notes: WordNotes | null } | null>(null);
   const word = current?.word;
+  const meaning = current?.meaning;
   useEffect(() => {
     if (!word) return;
     let alive = true;
     api
-      .getWordNotes(word)
+      .getWordNotes(word, meaning)
       .then((n) => alive && setNotes({ word, notes: n }))
       .catch(() => undefined);
     return () => {
@@ -1789,6 +1791,7 @@ function RecipeReview({
                   <EntryText w={current} text={current.word} />
                 </strong>
                 {shownForm(current) && <span className="muted">（{shownForm(current)}）</span>}　<EntryMeaning w={current} dict={dict} />
+                {notes?.word === current.word && notes.notes?.antonym && <AntonymTag antonym={notes.notes.antonym} dict={dict} />}
                 <button className="btn-link" onClick={() => sayEntry(current)} disabled={!isTtsSupported()}>
                   🔊 もう一度聞く
                 </button>

@@ -850,6 +850,7 @@ pub(crate) fn build_session_question(
 fn notes_for(q: &Question, audio_text: &str) -> Option<WordNotes> {
     if q.kind == "word" {
         let mut notes = db::word_notes(&q.en).unwrap_or_default();
+        notes.antonym = db::antonym_of(&q.en, &q.ja);
         // A verb's forms (cut-cut-cut; for come back, those of come); a noun spelled like one
         // ("a cut") has none.
         if db::word_pos().get(&q.key).map_or(true, |pos| pos == "verb") {
@@ -1293,10 +1294,12 @@ pub fn get_pronunciations() -> HashMap<String, String> {
     db::pronunciations().clone()
 }
 
-/// What the answer explains about a word, for a word saved to the recipe (see `db::word_notes`).
+/// What the answer explains about a word, for a word saved to the recipe (see `db::word_notes`),
+/// with its 対義語 in the sense it was saved with (`meaning`).
 #[tauri::command]
-pub fn get_word_notes(word: String) -> Option<WordNotes> {
+pub fn get_word_notes(word: String, meaning: Option<String>) -> Option<WordNotes> {
     let mut notes = db::word_notes(&word).unwrap_or_default();
+    notes.antonym = meaning.and_then(|m| db::antonym_of(&word, &m));
     notes.irregular = db::irregular_of(&word).into_iter().collect();
     // A 用法 saved to the recipe ("split A into B") has no notes of its own: the 類似表現 of the word
     // it belongs to come with it, where they are about it.

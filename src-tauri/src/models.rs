@@ -96,6 +96,16 @@ pub struct WordNotes {
     pub shift: Option<String>,
     /// for an abbreviation: what it stands for (MRI: magnetic resonance imaging)
     pub abbreviation: Option<Abbreviation>,
+    /// for a word with an opposite in the sense it is asked or saved in: that word (accept 受け入れる
+    /// ⇔ refuse 断る), after the meaning on the 正解 line
+    pub antonym: Option<Antonym>,
+}
+
+/// A word's 対義語 and the meaning of it to show (light 軽い ⇔ heavy 重い, light 明るい ⇔ dark 暗い).
+#[derive(Debug, Clone, Serialize)]
+pub struct Antonym {
+    pub word: String,
+    pub meaning: String,
 }
 
 /// What an abbreviation stands for: the letters it keeps marked in brackets ("[m]agnetic
@@ -121,6 +131,7 @@ impl WordNotes {
             && self.used.is_empty()
             && self.irregular.is_empty()
             && self.abbreviation.is_none()
+            && self.antonym.is_none()
     }
 }
 

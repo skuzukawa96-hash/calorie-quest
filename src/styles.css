@@ -4258,3 +4258,20 @@ button.wp-link.open {
   font-size: 12px;
   color: var(--muted);
 }
+
+/* ⇔ refuse [他] 断る: a word's 対義語 after its meaning on the 正解 line */
+.antonym {
+  margin-left: 0.8em;
+  white-space: nowrap;
+}
+.antonym-mark {
+  margin-right: 0.35em;
+  color: var(--caramel-dark);
+  font-weight: 700;
+}
+.antonym strong {
+  margin-right: 0.5em;
+}
+.antonym-meaning {
+  white-space: normal;
+}

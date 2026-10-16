@@ -112,7 +112,8 @@ export const api = {
   /** word → its IPA sounds separated by spaces (CMU Pronouncing Dictionary) */
   getPronunciations: () => call<Record<string, string>>("get_pronunciations"),
   /** how a word is built, sentences and patterns using it, an idiom's origin; null when none */
-  getWordNotes: (word: string) => call<WordNotes | null>("get_word_notes", { word }),
+  /** a word's notes; `meaning` (what it was saved with) picks the sense of its 対義語 */
+  getWordNotes: (word: string, meaning?: string) => call<WordNotes | null>("get_word_notes", { word, meaning: meaning ?? null }),
   /** the word questions' parts of speech and the verbs' 自・他, for the tags before a meaning */
   getWordTags: () => call<WordTags>("get_word_tags"),
   resetProgress: () => call<void>("reset_progress"),

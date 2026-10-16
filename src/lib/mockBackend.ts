@@ -20,6 +20,7 @@ import posOrder from "../../src-tauri/data/pos-order.json";
 import sensePos from "../../src-tauri/data/sense-pos.json";
 import homonymGroups from "../../src-tauri/data/homonyms.json";
 import abbreviationList from "../../src-tauri/data/abbreviations.json";
+import antonymList from "../../src-tauri/data/antonyms.json";
 import examBasic from "../../src-tauri/data/exam-basic.json";
 import exam600 from "../../src-tauri/data/exam-600.json";
 import exam800 from "../../src-tauri/data/exam-800.json";
@@ -78,6 +79,7 @@ import type {
   WeightResult,
   WordNotes,
   Abbreviation,
+  Antonym,
   WordTags,
   WordPart,
   WordUsage,
@@ -290,7 +292,7 @@ const seedQuestions: SeedQuestion[] = [
   ...Object.entries(packModules)
     .filter(
       ([path]) =>
-        !/\/(questions|glossary|grammar-notes|pronunciations|word-parts|tiers|word-examples|word-usage|idiom-origins|word-related|word-pos|word-confusables|word-families|irregular-verbs|verb-types|glossary-pos|retired-words|pos-order|sense-pos|homonyms|abbreviations|exam-[^/]*)\.json$/.test(
+        !/\/(questions|glossary|grammar-notes|pronunciations|word-parts|tiers|word-examples|word-usage|idiom-origins|word-related|word-pos|word-confusables|word-families|irregular-verbs|verb-types|glossary-pos|retired-words|pos-order|sense-pos|homonyms|abbreviations|antonyms|exam-[^/]*)\.json$/.test(
           path,
         ),
     )
@@ -1302,8 +1304,37 @@ function wordNotes(word: string): WordNotes | null {
 function notesAreEmpty(n: WordNotes): boolean {
   return (
     !n.parts.length && !n.examples.length && !n.usages.length && !n.origin && !n.related.length && !n.used.length && !n.irregular.length &&
-    !n.abbreviation
+    !n.abbreviation &&
+    !n.antonym
   );
+}
+
+/**
+ * Mirrors db::antonym_seeds: a word's opposite in every sense ("refuse", or ["light", "光"] shown in
+ * a sense of it), or [sense, opposite, its sense?] apiece.
+ */
+const antonymSeeds = antonymList as unknown as Record<string, string | [string, string] | string[][]>;
+
+/** Mirrors db::antonym_of: the 対義語 of a word in the sense it is asked or saved in, with its meaning. */
+function antonymOf(word: string, meaning: string): Antonym | null {
+  const seed = antonymSeeds[word.trim().toLowerCase()];
+  if (!seed) return null;
+  let en: string;
+  let sense: string | undefined;
+  if (typeof seed === "string") en = seed;
+  else if (typeof seed[0] === "string") [en, sense] = seed as [string, string];
+  else {
+    const bySense = seed as string[][];
+    const hit = meaningParts(meaning)
+      .map((s) => bySense.find((e) => e[0] === s))
+      .find(Boolean);
+    if (!hit) return null;
+    [, en, sense] = hit;
+  }
+  // The meaning it is shown with: its word question's, else its glossary's (db::shown_meaning).
+  const key = en.toLowerCase();
+  const shown = sense ?? questions.find((q) => q.kind === "word" && q.en.toLowerCase() === key)?.ja ?? (glossary as Record<string, string>)[key];
+  return shown ? { word: en, meaning: shown } : null;
 }
 
 /* ---------- Irregular verbs (mirrors db::irregular_of / db::irregulars_in) ---------- */
@@ -1757,6 +1788,7 @@ function usedWords(texts: string[]): UsedWord[] {
 function notesFor(q: Question, audioText: string): WordNotes | null {
   if (q.kind === "word") {
     const notes = wordNotes(q.en) ?? { parts: [], examples: [], usages: [], origin: null, related: [], used: [], irregular: [] };
+    notes.antonym = antonymOf(q.en, q.ja);
     // A verb's forms; a noun spelled like one ("a cut") has none.
     const pos = (wordPos as Record<string, string>)[q.key];
     if (!pos || pos === "verb") {
@@ -2991,6 +3023,7 @@ export async function mockInvoke<T>(cmd: string, args: Record<string, unknown>):
       // Mirrors commands::get_word_notes: the word's notes and, for an irregular verb, its forms.
       const word = String(args.word ?? "");
       const notes = wordNotes(word) ?? { parts: [], examples: [], usages: [], origin: null, related: [], used: [], irregular: [] };
+      notes.antonym = args.meaning ? antonymOf(word, String(args.meaning)) : null;
       const forms = irregularOf(word);
       notes.irregular = forms ? [forms] : [];
       // A 用法 saved to the recipe brings the 類似表現 of its word that are about it.

@@ -61,6 +61,10 @@ const SENSE_POS_JSON: &str = include_str!("../data/sense-pos.json");
 const HOMONYMS_JSON: &str = include_str!("../data/homonyms.json");
 /// What an abbreviation stands for (MRI: magnetic resonance imaging, exam: examination).
 const ABBREVIATIONS_JSON: &str = include_str!("../data/abbreviations.json");
+/// A word's 対義語: one for all its senses (accept: refuse), or one for a sense (light: 軽い heavy,
+/// 光 darkness), with the sense of the opposite to show when it has several (left 左: right 右,
+/// darkness: light 光).
+const ANTONYMS_JSON: &str = include_str!("../data/antonyms.json");
 /// Word questions taken out of the bank (moat, kiln: words of a specialist or a rare kind, beyond
 /// what school and TOEIC ask), key → English. Their meaning stays in the glossary; the keys are
 /// never given to another question.
@@ -1591,8 +1595,51 @@ pub fn word_notes(word: &str) -> Option<crate::models::WordNotes> {
         shift: part_shifts().get(&key).cloned(),
         // "a.m." and "a.m" alike
         abbreviation: abbreviations().get(key.trim_end_matches('.')).cloned(),
+        antonym: None,
     };
     (!notes.is_empty()).then_some(notes)
+}
+
+/// What antonyms.json writes for a word.
+#[derive(Debug, serde::Deserialize)]
+#[serde(untagged)]
+enum AntonymSeed {
+    /// the opposite in every sense: "accept": "refuse"
+    Whole(String),
+    /// the opposite in every sense, shown in a sense of it: "darkness": ["light", "光"]
+    Shown(String, String),
+    /// the opposite of a sense: [sense, opposite] or [sense, opposite, the opposite's sense to show]
+    BySense(Vec<Vec<String>>),
+}
+
+fn antonym_seeds() -> &'static HashMap<String, AntonymSeed> {
+    static TABLE: std::sync::OnceLock<HashMap<String, AntonymSeed>> = std::sync::OnceLock::new();
+    TABLE.get_or_init(|| serde_json::from_str(ANTONYMS_JSON).expect("data/antonyms.json must be a valid JSON object"))
+}
+
+/// The meaning a word is shown with as an opposite: its word question's, else its glossary's.
+fn shown_meaning(en: &str) -> Option<String> {
+    let key = en.to_lowercase();
+    match words_by_english().0.get(&key) {
+        Some(asked) => asked.first().map(|(ja, _, _)| ja.clone()),
+        None => glossary_table().get(&key).cloned(),
+    }
+}
+
+/// The 対義語 of `word` in `meaning` (a word question's Japanese, or what a word was saved to the
+/// recipe with): for a word whose opposite depends on the sense, the first of the meaning's senses
+/// antonyms.json writes one for (light 軽い → heavy); none when it writes none of them.
+pub fn antonym_of(word: &str, meaning: &str) -> Option<crate::models::Antonym> {
+    let (en, sense) = match antonym_seeds().get(&word.trim().to_lowercase())? {
+        AntonymSeed::Whole(en) => (en.clone(), None),
+        AntonymSeed::Shown(en, sense) => (en.clone(), Some(sense.clone())),
+        AntonymSeed::BySense(list) => gloss_senses(meaning)
+            .iter()
+            .find_map(|s| list.iter().find(|e| e[0] == *s))
+            .map(|e| (e[1].clone(), e.get(2).cloned()))?,
+    };
+    let meaning = sense.or_else(|| shown_meaning(&en))?;
+    Some(crate::models::Antonym { word: en, meaning })
 }
 
 /// abbreviations.json: an abbreviation (lowercase, "a.m" without its last dot) → what it stands for.
@@ -2584,6 +2631,7 @@ mod tests {
                     && n != "sense-pos.json"
                     && n != "homonyms.json"
                     && n != "abbreviations.json"
+                    && n != "antonyms.json"
                     && !n.starts_with("exam-")
             })
             .count();
@@ -2900,6 +2948,96 @@ mod tests {
     /// in brackets: an acronym's marks are its letters (MRI: [m]agnetic [r]esonance [i]maging), a
     /// clipped word's begin it (fridge: re[fri]gerator, TV: [t]ele[v]ision); a word not shortened letter by letter
     /// (bike: bicycle) marks none. The explanation of MRI shows it.
+    /// antonyms.json: a word and its opposite are words of the dictionary, a sense written is one of
+    /// the word's, and an opposite asked as more than one word question says which of its senses is
+    /// meant (left 左: right 右, not 正しい).
+    #[test]
+    fn each_antonym_is_a_word_of_the_dictionary_in_a_sense_of_it() {
+        let (words, _) = words_by_english();
+        let senses_of = |en: &str| -> Option<Vec<String>> {
+            let key = en.to_lowercase();
+            let mut out: Vec<String> =
+                words.get(&key).into_iter().flatten().flat_map(|(ja, _, _)| gloss_senses(ja)).collect();
+            if let Some(gloss) = glossary_table().get(&key) {
+                out.extend(gloss_senses(gloss));
+            }
+            // a verb sense verb-types.json writes (advance 前進する), tagged as the other senses are
+            if let Some(crate::models::VerbType::BySense(senses)) = verb_types().get(&key) {
+                out.extend(senses.iter().flat_map(|(_, gloss)| gloss_senses(gloss)));
+            }
+            (!out.is_empty()).then_some(out)
+        };
+        let mut wrong = Vec::new();
+        for (key, seed) in antonym_seeds() {
+            if *key != key.to_lowercase() {
+                wrong.push(format!("{key}: write the word in lowercase"));
+            }
+            let Some(own) = senses_of(key) else {
+                wrong.push(format!("{key}: not a word of the dictionary"));
+                continue;
+            };
+            // A word asked in several senses (light 軽い / 光) has an opposite only by sense.
+            let asked: HashSet<&String> = words.get(key).into_iter().flatten().map(|(ja, _, _)| ja).collect();
+            if asked.len() > 1 && !matches!(seed, AntonymSeed::BySense(_)) {
+                wrong.push(format!("{key}: asked in several senses ({asked:?}): write the opposite by sense"));
+            }
+            let pairs: Vec<(Option<&String>, &String, Option<&String>)> = match seed {
+                AntonymSeed::Whole(en) => vec![(None, en, None)],
+                AntonymSeed::Shown(en, shown) => vec![(None, en, Some(shown))],
+                AntonymSeed::BySense(list) => list
+                    .iter()
+                    .filter_map(|e| match e.as_slice() {
+                        [sense, en] => Some((Some(sense), en, None)),
+                        [sense, en, shown] => Some((Some(sense), en, Some(shown))),
+                        _ => {
+                            wrong.push(format!("{key}: [sense, opposite] or [sense, opposite, its sense], not {e:?}"));
+                            None
+                        }
+                    })
+                    .collect(),
+            };
+            for (sense, en, shown) in pairs {
+                if let Some(sense) = sense.filter(|s| !own.contains(s)) {
+                    wrong.push(format!("{key}: {sense} is not a sense of it"));
+                }
+                if en.to_lowercase() == *key {
+                    wrong.push(format!("{key}: its own opposite"));
+                }
+                let Some(theirs) = senses_of(en) else {
+                    wrong.push(format!("{key}: its opposite {en} is not a word of the dictionary"));
+                    continue;
+                };
+                match shown {
+                    Some(shown) if !theirs.contains(shown) => wrong.push(format!("{key}: {shown} is not a sense of {en}")),
+                    Some(_) => {}
+                    None => {
+                        let meanings: HashSet<&String> =
+                            words.get(&en.to_lowercase()).into_iter().flatten().map(|(ja, _, _)| ja).collect();
+                        if meanings.len() > 1 {
+                            wrong.push(format!("{key}: say which sense of {en} is meant ({meanings:?})"));
+                        }
+                    }
+                }
+            }
+        }
+        assert!(wrong.is_empty(), "{}", wrong.join("\n"));
+    }
+
+    /// The 正解 line of a word shows the opposite of the sense it was asked in, with that word's
+    /// meaning (refuse 断る); a sense with none, or a word with none, shows nothing.
+    #[test]
+    fn an_answer_shows_the_opposite_of_its_sense() {
+        let accept = antonym_of("accept", "受け入れる").expect("accept has an opposite");
+        assert_eq!((accept.word.as_str(), accept.meaning.as_str()), ("refuse", "断る"));
+        assert_eq!(antonym_of("Light", "軽い").map(|a| a.word), Some("heavy".to_string()));
+        assert_eq!(antonym_of("light", "光、明かり").map(|a| a.word), Some("darkness".to_string()), "light in the sense of 光");
+        assert!(antonym_of("clean", "掃除する").is_none(), "no opposite of the sense it was asked in");
+        let left = antonym_of("left", "左").unwrap();
+        assert_eq!((left.word.as_str(), left.meaning.as_str()), ("right", "右"), "right in the sense of 右");
+        assert_eq!(antonym_of("right", "右").map(|a| a.word), Some("left".to_string()));
+        assert!(antonym_of("apple", "りんご").is_none());
+    }
+
     #[test]
     fn abbreviations_spell_out_what_they_stand_for() {
         let letters = |s: &str| s.chars().filter(|c| c.is_alphabetic()).flat_map(char::to_lowercase).collect::<String>();
