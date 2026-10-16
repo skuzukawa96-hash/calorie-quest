@@ -1667,9 +1667,11 @@ button.recipe-bulk:hover:not(:disabled) {
   background: #fff1e1;
   border-color: #f4d3a8;
 }
+/* the tickets in the brown of ＋ 目標追加, apart from the streak / days / savings */
 .badge.ticket {
   background: #fdf0d5;
   border-color: var(--caramel-light);
+  color: var(--caramel-dark);
   cursor: pointer;
 }
 /* お菓子引換券 in use: the 引換券 buttons are out on the goals and in the 図鑑 */
@@ -1687,8 +1689,10 @@ button.recipe-bulk:hover:not(:disabled) {
   color: var(--caramel-dark);
   font-size: 13px;
 }
+/* a gauge: filled from the left as far as the savings have come toward a ticket (--saved), in a
+   pink only a shade deeper than the badge's own, so it sits as quietly as the badges beside it */
 .badge.savings {
-  background: #fdeef2;
+  background: linear-gradient(90deg, #fadbe4 0 var(--saved, 0%), #fdeef2 var(--saved, 0%) 100%);
   border-color: #f3cdd8;
   cursor: pointer;
 }

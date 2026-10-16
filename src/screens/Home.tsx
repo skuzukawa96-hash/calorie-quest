@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import CalorieBar from "../components/CalorieBar";
 import GoalAdder, { SNACK_GOALS, TASK_GOALS } from "../components/GoalAdder";
 import { DeleteButton, DoneButton, EatButton, SwitchViewButton } from "../components/IconButtons";
@@ -235,9 +235,11 @@ export default function Home({
             <div className="badge" title="累計学習日数">
               📅 累計 {user.totalStudyDays} 日
             </div>
+            {/* filled under its words as far as the savings have come toward a ticket, like a gauge */}
             <button
               className="badge savings"
               onClick={goToSnacks}
+              style={{ "--saved": `${Math.min(100, (savings.balance / savings.perTicket) * 100)}%` } as CSSProperties}
               title={`使わなかったカロリーは翌日に貯蓄され、${savings.perTicket.toLocaleString()} kcal でお菓子引換券1枚になります`}
             >
               🐷 貯蓄 {savings.balance.toLocaleString()} / {savings.perTicket.toLocaleString()} kcal
@@ -259,8 +261,13 @@ export default function Home({
               </button>
             )}
             {dash.ticketsAvailable > 0 && (
-              <button className="badge ticket" onClick={redeem} disabled={redeeming}>
-                🎫 チートデイチケット ×{dash.ticketsAvailable}（+{kcalRates.cheatDayBonus} kcal で使う）
+              <button
+                className="badge ticket"
+                onClick={redeem}
+                disabled={redeeming}
+                title={`押すとチケットを1枚使って、今日の獲得カロリーに +${kcalRates.cheatDayBonus} kcal（7日連続で学習するたびに1枚もらえます）`}
+              >
+                🎫 チートデイチケット ×{dash.ticketsAvailable}
               </button>
             )}
           </div>
