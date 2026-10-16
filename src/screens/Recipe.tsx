@@ -1787,14 +1787,17 @@ function RecipeReview({
               )}
               <div>
                 <span className="label">正解</span>{" "}
-                <strong>
+                {/* The entry reads aloud on a click, as its 対義語 does: no 🔊 もう一度聞く. */}
+                <strong
+                  className="say-whole"
+                  role={isTtsSupported() ? "button" : undefined}
+                  title={isTtsSupported() ? "クリックで読み上げ" : undefined}
+                  onClick={() => void sayEntry(current)}
+                >
                   <EntryText w={current} text={current.word} />
                 </strong>
                 {shownForm(current) && <span className="muted">（{shownForm(current)}）</span>}　<EntryMeaning w={current} dict={dict} />
                 {notes?.word === current.word && notes.notes?.antonym && <AntonymTag antonym={notes.notes.antonym} dict={dict} />}
-                <button className="btn-link" onClick={() => sayEntry(current)} disabled={!isTtsSupported()}>
-                  🔊 もう一度聞く
-                </button>
               </div>
               {notes?.word === current.word && notes.notes && (
                 <WordNotesPanel notes={notes.notes} word={current.word} meaning={current.meaning} dict={dict} gloss />

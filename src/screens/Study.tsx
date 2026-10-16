@@ -7,6 +7,7 @@ import FavoriteKcal from "../components/FavoriteKcal";
 import { PlayModeTag } from "../components/PlayModeSwitch";
 import WordNotesPanel from "../components/WordNotes";
 import AntonymTag from "../components/AntonymTag";
+import SpeakableText from "../components/SpeakableText";
 import { MeaningWithTags, useAskedMeaning, useOptionLabels } from "../components/PosTags";
 import { PHONEMES } from "../lib/phonemes";
 import { loadPronunciations, type Pronunciations } from "../lib/pronunciation";
@@ -513,17 +514,12 @@ export default function Study({ mode, tier, category, rates, playMode, favorites
               <div>
                 <span className="label">正解</span>{" "}
                 <strong>
-                  {/^[\x20-\x7e]+$/.test(current.answer) ? (
+                  {current.question.kind === "word" ? (
+                    // A word, typed or its meaning picked (book [他] 予約する), read aloud whole on a
+                    // click: get off as one. So no 🔊 もう一度聞く on its line.
+                    <SpeakableText text={current.question.en} dict={dict} {...recipeContext(current, current.question.en)} />
+                  ) : /^[\x20-\x7e]+$/.test(current.answer) ? (
                     <GlossedText text={current.answer} dict={dict} enabled={showGloss} {...recipeContext(current, current.answer)} />
-                  ) : current.question.kind === "word" ? (
-                    // A meaning picked (選択・ヒアリング) comes after the word it is the meaning of:
-                    // book [他] 予約する.
-                    <GlossedText
-                      text={current.question.en}
-                      dict={dict}
-                      enabled={false}
-                      {...recipeContext(current, current.question.en)}
-                    />
                   ) : (
                     current.answer
                   )}
@@ -538,7 +534,7 @@ export default function Study({ mode, tier, category, rates, playMode, favorites
                   <AntonymTag antonym={current.notes.antonym} dict={dict} />
                 )}
                 {qMode === "choice" && current.subDisplay && <span className="muted">　{current.subDisplay}</span>}
-                {qMode !== "speaking" && (
+                {qMode !== "speaking" && current.question.kind !== "word" && (
                   <button className="btn-link" onClick={() => speak(current.audioText).catch(() => undefined)} disabled={!isTtsSupported()}>
                     🔊 もう一度聞く
                   </button>

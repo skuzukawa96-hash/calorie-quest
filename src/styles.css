@@ -4261,17 +4261,31 @@ button.wp-link.open {
 
 /* ⇔ refuse [他] 断る: a word's 対義語 after its meaning on the 正解 line */
 .antonym {
-  margin-left: 0.8em;
   white-space: nowrap;
 }
+/* the same room on either side of ⇔ */
 .antonym-mark {
-  margin-right: 0.35em;
+  margin: 0 1.6em;
   color: var(--caramel-dark);
   font-weight: 700;
 }
+/* as far from its meaning as the answer is from its own (.answer-meaning) */
 .antonym strong {
-  margin-right: 0.5em;
+  margin-right: 0.8em;
 }
 .antonym-meaning {
   white-space: normal;
+}
+
+/* English on the 正解 line read aloud whole on a click (SpeakableText; the recipe's entry) */
+.say-whole {
+  cursor: pointer;
+  border-radius: 4px;
+  transition: background 0.12s ease;
+}
+.say-whole:hover {
+  background: rgba(201, 138, 62, 0.15);
+}
+.say-whole.saying {
+  background: #fde7b8;
 }
