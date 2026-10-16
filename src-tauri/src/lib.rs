@@ -30,6 +30,7 @@ pub fn run() {
             backup::list_backups,
             backup::create_backup,
             backup::restore_backup,
+            backup::delete_backup,
             backup::open_backup_folder,
             commands::get_dashboard,
             commands::get_session_questions,

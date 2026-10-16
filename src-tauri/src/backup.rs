@@ -123,6 +123,18 @@ pub fn restore_into(live: &mut Connection, db: &Path, from: &Path, safety: &Path
     }
 }
 
+/// Deletes the backup `name` from the folder `dir`: only a file of ours, by its name in the folder.
+pub fn delete_in(dir: &Path, name: &str) -> CmdResult<()> {
+    if !is_backup_name(name) {
+        return Err(format!("バックアップの名前が正しくありません: {name}"));
+    }
+    let path = dir.join(name);
+    if !path.is_file() {
+        return Err(format!("バックアップが見つかりません: {name}"));
+    }
+    std::fs::remove_file(&path).map_err(err)
+}
+
 /* ---------- Tauri commands ---------- */
 
 #[tauri::command]
@@ -152,6 +164,12 @@ pub fn restore_backup(app: AppHandle, state: State<'_, AppState>, name: String) 
     let safety = dir.join(file_name(Some("before-restore")));
     let mut conn = state.db.lock().map_err(err)?;
     restore_into(&mut conn, &db_path(&app)?, &from, &safety)
+}
+
+/// Deletes one backup (the list's ×, asked first).
+#[tauri::command]
+pub fn delete_backup(app: AppHandle, name: String) -> CmdResult<()> {
+    delete_in(&folder(&app)?, &name)
 }
 
 /// Opens the backups folder in Explorer.
@@ -212,6 +230,23 @@ mod tests {
         let names: Vec<String> = list_in(&dir.0).unwrap().into_iter().map(|b| b.name).collect();
         assert_eq!(names.len(), 2, "{names:?}");
         assert!(list_in(&dir.0).unwrap().iter().any(|b| b.before_restore));
+    }
+
+    /// A backup can be deleted from the list; only one of ours, by its name in the folder.
+    #[test]
+    fn a_backup_is_deleted_by_its_name() {
+        let dir = Scratch::new("delete");
+        let live = crate::db::init(&dir.0.join(DB_FILE)).unwrap();
+        let saved = dir.0.join(file_name(None));
+        write_backup(&live, &saved).unwrap();
+        let name = saved.file_name().unwrap().to_str().unwrap().to_string();
+        assert_eq!(list_in(&dir.0).unwrap().len(), 1);
+        delete_in(&dir.0, &name).unwrap();
+        assert!(list_in(&dir.0).unwrap().is_empty());
+        assert!(delete_in(&dir.0, &name).is_err(), "gone already");
+        assert!(delete_in(&dir.0, DB_FILE).is_err(), "the database itself is not a backup");
+        assert!(delete_in(&dir.0, "../calorie-quest_x.db").is_err());
+        assert!(dir.0.join(DB_FILE).exists());
     }
 
     /// Anything that is not one of ours is refused, and the record stays as it is.

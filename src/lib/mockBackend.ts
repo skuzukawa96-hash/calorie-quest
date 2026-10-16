@@ -3283,6 +3283,7 @@ export async function mockInvoke<T>(cmd: string, args: Record<string, unknown>):
     case "list_backups":
     case "create_backup":
     case "restore_backup":
+    case "delete_backup":
     case "open_backup_folder":
       // A backup is a file of the app's database; the browser preview keeps its data in the page.
       throw new Error("ブラウザのプレビューではバックアップできません（アプリでは使えます）");

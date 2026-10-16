@@ -4053,9 +4053,42 @@ button.wp-link.open {
   background: var(--cream-2);
   color: var(--choco-light);
 }
-.backup-restore,
+.backup-row-actions,
 .backup-ask {
   margin-left: auto;
+}
+.backup-row-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.backup-row-actions .icon-btn {
+  width: 28px;
+  height: 26px;
+}
+/* the backups before the newest, folded under one line that opens them */
+.backup-more {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  padding: 4px 2px;
+  border: none;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  color: var(--choco-light);
+  cursor: pointer;
+}
+.backup-more:hover {
+  color: var(--choco);
+}
+.backup-more-caret {
+  font-size: 11px;
+  color: var(--caramel-dark);
+}
+.backup-list.backup-older {
+  margin-top: 4px;
 }
 .backup-ask {
   display: inline-flex;

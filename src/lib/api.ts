@@ -106,6 +106,8 @@ export const api = {
   createBackup: () => call<BackupInfo>("create_backup"),
   /** puts the record of backup `name` back, after backing up what is there now */
   restoreBackup: (name: string) => call<void>("restore_backup", { name }),
+  /** deletes backup `name` from the folder */
+  deleteBackup: (name: string) => call<void>("delete_backup", { name }),
   openBackupFolder: () => call<void>("open_backup_folder"),
   getDictionary: () => call<Record<string, string>>("get_dictionary"),
   getIdioms: () => call<string[]>("get_idioms"),
