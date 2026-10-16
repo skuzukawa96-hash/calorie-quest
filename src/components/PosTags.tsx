@@ -18,6 +18,15 @@ function loadWordTags(): Promise<WordTags> {
   return loading;
 }
 
+/** Loads the tags ahead (at start-up), so the first screen to show them has them at once. */
+export function preloadWordTags(): void {
+  loadWordTags()
+    .then((d) => {
+      cached = d;
+    })
+    .catch(() => undefined);
+}
+
 /** The parts of speech and verb types, once they have loaded (null until then). */
 export function useWordTags(): WordTags | null {
   const [data, setData] = useState<WordTags | null>(cached);

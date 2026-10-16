@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, runningInTauri } from "./lib/api";
+import { loadDictionary } from "./lib/dictionary";
+import { preloadScreens } from "./lib/screenCache";
 import DietSwitch from "./components/DietSwitch";
 import PlayModeSwitch from "./components/PlayModeSwitch";
+import { preloadWordTags } from "./components/PosTags";
 import RecipeProvider from "./components/RecipeProvider";
 import { playFanfare } from "./lib/sfx";
 import { loadSpeechCapabilities } from "./lib/speech";
@@ -122,9 +125,17 @@ export default function App() {
   useEffect(() => {
     void refresh();
     void loadSpeechCapabilities();
+    // What the other tabs open with, loaded ahead once the home screen is up (and the notes' tables
+    // are built behind it), so that switching to them never blinks 読み込み中.
+    const ahead = window.setTimeout(() => {
+      void loadDictionary();
+      preloadWordTags();
+      preloadScreens();
+    }, 1500);
     if (import.meta.env.VITE_SPEECH_PROBE) {
       import("./lib/probe").then((m) => m.runSpeechProbe()).catch(() => undefined);
     }
+    return () => window.clearTimeout(ahead);
   }, [refresh]);
 
   // The app left open past midnight loads the new day (which settles the one that ended): checked

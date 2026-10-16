@@ -3,6 +3,7 @@ import { SwitchViewButton } from "../components/IconButtons";
 import WeightForm, { d1, HeightSetting } from "../components/WeightForm";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { api } from "../lib/api";
+import { keep, keptData } from "../lib/screenCache";
 import {
   EXAM_PART_LABEL,
   TIER_LABEL,
@@ -51,7 +52,8 @@ function loadChart(): Chart {
 }
 
 export default function Stats({ day, dietMode, onChanged, toast }: Props) {
-  const [stats, setStats] = useState<StatsData | null>(null);
+  // What was loaded last shows at once, the record loaded afresh behind it (no 集計しています in between).
+  const [stats, setStats] = useState<StatsData | null>(() => keptData("stats"));
   const [chart, setChart] = useState<Chart>(loadChart);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [confirmReset, setConfirmReset] = useState(false);
@@ -62,7 +64,10 @@ export default function Stats({ day, dietMode, onChanged, toast }: Props) {
     setLoadError(null);
     api
       .getStats()
-      .then(setStats)
+      .then((s) => {
+        keep("stats", s);
+        setStats(s);
+      })
       .catch((e) => setLoadError(String(e)));
   }, []);
 

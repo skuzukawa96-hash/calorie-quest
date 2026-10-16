@@ -5,7 +5,8 @@ import PencilIcon from "../components/PencilIcon";
 import PronunciationTips from "../components/PronunciationTips";
 import WordNotesPanel from "../components/WordNotes";
 import { api } from "../lib/api";
-import { loadDictionary, type Dictionary } from "../lib/dictionary";
+import { loadDictionary, loadedDictionary, type Dictionary } from "../lib/dictionary";
+import { keep, keptData } from "../lib/screenCache";
 import { PHONEMES } from "../lib/phonemes";
 import { loadPronunciations, type Pronunciations } from "../lib/pronunciation";
 import type { TipKey } from "../lib/scoring";
@@ -173,14 +174,15 @@ type Reviewing = { round: number } & ({ kind: "study"; study: FavoriteRound } | 
  * one pays once a day (英単語 1 kcal, the others 2 kcal).
  */
 export default function Favorites({ rates, overview, playMode, onProgress, toast }: Props) {
-  const [list, setList] = useState<Favorite[] | null>(null);
+  // What was loaded last shows at once, the list loaded afresh behind it (no 読み込み中 in between).
+  const [list, setList] = useState<Favorite[] | null>(() => keptData("favorites"));
   const [tab, setTab] = useState<FavTab>("all");
   const [form, setForm] = useState<Form | "all">("all");
   const [open, setOpen] = useState<Set<number>>(() => new Set());
   /** unstarred on this visit: kept on the page, with ☆, so a slip can be starred again */
   const [unstarred, setUnstarred] = useState<Set<number>>(() => new Set());
   const [reviewing, setReviewing] = useState<Reviewing | null>(null);
-  const [dict, setDict] = useState<Dictionary | null>(null);
+  const [dict, setDict] = useState<Dictionary | null>(loadedDictionary);
   /** 追加順: newest first, or (clicked again) oldest first */
   const [reverse, setReverse] = useState(() => loadOrder().reverse);
   /** 文法項目順: the list in 文法項目 (時制 → 主語と動詞の一致 → …), each under its heading */
@@ -198,6 +200,7 @@ export default function Favorites({ rates, overview, playMode, onProgress, toast
   const load = useCallback(async () => {
     try {
       const fresh = await api.listFavorites();
+      keep("favorites", fresh);
       setList(fresh);
       setUnstarred(new Set());
       return fresh;

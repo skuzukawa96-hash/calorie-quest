@@ -9,7 +9,8 @@ import AntonymTag from "../components/AntonymTag";
 import { CuedMeaningWithTags, MeaningWithTags, SlotText, useWordTags } from "../components/PosTags";
 import { cuedMeaning } from "../lib/pos";
 import { api } from "../lib/api";
-import { loadDictionary, lookup, type Dictionary } from "../lib/dictionary";
+import { loadDictionary, loadedDictionary, lookup, type Dictionary } from "../lib/dictionary";
+import { keep, keptData } from "../lib/screenCache";
 import { onRecipeChanged } from "../lib/recipe";
 import { formatKcal } from "../lib/scoring";
 import { playCrunch, playFanfare, playWrong } from "../lib/sfx";
@@ -666,8 +667,9 @@ function withGap(word: RecipeWord): string | null {
  * speech or not, or down to one part of speech.
  */
 export default function Recipe({ playMode, onProgress, toast }: Props) {
-  const [words, setWords] = useState<RecipeWord[] | null>(null);
-  const [dict, setDict] = useState<Dictionary | null>(null);
+  // What was loaded last shows at once, the list loaded afresh behind it (no 読み込み中 in between).
+  const [words, setWords] = useState<RecipeWord[] | null>(() => keptData("recipe"));
+  const [dict, setDict] = useState<Dictionary | null>(loadedDictionary);
   /** the meanings of every pattern of 用法, the wrong options for a pattern in review */
   const [usagePool, setUsagePool] = useState<Array<[string, string]>>([]);
   const [filter, setFilter] = useState<RecipeTab>("all");
@@ -701,7 +703,9 @@ export default function Recipe({ playMode, onProgress, toast }: Props) {
   useClickAway(cardMenu, cardBox, setCardMenu);
 
   const reload = useCallback(async () => {
-    setWords(await api.listRecipeWords());
+    const fresh = await api.listRecipeWords();
+    keep("recipe", fresh);
+    setWords(fresh);
   }, []);
 
   useEffect(() => {

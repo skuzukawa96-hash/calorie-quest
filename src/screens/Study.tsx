@@ -12,7 +12,7 @@ import { MeaningWithTags, useAskedMeaning, useOptionLabels } from "../components
 import { PHONEMES } from "../lib/phonemes";
 import { loadPronunciations, type Pronunciations } from "../lib/pronunciation";
 import { api, runningInTauri } from "../lib/api";
-import { loadDictionary, type Dictionary } from "../lib/dictionary";
+import { loadDictionary, loadedDictionary, type Dictionary } from "../lib/dictionary";
 import {
   answerWordCount,
   gradeTyping,
@@ -156,7 +156,7 @@ export default function Study({ mode, tier, category, rates, playMode, favorites
   const [autoSpeak, setAutoSpeak] = useState<boolean>(() => loadFlag(AUTO_SPEAK_KEY, true));
   const [showGloss, setShowGloss] = useState<boolean>(() => loadFlag(GLOSS_KEY, true));
   const [typingHint, setTypingHint] = useState<boolean>(() => loadFlag(TYPING_HINT_KEY, false));
-  const [dict, setDict] = useState<Dictionary | null>(null);
+  const [dict, setDict] = useState<Dictionary | null>(loadedDictionary);
   const fav = useFavorites(toast);
 
   useEffect(() => {

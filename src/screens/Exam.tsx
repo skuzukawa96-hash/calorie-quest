@@ -5,7 +5,7 @@ import GlossedText from "../components/GlossedText";
 import { PlayModeTag } from "../components/PlayModeSwitch";
 import WordNotesPanel from "../components/WordNotes";
 import { api } from "../lib/api";
-import { loadDictionary, type Dictionary } from "../lib/dictionary";
+import { loadDictionary, loadedDictionary, type Dictionary } from "../lib/dictionary";
 import { formatKcal } from "../lib/scoring";
 import { playCrunch, playFanfare, playWrong } from "../lib/sfx";
 import { sentences } from "../lib/sentences";
@@ -110,7 +110,7 @@ export default function Exam({ kind, level, favorites, overview, playMode, onExi
   const [reviewDone, setReviewDone] = useState<{ remaining: number } | null>(null);
   /** exam questions still in review, as the last review answer left them */
   const [remaining, setRemaining] = useState<number | null>(null);
-  const [dict, setDict] = useState<Dictionary | null>(null);
+  const [dict, setDict] = useState<Dictionary | null>(loadedDictionary);
   const [gloss, setGloss] = useState(loadGloss);
   const [busy, setBusy] = useState(false);
   /** an exam of this level left part-way: asked whether to go on with it before anything else */

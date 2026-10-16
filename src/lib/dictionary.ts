@@ -245,6 +245,7 @@ export function isIdiom(dict: Dictionary | null, key: string): boolean {
 }
 
 let cached: Promise<Dictionary> | null = null;
+let ready: Dictionary | null = null;
 
 export function loadDictionary(): Promise<Dictionary> {
   if (!cached) {
@@ -253,8 +254,14 @@ export function loadDictionary(): Promise<Dictionary> {
       api.getIdioms().catch(() => [] as string[]),
     ]).then(([dict, idioms]) => {
       idiomKeys.set(dict, new Set(idioms));
+      ready = dict;
       return dict;
     });
   }
   return cached;
+}
+
+/** The dictionary if it has loaded already, else null: a screen opened again draws with it at once. */
+export function loadedDictionary(): Dictionary | null {
+  return ready;
 }
