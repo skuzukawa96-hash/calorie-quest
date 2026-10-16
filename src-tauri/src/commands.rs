@@ -1277,13 +1277,44 @@ pub fn set_play_mode(state: State<'_, AppState>, mode: String) -> CmdResult<Stri
     set_play_mode_in(&conn, &mode)
 }
 
+/// What the home screen counts of the question bank: the genres, the parts of speech, the grammar
+/// points and the questions by tab, genre and mode. The bank is seeded at start-up and does not
+/// change while the app runs, so the app counts it once (`AppState.bank`) instead of at every switch
+/// of tab, which read all of it four times (some 200 ms of a dev build). Restoring a backup opens
+/// another database, which is counted again.
+#[derive(Clone)]
+pub struct BankCounts {
+    categories: Vec<CategoryInfo>,
+    parts_of_speech: Vec<PartOfSpeechInfo>,
+    grammar_points: Vec<GrammarPointInfo>,
+    mode_counts: Vec<ModeCount>,
+}
+
+pub fn bank_counts(conn: &Connection) -> rusqlite::Result<BankCounts> {
+    Ok(BankCounts {
+        categories: category_infos(conn)?,
+        parts_of_speech: parts_of_speech(conn)?,
+        grammar_points: grammar_points(conn)?,
+        mode_counts: mode_counts(conn)?,
+    })
+}
+
 #[tauri::command]
 pub fn get_dashboard(state: State<'_, AppState>) -> CmdResult<Dashboard> {
     let conn = state.db.lock().map_err(err)?;
-    load_dashboard(&conn)
+    let mut bank = state.bank.lock().map_err(err)?;
+    if bank.is_none() {
+        *bank = Some(bank_counts(&conn).map_err(err)?);
+    }
+    load_dashboard_with(&conn, bank.as_ref().expect("counted just now"))
 }
 
+/// The dashboard, the question bank counted afresh (the app keeps its count: `get_dashboard`).
 pub fn load_dashboard(conn: &Connection) -> CmdResult<Dashboard> {
+    load_dashboard_with(conn, &bank_counts(conn).map_err(err)?)
+}
+
+pub fn load_dashboard_with(conn: &Connection, bank: &BankCounts) -> CmdResult<Dashboard> {
     let settled = settle_savings(conn).map_err(err)?;
     release_stale_reviews(conn).map_err(err)?;
     let user = load_user(conn).map_err(err)?;
@@ -1297,10 +1328,10 @@ pub fn load_dashboard(conn: &Connection) -> CmdResult<Dashboard> {
         done_today: crate::diet::done_today(conn).map_err(err)?,
         tasks: crate::diet::list_tasks_in(conn).map_err(err)?,
         weight_today: crate::diet::today_weight(conn).map_err(err)?,
-        categories: category_infos(conn).map_err(err)?,
-        parts_of_speech: parts_of_speech(conn).map_err(err)?,
-        grammar_points: grammar_points(conn).map_err(err)?,
-        mode_counts: mode_counts(conn).map_err(err)?,
+        categories: bank.categories.clone(),
+        parts_of_speech: bank.parts_of_speech.clone(),
+        grammar_points: bank.grammar_points.clone(),
+        mode_counts: bank.mode_counts.clone(),
         due_review_count: due_review_count(conn).map_err(err)?,
         tickets_available: tickets_available(conn).map_err(err)?,
         kcal_rates: kcal_rates(),

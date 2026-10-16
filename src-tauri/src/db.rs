@@ -2327,6 +2327,20 @@ fn compound_phrases() -> &'static crate::util::PhraseIndex {
     })
 }
 
+/// Builds the tables the notes after an answer are read from (用法, 類似表現, 成り立ち, 不規則動詞,
+/// 対義語 …), which are made the first time they are needed: on a thread of its own at start-up, so
+/// the first お気に入り or answer does not wait a second for them.
+pub fn warm_up() {
+    let texts = vec!["I'm looking forward to seeing you, and she made up her mind.".to_string()];
+    let _ = used_words(&texts);
+    let _ = irregulars_in(&texts);
+    let _ = word_notes("reimbursement");
+    let _ = irregular_of("make");
+    let _ = antonym_of("accept", "受け入れる");
+    let _ = word_pos();
+    let _ = grammar_notes();
+}
+
 pub fn used_words(texts: &[String]) -> Vec<crate::models::UsedWord> {
     let mut out: Vec<crate::models::UsedWord> = Vec::new();
     // Whether a pattern of each was found in the sentence (else it is there for being confusable).

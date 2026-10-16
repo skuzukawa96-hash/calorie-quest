@@ -163,7 +163,10 @@ pub fn restore_backup(app: AppHandle, state: State<'_, AppState>, name: String) 
     }
     let safety = dir.join(file_name(Some("before-restore")));
     let mut conn = state.db.lock().map_err(err)?;
-    restore_into(&mut conn, &db_path(&app)?, &from, &safety)
+    restore_into(&mut conn, &db_path(&app)?, &from, &safety)?;
+    // Another database: its question bank is counted again.
+    *state.bank.lock().map_err(err)? = None;
+    Ok(())
 }
 
 /// Deletes one backup (the list's ×, asked first).

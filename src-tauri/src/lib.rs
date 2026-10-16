@@ -15,6 +15,8 @@ use tauri::Manager;
 
 pub struct AppState {
     pub db: Mutex<rusqlite::Connection>,
+    /// what the home screen counts of the question bank, counted once (`commands::BankCounts`)
+    pub bank: Mutex<Option<commands::BankCounts>>,
 }
 
 pub fn run() {
@@ -23,7 +25,9 @@ pub fn run() {
             let dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&dir)?;
             let conn = db::init(&dir.join(backup::DB_FILE))?;
-            app.manage(AppState { db: Mutex::new(conn) });
+            app.manage(AppState { db: Mutex::new(conn), bank: Mutex::new(None) });
+            // The notes' tables, ready before the first お気に入り or answer asks for them.
+            std::thread::spawn(db::warm_up);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

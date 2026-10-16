@@ -412,7 +412,7 @@ pub struct Dashboard {
 
 /// The questions of one tab, genre and part of speech each mode can ask, counted as a session
 /// picks them (ヒアリング takes the questions with English to say as well).
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ModeCount {
     pub tier: String,
