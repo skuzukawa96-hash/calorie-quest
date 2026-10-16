@@ -454,7 +454,8 @@ main {
 .icon-btn.done:hover:not(:disabled) {
   transform: scale(1.12);
 }
-/* ⇄ beside a heading: 目標のお菓子 ⇄ 目標の課題, the kcal chart ⇄ the weight chart */
+/* ⇄ before a heading (on its left, so it stays put as the heading changes): 目標のお菓子 ⇄ 目標の課題,
+   the kcal chart ⇄ the weight chart, お菓子図鑑 ⇄ 課題一覧 */
 .icon-btn.switch-view {
   width: 30px;
   height: 28px;
@@ -848,10 +849,6 @@ main {
   white-space: nowrap;
   font-weight: 400;
 }
-.recipe-check {
-  color: var(--mint);
-  font-weight: 700;
-}
 .recipe-caret {
   font-size: 13px;
   color: var(--choco-light);
@@ -892,6 +889,14 @@ main {
   padding: 3px 10px;
   font-size: 12px;
   white-space: nowrap;
+}
+/* ✓ 覚えた and 復習に戻す are one width, their words centred, so the ☆ before them stays put from
+   row to row */
+.recipe-row-actions .btn-small.recipe-move {
+  width: calc(5em + 22px);
+  padding-left: 0;
+  padding-right: 0;
+  text-align: center;
 }
 .recipe-row-actions .icon-btn {
   width: 28px;

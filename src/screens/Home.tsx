@@ -286,10 +286,10 @@ export default function Home({
       <section className="card goal">
         <div className="section-head">
           <h2 className="title-with-switch">
-            {showTasks ? "目標の課題" : "目標のお菓子"}
             {user.dietMode && (
               <SwitchViewButton label={showTasks ? "目標のお菓子に切り替える" : "目標の課題に切り替える"} onClick={switchGoals} />
             )}
+            {showTasks ? "目標の課題" : "目標のお菓子"}
           </h2>
           <div className="goal-head-right">
             {/* today's weight, once a day here or in the 記録 (体重記録のデイリーボーナス) */}

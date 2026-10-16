@@ -1165,11 +1165,6 @@ export default function Recipe({ playMode, onProgress, toast }: Props) {
                             間違い {w.misses}回
                           </span>
                         )}
-                        {w.masteredAt && !w.excludedAt && (
-                          <span className="recipe-check" title="習得" aria-label="習得">
-                            ✓
-                          </span>
-                        )}
                         {/* At the right end of the row, open or not; a press here does not open the row. */}
                         <span className="recipe-row-actions" onClick={(e) => e.stopPropagation()}>
                           <StarButton
@@ -1185,7 +1180,7 @@ export default function Recipe({ playMode, onProgress, toast }: Props) {
                           {w.excludedAt ? (
                             <>
                               <button
-                                className="btn-small"
+                                className="btn-small recipe-move"
                                 disabled={busy}
                                 onClick={() =>
                                   run(async () => {
@@ -1210,7 +1205,7 @@ export default function Recipe({ playMode, onProgress, toast }: Props) {
                           ) : (
                             <>
                               <button
-                                className={"btn-small " + (w.masteredAt ? "" : "eat")}
+                                className={"btn-small recipe-move " + (w.masteredAt ? "" : "eat")}
                                 disabled={busy}
                                 onClick={() =>
                                   run(async () => {

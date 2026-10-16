@@ -149,7 +149,8 @@ export default function Snacks({ dash, onChanged, ticketMode, onTicketMode, toas
       /* ignore */
     }
   };
-  // Beside the history and beside the list: either switches both.
+  // Before the history's heading and the list's (on the left, so it stays put as the heading
+  // changes): either switches both.
   const switcher = diet && (
     <SwitchViewButton
       label={showTasks ? "お菓子（食べた記録と図鑑）に切り替える" : "課題（達成した記録と課題一覧）に切り替える"}
@@ -230,8 +231,8 @@ export default function Snacks({ dash, onChanged, ticketMode, onTicketMode, toas
         </div>
         {diet && (
           <div className="log-head title-with-switch">
-            <h3>{showTasks ? "今日達成した課題" : "今日食べたお菓子"}</h3>
             {switcher}
+            <h3>{showTasks ? "今日達成した課題" : "今日食べたお菓子"}</h3>
           </div>
         )}
         {log.length === 0 ? (

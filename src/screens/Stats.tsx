@@ -166,13 +166,13 @@ export default function Stats({ day, dietMode, onChanged, toast }: Props) {
       <section className="card">
         <div className="section-head chart-head">
           <h2 className="title-with-switch">
-            {showWeight ? "体重・BMIの推移" : "この2週間の獲得・消費カロリー"}
             {dietMode && (
               <SwitchViewButton
                 label={showWeight ? "獲得・消費カロリーのグラフに切り替える" : "体重・BMIのグラフに切り替える"}
                 onClick={switchChart}
               />
             )}
+            {showWeight ? "体重・BMIの推移" : "この2週間の獲得・消費カロリー"}
           </h2>
           {showWeight && (
             <div className="weight-head">

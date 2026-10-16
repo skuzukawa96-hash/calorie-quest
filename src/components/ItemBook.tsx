@@ -118,7 +118,7 @@ function sortItems<T extends BookItem>(items: T[], { key, dir }: SortState, icon
 
 interface BookCardProps<T extends BookItem> {
   title: ReactNode;
-  /** beside the heading: the ⇄ that switches the お菓子図鑑 and the 課題一覧 */
+  /** before the heading (on its left): the ⇄ that switches the お菓子図鑑 and the 課題一覧 */
   switcher?: ReactNode;
   /** how the list is used, under the heading */
   intro: ReactNode;
@@ -197,8 +197,8 @@ export function BookCard<T extends BookItem>({
     <section className="card">
       <div className="section-head">
         <div className="title-with-switch">
-          <h2>{title}</h2>
           {switcher}
+          <h2>{title}</h2>
         </div>
         <div className="sort-bar" role="group" aria-label="並び替え">
           <span className="muted small">並び替え</span>
