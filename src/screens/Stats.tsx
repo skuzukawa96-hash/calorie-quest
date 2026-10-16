@@ -3,23 +3,28 @@ import { SwitchViewButton } from "../components/IconButtons";
 import WeightForm, { d1, HeightSetting } from "../components/WeightForm";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { api } from "../lib/api";
-import { formatKcal } from "../lib/scoring";
 import {
+  EXAM_PART_LABEL,
   TIER_LABEL,
   TIERS,
+  type Breakdown as BreakdownData,
   type DayPoint,
+  type DietKcal,
+  type ExamKcalKind,
+  type ExamLevel,
+  type ExamPart,
   type Mode,
-  type StatCell,
   type Stats as StatsData,
+  type Tier,
   type WeightPoint,
 } from "../types";
 
 /** The totals that open a breakdown by tab and mode when clicked. */
 type Metric = "kcal" | "answered" | "accuracy";
 const METRIC_TITLE: Record<Metric, string> = {
-  kcal: "分類・形式別の獲得カロリー",
-  answered: "分類・形式別の回答数",
-  accuracy: "分類・形式別の正答率",
+  kcal: "獲得カロリーの内訳",
+  answered: "回答数の内訳",
+  accuracy: "正答率の内訳",
 };
 const MODES: Mode[] = ["choice", "typing", "speaking", "listening"];
 const MODE_SHORT: Record<Mode, string> = { choice: "選択", typing: "記入", speaking: "発音", listening: "ヒアリング" };
@@ -144,22 +149,16 @@ export default function Stats({ day, dietMode, onChanged, toast }: Props) {
               閉じる
             </button>
           </div>
-          <Breakdown
-            metric={metric}
-            cells={stats.breakdown}
-            extra={
-              stats.dietKcal
-                ? [
-                    { label: "課題", kcal: stats.dietKcal.tasks },
-                    { label: "体重記録", kcal: stats.dietKcal.weight },
-                  ]
-                : []
-            }
-          />
+          {metric === "kcal" ? (
+            <KcalBreakdown b={stats.breakdown} diet={stats.dietKcal ?? null} />
+          ) : (
+            <AnswerBreakdown metric={metric} b={stats.breakdown} />
+          )}
           <p className="muted small">
-            学習の問題（英単語〜例文）の分で、獲得カロリーは がんばり・お気軽 の倍率込みの、実際に獲得した値です。
-            {stats.dietKcal && metric === "kcal" && "課題と体重記録（ダイエット機能）は、書いてあるカロリーのまま合計に入ります。"}
-            レシピ・試験・チートデイの分は、上の累計にだけ入ります。
+            {metric === "kcal"
+              ? "がんばり・お気軽 の倍率込みの、実際に獲得した値です。お気に入りの復習は元の問題の欄に入ります（試験の問題はそのレベルの復習）。"
+              : "お気に入りの復習は元の問題の欄に数えます。試験は提出した問題で、試験の復習と単語帳の復習は数えません。"}
+            {stats.dietKcal && metric === "kcal" && "課題と体重記録（ダイエット機能）は、書いてあるカロリーのまま入ります。"}
           </p>
         </section>
       )}
@@ -333,7 +332,7 @@ function Stat({
       type="button"
       className={"stat stat-toggle" + (open ? " open" : "")}
       aria-expanded={open}
-      title={open ? "もう一度押すと閉じます" : "押すと分類・形式別に見られます"}
+      title={open ? "もう一度押すと閉じます" : "押すと内訳が見られます"}
       onClick={onClick}
     >
       <div className="stat-value">{value}</div>
@@ -344,81 +343,297 @@ function Stat({
   );
 }
 
-/** One metric over the study answers of some cells: kcal earned, answers, or the share right. */
-function metricText(metric: Metric, cells: StatCell[]): string {
-  const kcal = cells.reduce((s, c) => s + c.kcal, 0);
-  const answered = cells.reduce((s, c) => s + c.answered, 0);
-  const correct = cells.reduce((s, c) => s + c.correct, 0);
-  if (metric === "kcal") return formatKcal(kcal);
-  if (metric === "answered") return String(answered);
+/** A number of the tables with its unit (1,234 kcal, 30 問), a fraction as it is (1.5 kcal). */
+function amount(value: number, unit: string): string {
+  return `${(Math.round(value * 1000) / 1000).toLocaleString()} ${unit}`;
+}
+
+function sum<T>(list: T[], of: (x: T) => number): number {
+  return list.reduce((n, x) => n + of(x), 0);
+}
+
+/** A cell of an amount: muted when there is none. */
+function Num({ value, unit, total }: { value: number; unit: string; total?: boolean }) {
+  return <td className={total ? "total" : value === 0 ? "empty" : ""}>{amount(value, unit)}</td>;
+}
+
+/** The first column's width, the same in each table of a breakdown so their columns line up. */
+function Cols({ count }: { count: number }) {
+  return (
+    <colgroup>
+      <col className="name" />
+      {Array.from({ length: count }, (_, i) => (
+        <col key={i} />
+      ))}
+    </colgroup>
+  );
+}
+
+const PARTS: ExamPart[] = ["listening", "short", "text", "reading"];
+const EXAM_KINDS: ExamKcalKind[] = ["pass", "fail", "review"];
+const EXAM_KIND_LABEL: Record<ExamKcalKind, string> = { pass: "合格", fail: "不合格", review: "復習" };
+const RECIPE_MODES: Mode[] = ["choice", "typing"];
+
+/**
+ * 累計獲得カロリー in three groups, each with its total, and theirs at the end: the study questions
+ * (英単語 … 例文 by mode, and 単語帳の復習 by 選択 / 記入), the exams (by level: what passing, failing
+ * and the reviews paid, as 150 kcal × 4回), and the rest (the cheat days, and with ダイエット機能 on the
+ * 課題 and 体重記録).
+ */
+function KcalBreakdown({ b, diet }: { b: BreakdownData; diet: DietKcal | null }) {
+  const study = (tier: Tier | null, mode: Mode | null) =>
+    sum(
+      b.study.filter((c) => (tier === null || c.tier === tier) && (mode === null || c.mode === mode)),
+      (c) => c.kcal,
+    );
+  const recipe = (mode: Mode | null) => sum(b.recipe.filter((r) => mode === null || r.mode === mode), (r) => r.kcal);
+  const exam = (level: ExamLevel | null, kind: ExamKcalKind | null) =>
+    b.examKcal.filter((e) => (level === null || e.level === level) && (kind === null || e.kind === kind));
+  const others = [
+    { label: "チートデイ", sub: `${b.cheat.times}回`, kcal: b.cheat.kcal, diet: false },
+    ...(diet
+      ? [
+          { label: "課題", sub: "", kcal: diet.tasks, diet: true },
+          { label: "体重記録", sub: "", kcal: diet.weight, diet: true },
+        ]
+      : []),
+  ];
+  const studyTotal = study(null, null) + recipe(null);
+  const examTotal = sum(b.examKcal, (e) => e.kcal);
+  const otherTotal = sum(others, (o) => o.kcal);
+  return (
+    <>
+      <h3 className="breakdown-group">学習の問題</h3>
+      <div className="breakdown-scroll">
+        <table className="breakdown-table">
+          <Cols count={MODES.length + 1} />
+          <thead>
+            <tr>
+              <th>分類</th>
+              {MODES.map((m) => (
+                <th key={m}>{MODE_SHORT[m]}</th>
+              ))}
+              <th>合計</th>
+            </tr>
+          </thead>
+          <tbody>
+            {TIERS.map((t) => (
+              <tr key={t}>
+                <th>{TIER_LABEL[t]}</th>
+                {MODES.map((m) => (
+                  <Num key={m} value={study(t, m)} unit="kcal" />
+                ))}
+                <Num value={study(t, null)} unit="kcal" total />
+              </tr>
+            ))}
+            <tr>
+              <th>単語帳の復習</th>
+              {MODES.map((m) =>
+                RECIPE_MODES.includes(m) ? (
+                  <Num key={m} value={recipe(m)} unit="kcal" />
+                ) : (
+                  <td key={m} className="empty">
+                    —
+                  </td>
+                ),
+              )}
+              <Num value={recipe(null)} unit="kcal" total />
+            </tr>
+          </tbody>
+          <tfoot>
+            <tr>
+              <th>学習の問題の計</th>
+              {MODES.map((m) => (
+                <Num key={m} value={study(null, m) + (RECIPE_MODES.includes(m) ? recipe(m) : 0)} unit="kcal" total />
+              ))}
+              <Num value={studyTotal} unit="kcal" total />
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+
+      <h3 className="breakdown-group">試験</h3>
+      <div className="breakdown-scroll">
+        <table className="breakdown-table">
+          <Cols count={EXAM_KINDS.length + 1} />
+          <thead>
+            <tr>
+              <th>レベル</th>
+              {EXAM_KINDS.map((k) => (
+                <th key={k}>{EXAM_KIND_LABEL[k]}</th>
+              ))}
+              <th>合計</th>
+            </tr>
+          </thead>
+          <tbody>
+            {b.levels.map(({ level, label }) => (
+              <tr key={level}>
+                <th>{label}</th>
+                {EXAM_KINDS.map((k) => {
+                  const paid = exam(level, k);
+                  return (
+                    <td key={k} className={paid.length ? "" : "empty"}>
+                      {paid.length
+                        ? paid.map((e) => (
+                            <div key={e.each}>
+                              {amount(e.each, "kcal")} × {e.times}回
+                            </div>
+                          ))
+                        : amount(0, "kcal")}
+                    </td>
+                  );
+                })}
+                <Num value={sum(exam(level, null), (e) => e.kcal)} unit="kcal" total />
+              </tr>
+            ))}
+          </tbody>
+          <tfoot>
+            <tr>
+              <th>試験の計</th>
+              {EXAM_KINDS.map((k) => (
+                <Num key={k} value={sum(exam(null, k), (e) => e.kcal)} unit="kcal" total />
+              ))}
+              <Num value={examTotal} unit="kcal" total />
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+
+      <h3 className="breakdown-group">その他</h3>
+      <div className="breakdown-scroll">
+        <table className="breakdown-table">
+          <Cols count={1} />
+          <tbody>
+            {others.map((o) => (
+              <tr key={o.label} className={o.diet ? "breakdown-extra" : ""}>
+                <th>
+                  {o.label}
+                  {o.sub && <span className="sub">{o.sub}</span>}
+                </th>
+                <Num value={o.kcal} unit="kcal" total />
+              </tr>
+            ))}
+          </tbody>
+          <tfoot>
+            <tr>
+              <th>その他の計</th>
+              <Num value={otherTotal} unit="kcal" total />
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+
+      <div className="breakdown-grand">
+        <span>合計（学習の問題 ＋ 試験 ＋ その他）</span>
+        <b>{amount(studyTotal + examTotal + otherTotal, "kcal")}</b>
+      </div>
+    </>
+  );
+}
+
+type Answers = Array<{ answered: number; correct: number }>;
+
+/** A cell of 累計回答数 or 正答率 over some answers: muted when there are none. */
+function AnswerCell({ metric, list, total }: { metric: "answered" | "accuracy"; list: Answers; total?: boolean }) {
+  const answered = sum(list, (x) => x.answered);
+  return <td className={total ? "total" : answered === 0 ? "empty" : ""}>{answerText(metric, list)}</td>;
+}
+
+function answerText(metric: "answered" | "accuracy", list: Answers): string {
+  const answered = sum(list, (x) => x.answered);
+  const correct = sum(list, (x) => x.correct);
+  if (metric === "answered") return amount(answered, "問");
   return answered > 0 ? `${Math.round((correct / answered) * 100)}%` : "—";
 }
 
 /**
- * The tabs (英単語 … 例文) down, the modes (選択 / 記入 / 発音 / ヒアリング) across, and totals for
- * each, in one metric. A tab and mode never answered shows "—" for 正答率 and 0 otherwise. In kcal,
- * `extra` (課題 and 体重記録, while ダイエット機能 is on) adds rows of no mode, counted in the grand total.
+ * 累計回答数 or 正答率: the study questions (お気に入りの復習 too) by tab and mode, the exam questions
+ * handed in by level and part, each with its total, and theirs at the end.
  */
-function Breakdown({ metric, cells, extra }: { metric: Metric; cells: StatCell[]; extra: Array<{ label: string; kcal: number }> }) {
-  const rows = metric === "kcal" ? extra : [];
-  const pick = (tier: string | null, mode: Mode | null) =>
-    cells.filter((c) => (tier === null || c.tier === tier) && (mode === null || c.mode === mode));
-  const unit = metric === "kcal" ? " kcal" : metric === "answered" ? " 問" : "";
-  const cell = (list: StatCell[]) => {
-    const text = metricText(metric, list);
-    return text === "—" ? text : `${text}${unit}`;
-  };
+function AnswerBreakdown({ metric, b }: { metric: "answered" | "accuracy"; b: BreakdownData }) {
+  const study = (tier: Tier | null, mode: Mode | null) =>
+    b.study.filter((c) => (tier === null || c.tier === tier) && (mode === null || c.mode === mode));
+  const exam = (level: ExamLevel | null, part: ExamPart | null) =>
+    b.exams.filter((e) => (level === null || e.level === level) && (part === null || e.part === part));
   return (
-    <div className="breakdown-scroll">
-      <table className="breakdown-table">
-        <thead>
-          <tr>
-            <th>分類</th>
-            {MODES.map((m) => (
-              <th key={m}>{MODE_SHORT[m]}</th>
-            ))}
-            <th>合計</th>
-          </tr>
-        </thead>
-        <tbody>
-          {TIERS.map((t) => (
-            <tr key={t}>
-              <th>{TIER_LABEL[t]}</th>
+    <>
+      <h3 className="breakdown-group">学習の問題（お気に入りの復習を含む）</h3>
+      <div className="breakdown-scroll">
+        <table className="breakdown-table">
+          <Cols count={MODES.length + 1} />
+          <thead>
+            <tr>
+              <th>分類</th>
               {MODES.map((m) => (
-                <td key={m} className={pick(t, m).length ? "" : "empty"}>
-                  {cell(pick(t, m))}
-                </td>
+                <th key={m}>{MODE_SHORT[m]}</th>
               ))}
-              <td className="total">{cell(pick(t, null))}</td>
+              <th>合計</th>
             </tr>
-          ))}
-          {rows.map((r) => (
-            <tr key={r.label} className="breakdown-extra">
-              <th>{r.label}</th>
-              {MODES.map((m) => (
-                <td key={m} className="empty">
-                  —
-                </td>
-              ))}
-              <td className="total">{r.kcal} kcal</td>
-            </tr>
-          ))}
-        </tbody>
-        <tfoot>
-          <tr>
-            <th>合計</th>
-            {MODES.map((m) => (
-              <td key={m} className="total">
-                {cell(pick(null, m))}
-              </td>
+          </thead>
+          <tbody>
+            {TIERS.map((t) => (
+              <tr key={t}>
+                <th>{TIER_LABEL[t]}</th>
+                {MODES.map((m) => (
+                  <AnswerCell key={m} metric={metric} list={study(t, m)} />
+                ))}
+                <AnswerCell metric={metric} list={study(t, null)} total />
+              </tr>
             ))}
-            <td className="total grand">
-              {rows.length > 0 ? `${formatKcal(cells.reduce((n, c) => n + c.kcal, 0) + rows.reduce((n, r) => n + r.kcal, 0))} kcal` : cell(cells)}
-            </td>
-          </tr>
-        </tfoot>
-      </table>
-    </div>
+          </tbody>
+          <tfoot>
+            <tr>
+              <th>学習の問題の計</th>
+              {MODES.map((m) => (
+                <AnswerCell key={m} metric={metric} list={study(null, m)} total />
+              ))}
+              <AnswerCell metric={metric} list={b.study} total />
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+
+      <h3 className="breakdown-group">試験（提出した問題）</h3>
+      <div className="breakdown-scroll">
+        <table className="breakdown-table">
+          <Cols count={PARTS.length + 1} />
+          <thead>
+            <tr>
+              <th>レベル</th>
+              {PARTS.map((p) => (
+                <th key={p}>{EXAM_PART_LABEL[p]}</th>
+              ))}
+              <th>合計</th>
+            </tr>
+          </thead>
+          <tbody>
+            {b.levels.map(({ level, label }) => (
+              <tr key={level}>
+                <th>{label}</th>
+                {PARTS.map((p) => (
+                  <AnswerCell key={p} metric={metric} list={exam(level, p)} />
+                ))}
+                <AnswerCell metric={metric} list={exam(level, null)} total />
+              </tr>
+            ))}
+          </tbody>
+          <tfoot>
+            <tr>
+              <th>試験の計</th>
+              {PARTS.map((p) => (
+                <AnswerCell key={p} metric={metric} list={exam(null, p)} total />
+              ))}
+              <AnswerCell metric={metric} list={b.exams} total />
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+
+      <div className="breakdown-grand">
+        <span>{metric === "answered" ? "合計（学習の問題 ＋ 試験）" : "全体"}</span>
+        <b>{answerText(metric, [...b.study, ...b.exams])}</b>
+      </div>
+    </>
   );
 }
 

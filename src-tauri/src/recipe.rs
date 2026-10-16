@@ -295,7 +295,7 @@ pub fn review(conn: &mut Connection, id: i64, remembered: bool, mode: &str, targ
     .map_err(err)?;
 
     let quarters = if remembered { srs::recipe_quarter_kcal(mode, !repeat).unwrap_or(0) } else { 0 };
-    let paid = crate::commands::credit(&tx, &day, quarters * srs::EIGHTHS / 4).map_err(err)?;
+    let paid = crate::commands::credit(&tx, &day, quarters * srs::EIGHTHS / 4, crate::commands::Earning::Recipe { mode }).map_err(err)?;
     let today_kcal: i64 = tx
         .query_row(
             "SELECT kcal_earned FROM daily_stats WHERE user_id = ?1 AND date = ?2",

@@ -16,7 +16,7 @@ use rusqlite::{params, Connection, OptionalExtension};
 use serde::Deserialize;
 use tauri::State;
 
-use crate::commands::{credit, err, load_daily, mark_studied, CmdResult, Studied, USER_ID};
+use crate::commands::{credit, err, load_daily, mark_studied, CmdResult, Earning, Studied, USER_ID};
 use crate::models::{
     ExamAnswer, ExamLevelInfo, ExamOverview, ExamProgress, ExamQuestion, ExamResult, ExamReviewResult, ExamSuspended,
     WordNotes,
@@ -400,12 +400,22 @@ pub fn finish(conn: &mut Connection, level: &str, answers: &[ExamAnswer]) -> Res
             review_added += fresh as i64;
         }
     }
-    let paid = credit(&tx, &today, kcal * srs::EIGHTHS).map_err(err)?;
+    let what = if passed { Earning::ExamPass { level } } else { Earning::ExamFail { level } };
+    let paid = credit(&tx, &today, kcal * srs::EIGHTHS, what).map_err(err)?;
     tx.execute(
         "UPDATE daily_stats SET answered = answered + ?3, correct = correct + ?4 WHERE user_id = ?1 AND date = ?2",
         params![USER_ID, today, total, correct],
     )
     .map_err(err)?;
+    // Each question in 累計回答数 by its part, for the 記録's table.
+    for (id, qlevel, ok) in &graded {
+        let part = question(id).map(|q| q.part).unwrap_or_default();
+        tx.execute(
+            "INSERT INTO counted_answers (user_id, date, source, level, part, correct) VALUES (?1, ?2, 'exam', ?3, ?4, ?5)",
+            params![USER_ID, today, qlevel, part, *ok as i64],
+        )
+        .map_err(err)?;
+    }
     let Studied { streak, new_ticket, .. } = mark_studied(&tx, &today, &now).map_err(err)?;
     let today_kcal = load_daily(&tx, &today).map_err(err)?.kcal_earned;
     tx.commit().map_err(err)?;
@@ -586,12 +596,8 @@ pub fn answer_review(conn: &mut Connection, id: &str, chosen: &str) -> Result<Ex
         )
         .map_err(err)?;
     }
-    let paid = credit(&tx, &today, kcal * srs::EIGHTHS).map_err(err)?;
-    tx.execute(
-        "UPDATE daily_stats SET answered = answered + 1, correct = correct + ?3 WHERE user_id = ?1 AND date = ?2",
-        params![USER_ID, today, correct as i64],
-    )
-    .map_err(err)?;
+    // A review question is an exam question again, not a new one: it is not counted in 累計回答数.
+    let paid = credit(&tx, &today, kcal * srs::EIGHTHS, Earning::ExamReview { level: &q.level }).map_err(err)?;
     mark_studied(&tx, &today, &now).map_err(err)?;
     let today_kcal = load_daily(&tx, &today).map_err(err)?.kcal_earned;
     let remaining = review_count(&tx, None).map_err(err)?;

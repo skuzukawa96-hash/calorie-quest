@@ -839,8 +839,8 @@ pub struct Stats {
     pub tickets: Vec<Ticket>,
     pub review_due: i64,
     pub review_pending: i64,
-    /// the study answers by tab and mode (英単語 × 選択 …), for 累計獲得カロリー / 累計回答数 / 正答率
-    pub breakdown: Vec<StatCell>,
+    /// what was earned and answered, by where it belongs, for 累計獲得カロリー / 累計回答数 / 正答率
+    pub breakdown: Breakdown,
     /// what ダイエット機能 has paid in all, while it is on (off, it is left out of the totals and
     /// the chart too)
     pub diet_kcal: Option<DietKcal>,
@@ -851,17 +851,74 @@ pub struct Stats {
     pub weight_bonus_kcal: i64,
 }
 
-/// The study answers of one tab (word / compound / grammar / idiom / phrase / example) in one mode
-/// (choice / typing / speaking / listening).
+/// The 記録's tables behind 累計獲得カロリー / 累計回答数 / 正答率. The kcal are those each reward
+/// added to its day (`earn_log`), so they add up to the total; お気に入りの復習 is counted with the
+/// question it reviews.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Breakdown {
+    /// the study questions by tab and mode
+    pub study: Vec<StatCell>,
+    /// 単語帳の復習 by mode (choice / typing)
+    pub recipe: Vec<ModeKcal>,
+    /// the exam levels in order, with their names
+    pub levels: Vec<LevelName>,
+    /// the exam questions handed in by level and part: how many, how many right
+    pub exams: Vec<ExamCell>,
+    /// what the exams paid by level and kind (pass / fail / review), by what each paid
+    pub exam_kcal: Vec<ExamKcal>,
+    /// the cheat days used and what they paid
+    pub cheat: Times,
+}
+
+/// The study questions of one tab (word / compound / grammar / idiom / phrase / example) in one
+/// mode (choice / typing / speaking / listening).
 #[derive(Debug, Clone, Serialize)]
 pub struct StatCell {
     pub tier: String,
     pub mode: String,
-    /// what they earned after the play mode, in kcal (0.5 under がんばり), as the totals count it;
-    /// an answer from before that was kept counts at 通常
-    pub kcal: f64,
+    /// the whole kcal they added to their days, after the play mode
+    pub kcal: i64,
     pub answered: i64,
     pub correct: i64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ModeKcal {
+    pub mode: String,
+    pub kcal: i64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct LevelName {
+    pub level: String,
+    pub label: String,
+}
+
+/// The exam questions of one level in one part (listening / short / text / reading).
+#[derive(Debug, Clone, Serialize)]
+pub struct ExamCell {
+    pub level: String,
+    pub part: String,
+    pub answered: i64,
+    pub correct: i64,
+}
+
+/// What one kind of exam reward (pass / fail / review) of a level paid, `each` a time (after the
+/// play mode: 150, or 75 under がんばり), so that it reads 150 kcal × 4回.
+#[derive(Debug, Clone, Serialize)]
+pub struct ExamKcal {
+    pub level: String,
+    pub kind: String,
+    pub each: f64,
+    pub times: i64,
+    pub kcal: i64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct Times {
+    pub times: i64,
+    pub kcal: i64,
 }
 
 /// 自動詞・他動詞 of a verb (data/verb-types.json): "自", "他" or "自他" when it means the same

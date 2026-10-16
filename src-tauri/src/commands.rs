@@ -63,11 +63,47 @@ impl Credit {
     }
 }
 
+/// What a reward is for, kept with it in `earn_log` for the 記録's table of what was earned.
+#[derive(Clone, Copy)]
+pub(crate) enum Earning<'a> {
+    /// a study question answered, in its tab and mode
+    Answer { tier: &'a str, mode: &'a str },
+    /// お気に入りの復習 of a study question, counted with the question
+    Favorite { tier: &'a str, mode: &'a str },
+    /// お気に入りの復習 of an exam question, counted with the exam's review
+    FavoriteExam { level: &'a str },
+    /// 単語帳の復習, choice or typing
+    Recipe { mode: &'a str },
+    ExamPass { level: &'a str },
+    ExamFail { level: &'a str },
+    ExamReview { level: &'a str },
+    Cheat,
+}
+
+impl<'a> Earning<'a> {
+    /// `(source, tier, mode, level)` of its row
+    fn columns(self) -> (&'static str, Option<&'a str>, Option<&'a str>, Option<&'a str>) {
+        match self {
+            Earning::Answer { tier, mode } => ("answer", Some(tier), Some(mode), None),
+            Earning::Favorite { tier, mode } => ("favorite", Some(tier), Some(mode), None),
+            Earning::FavoriteExam { level } => ("favorite", None, None, Some(level)),
+            Earning::Recipe { mode } => ("recipe", None, Some(mode), None),
+            Earning::ExamPass { level } => ("exam_pass", None, None, Some(level)),
+            Earning::ExamFail { level } => ("exam_fail", None, None, Some(level)),
+            Earning::ExamReview { level } => ("exam_review", None, None, Some(level)),
+            Earning::Cheat => ("cheat", None, None, None),
+        }
+    }
+}
+
 /// Pays a reward of `eighths` (1/8 kcal, before the play mode) into `day`: scaled by the play mode
 /// (がんばり ×0.5、通常 ×1、お気軽 ×1.5), whole kcal go to the day's earnings and a fraction waits in
 /// `daily_stats.kcal_eighths` for the next reward that day (dropped when the day ends). Every kcal
-/// earned goes through here: answers, recipe reviews, exams and the cheat-day bonus.
-pub(crate) fn credit(conn: &Connection, day: &str, eighths: i64) -> rusqlite::Result<Credit> {
+/// earned goes through here: answers, recipe reviews, exams and the cheat-day bonus. Each reward
+/// is kept in `earn_log` with what it is `for` and the whole kcal it added, so the 記録's table adds
+/// up to the total to the calorie: a fraction goes with the reward that makes it whole, and one
+/// dropped at the day's end is in neither. A reward of nothing (a wrong answer) is not kept.
+pub(crate) fn credit(conn: &Connection, day: &str, eighths: i64, what: Earning) -> rusqlite::Result<Credit> {
     conn.execute("INSERT OR IGNORE INTO daily_stats (user_id, date) VALUES (?1, ?2)", params![USER_ID, day])?;
     let pending: i64 = conn.query_row(
         "SELECT kcal_eighths FROM daily_stats WHERE user_id = ?1 AND date = ?2",
@@ -80,6 +116,14 @@ pub(crate) fn credit(conn: &Connection, day: &str, eighths: i64) -> rusqlite::Re
         "UPDATE daily_stats SET kcal_earned = kcal_earned + ?3, kcal_eighths = ?4 WHERE user_id = ?1 AND date = ?2",
         params![USER_ID, day, whole, rest],
     )?;
+    if scaled > 0 {
+        let (source, tier, mode, level) = what.columns();
+        conn.execute(
+            "INSERT INTO earn_log (user_id, date, source, tier, mode, level, eighths, kcal)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![USER_ID, day, source, tier, mode, level, scaled, whole],
+        )?;
+    }
     Ok(Credit { eighths: scaled, whole, pending: rest > 0 })
 }
 
@@ -1123,11 +1167,11 @@ pub fn record_answer(conn: &mut Connection, payload: &AnswerPayload) -> Result<A
     )
     .map_err(err)?;
 
-    // The log keeps what the question pays (kcal) and what it paid after the play mode
-    // (points_eighths), which is what the day got.
-    let paid = credit(&tx, &today, kcal * srs::EIGHTHS).map_err(err)?;
+    // The log keeps what the question pays (kcal, at 通常) and its tab now, for the 記録's table
+    // (earn_log keeps what the day got).
+    let paid = credit(&tx, &today, kcal * srs::EIGHTHS, Earning::Answer { tier: &tier, mode: &payload.mode }).map_err(err)?;
     tx.execute(
-        "INSERT INTO answer_log (user_id, question_id, mode, correct, score, kcal, is_review, answered_at, points_eighths)
+        "INSERT INTO answer_log (user_id, question_id, mode, correct, score, kcal, is_review, answered_at, tier)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
         params![
             USER_ID,
@@ -1138,7 +1182,7 @@ pub fn record_answer(conn: &mut Connection, payload: &AnswerPayload) -> Result<A
             kcal,
             is_due_review as i64,
             now,
-            paid.eighths
+            tier
         ],
     )
     .map_err(err)?;
@@ -1216,7 +1260,7 @@ pub fn redeem_ticket(conn: &Connection) -> Result<RedeemResult, String> {
         params![now_ts(), ticket_id],
     )
     .map_err(err)?;
-    let paid = credit(conn, &today, srs::CHEAT_DAY_BONUS * srs::EIGHTHS).map_err(err)?;
+    let paid = credit(conn, &today, srs::CHEAT_DAY_BONUS * srs::EIGHTHS, Earning::Cheat).map_err(err)?;
     let stats = load_daily(conn, &today).map_err(err)?;
     Ok(RedeemResult {
         kcal_added: paid.whole,
@@ -1634,31 +1678,9 @@ pub fn load_stats(conn: &Connection) -> CmdResult<Stats> {
         )
         .map_err(err)?;
 
-    // The study answers by tab and mode: what they earned after the play mode (as the totals and
-    // the chart count it; an answer from before that was kept counts as 通常), how many, how many
-    // right. Recipe reviews, exams and the cheat-day bonus are not questions of a tab, so they are
-    // not here.
-    let breakdown = {
-        let mut stmt = conn
-            .prepare(
-                "SELECT q.tier, a.mode, COALESCE(SUM(COALESCE(a.points_eighths, a.kcal * 8)), 0), COUNT(*), COALESCE(SUM(a.correct), 0)
-                 FROM answer_log a JOIN questions q ON q.id = a.question_id
-                 WHERE a.user_id = ?1 GROUP BY q.tier, a.mode ORDER BY q.tier, a.mode",
-            )
-            .map_err(err)?;
-        let rows = stmt
-            .query_map(params![USER_ID], |r| {
-                Ok(StatCell {
-                    tier: r.get(0)?,
-                    mode: r.get(1)?,
-                    kcal: r.get::<_, i64>(2)? as f64 / srs::EIGHTHS as f64,
-                    answered: r.get(3)?,
-                    correct: r.get(4)?,
-                })
-            })
-            .map_err(err)?;
-        rows.collect::<Result<Vec<_>, _>>().map_err(err)?
-    };
+    // The 記録's tables, which add up to the totals above (earn_log keeps the whole kcal each
+    // reward added to its day).
+    let breakdown = load_breakdown(conn).map_err(err)?;
 
     Ok(Stats {
         total_study_days: user.total_study_days,
@@ -1682,6 +1704,77 @@ pub fn load_stats(conn: &Connection) -> CmdResult<Stats> {
     })
 }
 
+/// The tables behind 累計獲得カロリー / 累計回答数 / 正答率. The kcal are earn_log's, the whole kcal
+/// each reward added to its day (お気に入りの復習 with the question it reviews: a study question in
+/// its tab and mode, an exam question in its level's review); the answers are those of answer_log
+/// and counted_answers (お気に入りの復習 and the exam questions handed in), which are what
+/// 累計回答数 counts.
+fn load_breakdown(conn: &Connection) -> rusqlite::Result<Breakdown> {
+    let study = {
+        let mut stmt = conn.prepare(
+            "SELECT tier, mode, SUM(kcal), SUM(answered), SUM(correct) FROM (
+               SELECT tier, mode, kcal, 0 AS answered, 0 AS correct FROM earn_log
+               WHERE user_id = ?1 AND source IN ('answer', 'favorite') AND tier IS NOT NULL
+               UNION ALL
+               SELECT tier, mode, 0, 1, correct FROM answer_log WHERE user_id = ?1 AND tier IS NOT NULL
+               UNION ALL
+               SELECT tier, mode, 0, 1, correct FROM counted_answers WHERE user_id = ?1 AND tier IS NOT NULL)
+             GROUP BY tier, mode ORDER BY tier, mode",
+        )?;
+        let rows = stmt.query_map(params![USER_ID], |r| {
+            Ok(StatCell { tier: r.get(0)?, mode: r.get(1)?, kcal: r.get(2)?, answered: r.get(3)?, correct: r.get(4)? })
+        })?;
+        rows.collect::<Result<Vec<_>, _>>()?
+    };
+    let recipe = {
+        let mut stmt = conn.prepare(
+            "SELECT mode, SUM(kcal) FROM earn_log WHERE user_id = ?1 AND source = 'recipe' GROUP BY mode ORDER BY mode",
+        )?;
+        let rows = stmt.query_map(params![USER_ID], |r| Ok(ModeKcal { mode: r.get(0)?, kcal: r.get(1)? }))?;
+        rows.collect::<Result<Vec<_>, _>>()?
+    };
+    let exams = {
+        let mut stmt = conn.prepare(
+            "SELECT level, part, COUNT(*), SUM(correct) FROM counted_answers
+             WHERE user_id = ?1 AND level IS NOT NULL GROUP BY level, part ORDER BY level, part",
+        )?;
+        let rows = stmt.query_map(params![USER_ID], |r| {
+            Ok(ExamCell { level: r.get(0)?, part: r.get(1)?, answered: r.get(2)?, correct: r.get(3)? })
+        })?;
+        rows.collect::<Result<Vec<_>, _>>()?
+    };
+    // What each paid is kept with it, so a kind reads 150 kcal × 4回 (two lines when the play
+    // mode, or what it pays, was not the same every time).
+    let exam_kcal = {
+        let mut stmt = conn.prepare(
+            "SELECT level, CASE source WHEN 'exam_pass' THEN 'pass' WHEN 'exam_fail' THEN 'fail' ELSE 'review' END AS kind,
+                    eighths, COUNT(*), SUM(kcal)
+             FROM earn_log WHERE user_id = ?1 AND level IS NOT NULL
+             GROUP BY level, kind, eighths ORDER BY level, kind, eighths DESC",
+        )?;
+        let rows = stmt.query_map(params![USER_ID], |r| {
+            Ok(ExamKcal {
+                level: r.get(0)?,
+                kind: r.get(1)?,
+                each: r.get::<_, i64>(2)? as f64 / srs::EIGHTHS as f64,
+                times: r.get(3)?,
+                kcal: r.get(4)?,
+            })
+        })?;
+        rows.collect::<Result<Vec<_>, _>>()?
+    };
+    let cheat = conn.query_row(
+        "SELECT COUNT(*), COALESCE(SUM(kcal), 0) FROM earn_log WHERE user_id = ?1 AND source = 'cheat'",
+        params![USER_ID],
+        |r| Ok(Times { times: r.get(0)?, kcal: r.get(1)? }),
+    )?;
+    let levels = crate::exam::LEVELS
+        .iter()
+        .map(|l| LevelName { level: l.to_string(), label: crate::exam::label(l).to_string() })
+        .collect();
+    Ok(Breakdown { study, recipe, levels, exams, exam_kcal, cheat })
+}
+
 #[tauri::command]
 pub fn reset_progress(state: State<'_, AppState>) -> CmdResult<()> {
     let conn = state.db.lock().map_err(err)?;
@@ -1689,6 +1782,7 @@ pub fn reset_progress(state: State<'_, AppState>) -> CmdResult<()> {
     let tx = conn.unchecked_transaction().map_err(err)?;
     tx.execute_batch(
         "DELETE FROM learning_history; DELETE FROM answer_log; DELETE FROM daily_stats;
+         DELETE FROM earn_log; DELETE FROM counted_answers;
          DELETE FROM consumption_log; DELETE FROM task_log; DELETE FROM cheat_tickets; DELETE FROM snack_tickets;
          UPDATE users SET total_study_days = 0, current_streak = 0, longest_streak = 0, last_study_date = NULL,
            savings_kcal = 0;
@@ -1802,8 +1896,101 @@ mod tests {
         assert_eq!(g.question.point.as_deref(), Some("time-clause-tense"));
     }
 
-    /// 記録 by tab and mode: what the study answers earned at 通常 (whatever the play mode), how
-    /// many there were and how many were right, one cell per tab and mode.
+    /// Whatever is earned, under any play mode, the 記録's tables add up to 累計獲得カロリー to the
+    /// calorie, and their answers to 累計回答数 and 正答率: study, 単語帳, お気に入り (with the
+    /// question it reviews), an exam handed in and its review, a cheat day, ダイエット機能's 課題.
+    /// An exam question gone over again in its review is not a new answer.
+    #[test]
+    fn the_records_tables_add_up_to_the_totals() {
+        let mut c = conn();
+        set_play_mode_in(&c, "hard").unwrap();
+        let word = question_id(&c, "w001");
+        let idiom = question_id(&c, "i002");
+        let grammar = question_id(&c, "g001");
+        answer(&mut c, word, "choice", true, None);
+        answer(&mut c, idiom, "typing", true, None);
+        answer(&mut c, word, "listening", false, None);
+
+        let added = crate::recipe::add(
+            &c,
+            &RecipeWordInput {
+                word: "apple".into(),
+                meaning: "りんご".into(),
+                form: "apple".into(),
+                example: String::new(),
+                example_ja: String::new(),
+                kind: String::new(),
+            },
+        )
+        .unwrap();
+        let recipe_id = added.entry.id;
+        crate::recipe::review(&mut c, recipe_id, true, "choice", "all").unwrap();
+        crate::recipe::review(&mut c, recipe_id, true, "typing", "all").unwrap();
+
+        let exam = crate::exam::build_exam("basic").unwrap();
+        let hand_in: Vec<ExamAnswer> = exam
+            .iter()
+            .enumerate()
+            .map(|(i, q)| ExamAnswer { id: q.id.clone(), chosen: if i < 20 { q.answer.clone() } else { String::new() } })
+            .collect();
+        assert!(!crate::exam::finish(&mut c, "basic", &hand_in).unwrap().passed);
+        let missed = &exam[25];
+        crate::exam::answer_review(&mut c, &missed.id, &missed.answer).unwrap();
+
+        crate::favorite::set_question(&c, grammar, "choice", true).unwrap();
+        crate::favorite::set_exam(&c, &exam[0].id, true).unwrap();
+        for f in crate::favorite::list(&c).unwrap() {
+            crate::favorite::review(&c, f.id, true).unwrap();
+        }
+        let wrong_favorite = crate::favorite::list(&c).unwrap()[0].id;
+        crate::favorite::review(&c, wrong_favorite, false).unwrap();
+
+        c.execute(
+            "INSERT INTO cheat_tickets (user_id, issued_at, issued_for_streak) VALUES (?1, ?2, 7)",
+            params![USER_ID, now_ts()],
+        )
+        .unwrap();
+        redeem_ticket(&c).unwrap();
+        crate::diet::set_diet_mode_in(&c, true).unwrap();
+        let task = crate::diet::add_task_in(&c, "腹筋", 30, "").unwrap();
+        crate::diet::log_done(&c, task.id).unwrap();
+
+        let s = load_stats(&c).unwrap();
+        let b = &s.breakdown;
+        let diet = s.diet_kcal.as_ref().unwrap();
+        let kcal = b.study.iter().map(|x| x.kcal).sum::<i64>()
+            + b.recipe.iter().map(|x| x.kcal).sum::<i64>()
+            + b.exam_kcal.iter().map(|x| x.kcal).sum::<i64>()
+            + b.cheat.kcal
+            + diet.tasks
+            + diet.weight;
+        assert_eq!(kcal, s.total_kcal);
+        let answered = b.study.iter().map(|x| x.answered).sum::<i64>() + b.exams.iter().map(|x| x.answered).sum::<i64>();
+        let correct = b.study.iter().map(|x| x.correct).sum::<i64>() + b.exams.iter().map(|x| x.correct).sum::<i64>();
+        assert_eq!((answered, correct), (s.total_answered, s.total_correct));
+        // 3 study answers, 30 exam questions and 3 favorites (the exam's twice, once wrong): not the
+        // exam's review
+        assert_eq!((s.total_answered, s.total_correct), (36, 2 + 20 + 2));
+
+        // The exam's: the questions by part, what failing (30 at がんばり: 15) and the reviews paid
+        // (3 for the exam's own: 1.5; 2 for a favorite: 1).
+        assert_eq!(b.exams.iter().filter(|x| x.level == "basic").map(|x| x.answered).sum::<i64>(), 30 + 2);
+        let listening = b.exams.iter().find(|x| x.part == "listening").unwrap();
+        assert_eq!(listening.answered, 6 + 2, "the favorite is the first question, a 応答問題");
+        let kind = |k: &str| b.exam_kcal.iter().filter(|x| x.kind == k).map(|x| (x.each, x.times)).collect::<Vec<_>>();
+        assert_eq!(kind("fail"), vec![(15.0, 1)]);
+        assert_eq!(kind("pass"), vec![]);
+        assert_eq!(kind("review"), vec![(1.5, 1), (1.0, 1)]);
+        assert_eq!(b.cheat.times, 1);
+        assert_eq!(b.cheat.kcal, srs::CHEAT_DAY_BONUS / 2);
+        assert_eq!(b.recipe.iter().map(|x| x.mode.as_str()).collect::<Vec<_>>(), vec!["choice", "typing"]);
+        let grammar_choice = b.study.iter().find(|x| x.tier == "grammar" && x.mode == "choice").unwrap();
+        assert_eq!(grammar_choice.answered, 1, "お気に入りの復習 is counted with its question");
+    }
+
+    /// 記録 by tab and mode: what the study answers added to their days (after the play mode, a
+    /// fraction going with the answer that makes it whole), how many there were and how many were
+    /// right, one cell per tab and mode.
     #[test]
     fn stats_break_the_answers_down_by_tab_and_mode() {
         let mut c = conn();
@@ -1812,20 +1999,22 @@ mod tests {
         answer(&mut c, word, "choice", true, None); // 2 kcal
         answer(&mut c, word, "choice", false, None);
         set_play_mode_in(&c, "hard").unwrap();
-        answer(&mut c, idiom, "typing", true, None); // 5 kcal at 通常, 2.5 paid
+        answer(&mut c, idiom, "typing", true, None); // 5 kcal at 通常: 2.5, so 2 now and 0.5 waits
+        answer(&mut c, idiom, "typing", true, None); // 2.5 and the 0.5: 3
         let s = load_stats(&c).unwrap();
-        let cell = |tier: &str, mode: &str| s.breakdown.iter().find(|b| b.tier == tier && b.mode == mode).cloned();
+        let cell = |tier: &str, mode: &str| s.breakdown.study.iter().find(|b| b.tier == tier && b.mode == mode).cloned();
         let w = cell("word", "choice").expect("英単語 × 選択");
-        assert_eq!((w.kcal, w.answered, w.correct), (2.0, 2, 1));
+        assert_eq!((w.kcal, w.answered, w.correct), (2, 2, 1));
         let i = cell("idiom", "typing").expect("慣用句 × 記入");
-        assert_eq!((i.kcal, i.answered, i.correct), (2.5, 1, 1), "what がんばり paid, as the totals count it");
-        // An answer from before what it paid was kept counts as 通常.
-        c.execute("UPDATE answer_log SET points_eighths = NULL WHERE question_id = ?1", params![idiom]).unwrap();
-        let old = load_stats(&c).unwrap();
-        let i = old.breakdown.iter().find(|b| b.tier == "idiom" && b.mode == "typing").unwrap();
-        assert_eq!(i.kcal, 5.0);
+        assert_eq!((i.kcal, i.answered, i.correct), (5, 2, 2), "what がんばり added to the day");
         assert!(cell("word", "typing").is_none(), "a pair never answered has no cell");
-        assert_eq!(s.breakdown.iter().map(|b| b.answered).sum::<i64>(), s.total_answered);
+        assert_eq!(s.breakdown.study.iter().map(|b| b.kcal).sum::<i64>(), s.total_kcal);
+        assert_eq!(s.breakdown.study.iter().map(|b| b.answered).sum::<i64>(), s.total_answered);
+
+        // A question that leaves the bank (a retired word) stays in its tab.
+        c.execute("DELETE FROM questions WHERE id = ?1", params![idiom]).unwrap();
+        let after = load_stats(&c).unwrap();
+        assert_eq!(after.breakdown.study.iter().find(|b| b.tier == "idiom").map(|b| (b.kcal, b.answered)), Some((5, 2)));
 
         // The fortnight's chart is what the days earned (after the play mode) and ate, and what was
         // eaten each day, the most kcal first.
@@ -1836,8 +2025,8 @@ mod tests {
         let s = load_stats(&c).unwrap();
         let day = s.last_14_days.last().unwrap();
         assert_eq!(day.date, today());
-        assert_eq!((day.kcal_earned, day.kcal_consumed), (4, 350), "2 + 2.5 under がんばり, the half kept for later");
-        assert_eq!((s.total_kcal, s.total_consumed, s.total_study_days), (4, 350, 1), "what the averages divide");
+        assert_eq!((day.kcal_earned, day.kcal_consumed), (7, 350), "2 + 2.5 + 2.5 under がんばり");
+        assert_eq!((s.total_kcal, s.total_consumed, s.total_study_days), (7, 350, 1), "what the averages divide");
         let eaten: Vec<(&str, i64, i64)> = day.eaten.iter().map(|e| (e.name.as_str(), e.count, e.kcal)).collect();
         assert_eq!(eaten, vec![("プリン", 2, 300), ("クッキー 1枚", 1, 50)]);
         assert!(s.last_14_days[0].eaten.is_empty());

@@ -522,7 +522,8 @@ mod tests {
         set_height_in(&conn, 160.0).unwrap();
         record_weight_in(&conn, 50.0).unwrap();
         // 7 kcal from study
-        crate::commands::credit(&conn, &today(), 7 * crate::srs::EIGHTHS).unwrap();
+        let study = crate::commands::Earning::Answer { tier: "word", mode: "choice" };
+        crate::commands::credit(&conn, &today(), 7 * crate::srs::EIGHTHS, study).unwrap();
 
         set_diet_mode_in(&conn, true).unwrap();
         let on = crate::commands::load_stats(&conn).unwrap();

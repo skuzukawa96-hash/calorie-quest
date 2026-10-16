@@ -226,7 +226,37 @@ CREATE TABLE IF NOT EXISTS answer_log (
   kcal INTEGER NOT NULL,
   is_review INTEGER NOT NULL DEFAULT 0,
   answered_at TEXT NOT NULL,
-  points_eighths INTEGER
+  tier TEXT
+);
+-- 記録: every reward paid through commands::credit, one row each, so the table of what was earned
+-- adds up to the total: what it was for (`source`: answer / favorite / recipe / exam_pass /
+-- exam_fail / exam_review / cheat), where it belongs (`tier` and `mode` of a study question,
+-- `mode` of a recipe review, `level` of an exam), what it was worth after the play mode (eighths
+-- of a kcal) and the whole kcal it added to its day (a fraction waits and goes with a later one).
+CREATE TABLE IF NOT EXISTS earn_log (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL,
+  date TEXT NOT NULL,
+  source TEXT NOT NULL,
+  tier TEXT,
+  mode TEXT,
+  level TEXT,
+  eighths INTEGER NOT NULL,
+  kcal INTEGER NOT NULL
+);
+-- 記録: the answers counted in 累計回答数 besides the study answers of answer_log: お気に入りの
+-- 復習 (`tier` and `mode` of a study question, or `level` and `part` of an exam question) and the
+-- exam questions handed in.
+CREATE TABLE IF NOT EXISTS counted_answers (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL,
+  date TEXT NOT NULL,
+  source TEXT NOT NULL,
+  tier TEXT,
+  mode TEXT,
+  level TEXT,
+  part TEXT,
+  correct INTEGER NOT NULL
 );
 CREATE TABLE IF NOT EXISTS daily_stats (
   user_id INTEGER NOT NULL,
@@ -509,9 +539,10 @@ fn setup(conn: Connection) -> rusqlite::Result<Connection> {
         )?;
     }
     ensure_column(&conn, "daily_stats", "kcal_eighths", "INTEGER NOT NULL DEFAULT 0")?;
-    // What an answer paid after the play mode, in eighths of a kcal (the 記録's table by tab and
-    // mode). Answers from before it have none and count as 通常.
-    ensure_column(&conn, "answer_log", "points_eighths", "INTEGER")?;
+    // The tab of the question when it was answered, so the 記録's table keeps an answer whose
+    // question left the bank (a retired word). Answers from before it take their question's tab
+    // once (`fill_earn_log`).
+    ensure_column(&conn, "answer_log", "tier", "TEXT")?;
     // 食べすぎて終わった日から持ち越したマイナス（0 以下）。
     ensure_column(&conn, "daily_stats", "carried_kcal", "INTEGER NOT NULL DEFAULT 0")?;
     // がんばり（×0.5）/ 通常 / お気軽（×1.5）。
@@ -574,10 +605,47 @@ fn setup(conn: Connection) -> rusqlite::Result<Connection> {
     )?;
     conn.execute("UPDATE users SET goal_snack_id = NULL WHERE goal_snack_id IS NOT NULL", [])?;
     seed_questions(&conn)?;
+    fill_earn_log(&conn)?;
     sync_grammar_points(&conn)?;
     seed_snacks(&conn)?;
     crate::diet::seed_tasks(&conn)?;
     Ok(conn)
+}
+
+/// `earn_log` began after the record had: the rewards that still have rows of their own go into
+/// it once (the study answers at what answer_log kept, 通常; the exams at what they paid; the cheat
+/// days), and the answers take their question's tab. What was paid with no row of its own (単語帳
+/// and 試験の復習) cannot be put back, so for the days before it the table falls short of the total.
+fn fill_earn_log(conn: &Connection) -> rusqlite::Result<()> {
+    if meta_get(conn, "earn_log_filled")?.is_some() {
+        return Ok(());
+    }
+    let tx = conn.unchecked_transaction()?;
+    tx.execute(
+        "UPDATE answer_log SET tier = (SELECT q.tier FROM questions q WHERE q.id = answer_log.question_id)
+         WHERE tier IS NULL",
+        [],
+    )?;
+    tx.execute(
+        "INSERT INTO earn_log (user_id, date, source, tier, mode, eighths, kcal)
+         SELECT user_id, substr(answered_at, 1, 10), 'answer', tier, mode, kcal * ?1, kcal
+         FROM answer_log WHERE tier IS NOT NULL AND kcal > 0 ORDER BY id",
+        params![crate::srs::EIGHTHS],
+    )?;
+    tx.execute(
+        "INSERT INTO earn_log (user_id, date, source, level, eighths, kcal)
+         SELECT user_id, date, CASE WHEN passed = 1 THEN 'exam_pass' ELSE 'exam_fail' END, level, kcal * ?1, kcal
+         FROM exam_attempts ORDER BY id",
+        params![crate::srs::EIGHTHS],
+    )?;
+    tx.execute(
+        "INSERT INTO earn_log (user_id, date, source, eighths, kcal)
+         SELECT user_id, substr(used_at, 1, 10), 'cheat', ?1 * ?2, ?1
+         FROM cheat_tickets WHERE used_at IS NOT NULL ORDER BY used_at",
+        params![crate::srs::CHEAT_DAY_BONUS, crate::srs::EIGHTHS],
+    )?;
+    meta_set(&tx, "earn_log_filled", "1")?;
+    tx.commit()
 }
 
 /// Adds a column to an existing table (databases created by older builds).
@@ -4029,6 +4097,60 @@ mod tests {
         }
         lost.sort();
         assert!(lost.is_empty(), "their meaning belongs in the glossary: {}", lost.join(", "));
+    }
+
+    /// At the upgrade, the rewards of the record that have rows of their own go into earn_log once
+    /// (the study answers at 通常 in their question's tab, the exams by what they paid, the cheat
+    /// days used); an answer whose question is gone has no tab to go in.
+    #[test]
+    fn the_earn_log_takes_what_the_record_kept_before_it_once() {
+        let c = init_in_memory().unwrap();
+        let (word, idiom): (i64, i64) = c
+            .query_row(
+                "SELECT (SELECT id FROM questions WHERE key = 'w001'), (SELECT id FROM questions WHERE key = 'i002')",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        for (id, mode, kcal) in [(word, "choice", 2), (word, "choice", 0), (idiom, "typing", 5), (9_999_999, "choice", 2)] {
+            c.execute(
+                "INSERT INTO answer_log (user_id, question_id, mode, correct, kcal, answered_at)
+                 VALUES (1, ?1, ?2, ?3 > 0, ?3, '2026-10-01T09:00:00')",
+                params![id, mode, kcal],
+            )
+            .unwrap();
+        }
+        c.execute_batch(
+            "INSERT INTO exam_attempts (user_id, level, date, total, correct, passed, kcal, finished_at)
+               VALUES (1, 'toeic600', '2026-10-02', 30, 24, 1, 150, '2026-10-02T10:00:00'),
+                      (1, 'toeic800', '2026-10-03', 30, 15, 0, 30, '2026-10-03T10:00:00');
+             INSERT INTO cheat_tickets (user_id, issued_at, issued_for_streak, used_at)
+               VALUES (1, '2026-09-30T08:00:00', 7, '2026-10-04T08:00:00'), (1, '2026-10-05T08:00:00', 14, NULL);
+             DELETE FROM meta WHERE key = 'earn_log_filled';",
+        )
+        .unwrap();
+        let c = setup(c).unwrap();
+        let c = setup(c).unwrap(); // and only once
+        let rows: Vec<(String, String, Option<String>, Option<String>, Option<String>, i64)> = c
+            .prepare("SELECT date, source, tier, mode, level, kcal FROM earn_log ORDER BY id")
+            .unwrap()
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?)))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        let s = |x: &str| Some(x.to_string());
+        assert_eq!(
+            rows,
+            vec![
+                ("2026-10-01".into(), "answer".into(), s("word"), s("choice"), None, 2),
+                ("2026-10-01".into(), "answer".into(), s("idiom"), s("typing"), None, 5),
+                ("2026-10-02".into(), "exam_pass".into(), None, None, s("toeic600"), 150),
+                ("2026-10-03".into(), "exam_fail".into(), None, None, s("toeic800"), 30),
+                ("2026-10-04".into(), "cheat".into(), None, None, None, crate::srs::CHEAT_DAY_BONUS),
+            ]
+        );
+        let tabs: i64 = c.query_row("SELECT COUNT(*) FROM answer_log WHERE tier IS NOT NULL", [], |r| r.get(0)).unwrap();
+        assert_eq!(tabs, 3, "the answers keep their question's tab, the wrong one too");
     }
 
     /// Reviews done once used to come back days later. At the upgrade they wait no more, while

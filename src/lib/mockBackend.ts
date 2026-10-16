@@ -31,6 +31,7 @@ import { exampleSentence, sentences } from "./sentences";
 import type {
   AnswerPayload,
   AnswerResult,
+  Breakdown,
   CategoryInfo,
   ConsumptionEntry,
   DailyStats,
@@ -39,6 +40,9 @@ import type {
   DayPoint,
   EatenSnack,
   ExamAnswer,
+  ExamCell,
+  ExamKcal,
+  ExamKcalKind,
   ExampleSentence,
   ExamLevel,
   ExamLevelInfo,
@@ -67,6 +71,7 @@ import type {
   SessionMode,
   SessionQuestion,
   Snack,
+  StatCell,
   Stats,
   Task,
   TaskEntry,
@@ -167,8 +172,15 @@ interface MockState {
   goals: number[];
   /** 1 kcal に満たない獲得の端数（1/8 kcal 単位）、日ごと（mirrors daily_stats.kcal_eighths） */
   kcalEighths: Record<string, number>;
-  /** the study answers by "tier|mode": kcal at 通常, answered, right (what answer_log sums to) */
-  answerTotals: Record<string, { kcal: number; answered: number; correct: number }>;
+  /** the study answers by "tier|mode": how many, how many right (what answer_log counts; `kcal` only in state saved before `earned`) */
+  answerTotals: Record<string, { kcal?: number; answered: number; correct: number }>;
+  /**
+   * Mirrors earn_log, summed by the 記録's cells ("study|tier|mode", "recipe|mode",
+   * "exam|level|kind|eighths", "cheat"): the whole kcal the rewards added, and how many there were.
+   */
+  earned: Record<string, { kcal: number; times: number }>;
+  /** Mirrors counted_answers, summed: お気に入りの復習 of a study question ("tier|mode"), and the exam questions handed in and favorites of them ("exam|level|part"). */
+  counted: Record<string, { answered: number; correct: number }>;
   /** the day each recipe word was last right (mirrors recipe_words.paid_on) */
   recipePaid: Record<number, string>;
   /** 試験 handed in (mirrors exam_attempts) */
@@ -433,6 +445,8 @@ function freshState(): MockState {
     goals: [],
     kcalEighths: {},
     answerTotals: {},
+    earned: {},
+    counted: {},
     recipePaid: {},
     examAttempts: [],
     examMistakes: {},
@@ -472,6 +486,8 @@ function load(): MockState {
           | "goals"
           | "kcalEighths"
           | "answerTotals"
+          | "earned"
+          | "counted"
           | "recipePaid"
           | "examAttempts"
           | "examMistakes"
@@ -514,6 +530,9 @@ function load(): MockState {
         kcalEighths:
           stored.kcalEighths ?? Object.fromEntries(Object.entries(quarters).map(([d, n]) => [d, (n % 4) * 2])),
         answerTotals: stored.answerTotals ?? {},
+        // Mirrors db::fill_earn_log: what the record kept before goes in once.
+        earned: stored.earned ?? filledEarned(stored.answerTotals ?? {}, stored.examAttempts ?? [], stored.tickets ?? []),
+        counted: stored.counted ?? {},
         recipePaid: stored.recipePaid ?? {},
         examAttempts: stored.examAttempts ?? [],
         examMistakes: stored.examMistakes ?? {},
@@ -746,16 +765,69 @@ function applyPlayMode(eighths: number): number {
   return m === "hard" ? e / 2 : m === "easy" ? (e * 3) / 2 : e;
 }
 
+/** Mirrors commands::Earning: what a reward is for, kept with it for the 記録's table. */
+type Earning =
+  | { source: "answer" | "favorite"; tier: Tier; mode: Mode }
+  | { source: "favoriteExam" | "examPass" | "examFail" | "examReview"; level: ExamLevel }
+  | { source: "recipe"; mode: Mode }
+  | { source: "cheat" };
+
+/** The cell of `earned` a reward is kept in (mirrors how load_breakdown groups earn_log). */
+function earnKey(e: Earning, eighths: number): string {
+  switch (e.source) {
+    case "answer":
+    case "favorite":
+      return `study|${e.tier}|${e.mode}`;
+    case "recipe":
+      return `recipe|${e.mode}`;
+    case "cheat":
+      return "cheat";
+    default: {
+      const kind = e.source === "examPass" ? "pass" : e.source === "examFail" ? "fail" : "review";
+      return `exam|${e.level}|${kind}|${eighths}`;
+    }
+  }
+}
+
+function addEarned(key: string, kcal: number, times = 1) {
+  const cell = state.earned[key] ?? { kcal: 0, times: 0 };
+  state.earned[key] = { kcal: cell.kcal + kcal, times: cell.times + times };
+}
+
+/** Mirrors db::fill_earn_log: the study answers at what they kept, the exams at what they paid, the cheat days. */
+function filledEarned(
+  answerTotals: Record<string, { kcal?: number }>,
+  attempts: ExamAttempt[],
+  tickets: Ticket[],
+): MockState["earned"] {
+  const out: MockState["earned"] = {};
+  const add = (key: string, kcal: number) => {
+    const cell = out[key] ?? { kcal: 0, times: 0 };
+    out[key] = { kcal: cell.kcal + kcal, times: cell.times + 1 };
+  };
+  for (const [key, v] of Object.entries(answerTotals)) if (v.kcal) out[`study|${key}`] = { kcal: Math.round(v.kcal), times: 0 };
+  for (const a of attempts) add(`exam|${a.level}|${a.passed ? "pass" : "fail"}|${a.kcal * 8}`, a.kcal);
+  for (const t of tickets) if (t.usedAt) add("cheat", RATES.cheatDayBonus);
+  return out;
+}
+
+function countAnswer(key: string, correct: boolean) {
+  const cell = state.counted[key] ?? { answered: 0, correct: 0 };
+  state.counted[key] = { answered: cell.answered + 1, correct: cell.correct + (correct ? 1 : 0) };
+}
+
 /**
  * Mirrors commands::credit: pays `eighths` (1/8 kcal, before the play mode) into `date`. Whole kcal
- * go to the day's earnings; a fraction waits for the next reward that day.
+ * go to the day's earnings; a fraction waits for the next reward that day. The reward is kept with
+ * what it is `for` and the whole kcal it added, so the 記録's table adds up to the total.
  */
-function credit(date: string, eighths: number): { points: number; whole: number; pending: boolean } {
+function credit(date: string, eighths: number, what: Earning): { points: number; whole: number; pending: boolean } {
   const scaled = applyPlayMode(eighths);
   const total = (state.kcalEighths[date] ?? 0) + scaled;
   const whole = Math.floor(total / 8);
   state.kcalEighths[date] = total % 8;
   daily(date).kcalEarned += whole;
+  if (scaled > 0) addEarned(earnKey(what, scaled), whole);
   return { points: scaled / 8, whole, pending: total % 8 > 0 };
 }
 /** Mirrors release_stale_reviews: reviews undone for more than a week after they were due go back. */
@@ -2128,7 +2200,7 @@ function finishExam(level: ExamLevel, answers: ExamAnswer[]): ExamResult {
     const q = examQuestion(a.id);
     if (!q) throw new Error(`unknown exam question ${a.id}`);
     if (q.level !== level) throw new Error(`exam question ${a.id} is not of ${level}`);
-    return { id: a.id, level: q.level, ok: q.answer === a.chosen };
+    return { id: a.id, level: q.level, part: q.part, ok: q.answer === a.chosen };
   });
   const total = graded.length;
   const correct = graded.filter((g) => g.ok).length;
@@ -2151,10 +2223,11 @@ function finishExam(level: ExamLevel, answers: ExamAnswer[]): ExamResult {
       reviewAdded += 1;
     }
   }
-  const paid = credit(t, kcal * 8);
+  const paid = credit(t, kcal * 8, { source: passed ? "examPass" : "examFail", level });
   const d = daily(t);
   d.answered += total;
   d.correct += correct;
+  for (const g of graded) countAnswer(`exam|${g.level}|${g.part}`, g.ok);
   const { newTicket } = markStudied(t);
   save();
   return {
@@ -2168,6 +2241,47 @@ function finishExam(level: ExamLevel, answers: ExamAnswer[]): ExamResult {
     streak: state.user.currentStreak,
     newTicket,
     reviewAdded,
+  };
+}
+
+/** Mirrors commands::load_breakdown: the 記録's tables, from `earned`, `answerTotals` and `counted`. */
+function breakdown(): Breakdown {
+  const study = new Map<string, StatCell>();
+  const cellOf = (key: string) => {
+    const [tier, mode] = key.split("|") as [Tier, Mode];
+    const cell = study.get(key) ?? { tier, mode, kcal: 0, answered: 0, correct: 0 };
+    study.set(key, cell);
+    return cell;
+  };
+  for (const [key, v] of [...Object.entries(state.answerTotals), ...Object.entries(state.counted).filter(([k]) => !k.startsWith("exam|"))]) {
+    const cell = cellOf(key);
+    cell.answered += v.answered;
+    cell.correct += v.correct;
+  }
+  const recipe: Breakdown["recipe"] = [];
+  const examKcal: ExamKcal[] = [];
+  let cheat = { times: 0, kcal: 0 };
+  for (const [key, v] of Object.entries(state.earned)) {
+    const [what, a, b, c] = key.split("|");
+    if (what === "study") cellOf(`${a}|${b}`).kcal += v.kcal;
+    else if (what === "recipe") recipe.push({ mode: a as Mode, kcal: v.kcal });
+    else if (what === "exam")
+      examKcal.push({ level: a as ExamLevel, kind: b as ExamKcalKind, each: Number(c) / 8, times: v.times, kcal: v.kcal });
+    else if (what === "cheat") cheat = { times: v.times, kcal: v.kcal };
+  }
+  const exams: ExamCell[] = Object.entries(state.counted)
+    .filter(([k]) => k.startsWith("exam|"))
+    .map(([k, v]) => {
+      const [, level, part] = k.split("|") as [string, ExamLevel, ExamPart];
+      return { level, part, answered: v.answered, correct: v.correct };
+    });
+  return {
+    study: [...study.values()].sort((a, b) => a.tier.localeCompare(b.tier) || a.mode.localeCompare(b.mode)),
+    recipe: recipe.sort((a, b) => a.mode.localeCompare(b.mode)),
+    levels: EXAM_LEVELS.map((level) => ({ level, label: EXAM_LABEL[level] })),
+    exams,
+    examKcal: examKcal.sort((a, b) => a.level.localeCompare(b.level) || a.kind.localeCompare(b.kind) || b.each - a.each),
+    cheat,
   };
 }
 
@@ -2227,12 +2341,25 @@ function reviewFavorite(id: number, correct: boolean): FavoriteReview {
   const f = state.favorites.find((x) => x.id === id);
   if (!f) throw new Error("favorite not found");
   const t = today();
+  const exam = f.examId ? examQuestion(f.examId) : null;
+  const q = f.questionKey ? questions.find((x) => x.key === f.questionKey) : undefined;
+  const what: Earning | null = exam
+    ? { source: "favoriteExam", level: exam.level }
+    : q && f.mode
+      ? { source: "favorite", tier: q.tier, mode: f.mode }
+      : null;
+  if (!what) throw new Error("the question of the favorite is gone");
   f.lastReviewedAt = nowTs();
+  // Counted in 累計回答数 with the question it reviews (mirrors counted_answers).
+  const d = daily(t);
+  d.answered += 1;
+  d.correct += correct ? 1 : 0;
+  countAnswer(exam ? `exam|${exam.level}|${exam.part}` : `${q?.tier}|${f.mode}`, correct);
   const paidBefore = correct && f.paidOn === t;
   const out: FavoriteReview = { points: 0, kcalEarned: 0, paidBefore };
   if (correct && !paidBefore) {
-    const word = f.questionKey ? questions.find((q) => q.key === f.questionKey)?.tier === "word" : false;
-    const paid = credit(t, (word ? FAVORITE_KCAL_WORD : FAVORITE_KCAL_OTHER) * 8);
+    const word = q?.tier === "word";
+    const paid = credit(t, (word ? FAVORITE_KCAL_WORD : FAVORITE_KCAL_OTHER) * 8, what);
     f.paidOn = t;
     out.points = paid.points;
     out.kcalEarned = paid.whole;
@@ -2259,10 +2386,9 @@ function answerExamReview(id: string, chosen: string): ExamReviewResult {
   if (correct) delete state.examMistakes[id];
   else if (waiting) state.examMistakes[id].misses += 1;
   const t = today();
-  const paid = credit(t, kcal * 8);
+  // A review question is an exam question again, not a new one: it is not counted in 累計回答数.
+  const paid = credit(t, kcal * 8, { source: "examReview", level: q.level });
   const d = daily(t);
-  d.answered += 1;
-  d.correct += correct ? 1 : 0;
   markStudied(t);
   save();
   return {
@@ -2388,18 +2514,14 @@ function submitAnswer(p: AnswerPayload): AnswerResult {
     reviewMode: !p.correct || lowScore ? p.mode : (h.reviewMode ?? null),
     reviewMisses: isDueReview && !done ? { date: t, count: missedToday + 1 } : h.reviewMisses,
   };
-  const paid = credit(t, kcal * 8);
+  const paid = credit(t, kcal * 8, { source: "answer", tier: q.tier, mode: p.mode });
   const d = daily(t);
   d.answered += 1;
   d.correct += p.correct ? 1 : 0;
-  // Mirrors answer_log (what it paid after the play mode), for the 記録 by tab and mode.
+  // Mirrors answer_log, for the 記録 by tab and mode.
   const cellKey = `${q.tier}|${p.mode}`;
-  const cell = state.answerTotals[cellKey] ?? { kcal: 0, answered: 0, correct: 0 };
-  state.answerTotals[cellKey] = {
-    kcal: (cell.kcal ?? 0) + paid.points,
-    answered: cell.answered + 1,
-    correct: cell.correct + (p.correct ? 1 : 0),
-  };
+  const cell = state.answerTotals[cellKey] ?? { answered: 0, correct: 0 };
+  state.answerTotals[cellKey] = { ...cell, answered: cell.answered + 1, correct: cell.correct + (p.correct ? 1 : 0) };
 
   const { firstStudyToday, newTicket } = markStudied(t);
   const u = state.user;
@@ -2486,13 +2608,7 @@ function getStats(): Stats {
     tickets: state.tickets.slice().reverse().slice(0, 20),
     reviewDue: dueCount(),
     reviewPending: Object.values(state.history).filter((h) => h.needsReview).length,
-    // Mirrors the breakdown of load_stats.
-    breakdown: Object.entries(state.answerTotals)
-      .map(([key, v]) => {
-        const [tier, mode] = key.split("|") as [Tier, Mode];
-        return { tier, mode, kcal: v.kcal ?? 0, answered: v.answered, correct: v.correct };
-      })
-      .sort((a, b) => a.tier.localeCompare(b.tier) || a.mode.localeCompare(b.mode)),
+    breakdown: breakdown(),
     dietKcal: diet ? dietKcal : null,
     // Mirrors diet::weights_since: the last two weeks' weights, oldest first.
     weights: Object.entries(state.weights)
@@ -2909,7 +3025,7 @@ export async function mockInvoke<T>(cmd: string, args: Record<string, unknown>):
       const ticket = state.tickets.find((x) => !x.usedAt);
       if (!ticket) throw new Error("使えるチートデイチケットがありません");
       ticket.usedAt = nowTs();
-      const paid = credit(t, RATES.cheatDayBonus * 8);
+      const paid = credit(t, RATES.cheatDayBonus * 8, { source: "cheat" });
       save();
       return { kcalAdded: paid.whole, todayKcal: daily(t).kcalEarned, ticketsLeft: ticketsAvailable() } as T;
     }
@@ -3087,7 +3203,7 @@ export async function mockInvoke<T>(cmd: string, args: Record<string, unknown>):
         w.excludedAt = null;
       }
       const quarters = args.remembered ? (repeat ? full / 2 : full) : 0;
-      const paid = credit(t, quarters * 2);
+      const paid = credit(t, quarters * 2, { source: "recipe", mode: args.mode as Mode });
       save();
       return {
         entry: withPos(w),

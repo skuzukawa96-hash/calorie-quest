@@ -737,8 +737,8 @@ export interface Stats {
   tickets: Ticket[];
   reviewDue: number;
   reviewPending: number;
-  /** the study answers by tab and mode (英単語 × 選択 …), for 累計獲得カロリー / 累計回答数 / 正答率 */
-  breakdown: StatCell[];
+  /** what was earned and answered, by where it belongs, for 累計獲得カロリー / 累計回答数 / 正答率 */
+  breakdown: Breakdown;
   /** what ダイエット機能 has paid in all, while it is on (off, it is left out of the totals and the chart too) */
   dietKcal?: DietKcal | null;
   /** the weights recorded in the last two weeks, oldest first (ダイエット機能) */
@@ -748,13 +748,51 @@ export interface Stats {
   weightBonusKcal: number;
 }
 
-/** The study answers of one tab in one mode: what they earned at 通常 (the play mode left aside), how many, how many right. */
+/**
+ * The 記録's tables behind 累計獲得カロリー / 累計回答数 / 正答率. The kcal are those each reward added to
+ * its day, so they add up to the total; お気に入りの復習 is counted with the question it reviews.
+ */
+export interface Breakdown {
+  /** the study questions by tab and mode */
+  study: StatCell[];
+  /** 単語帳の復習 by mode (choice / typing) */
+  recipe: Array<{ mode: Mode; kcal: number }>;
+  /** the exam levels in order, with their names */
+  levels: Array<{ level: ExamLevel; label: string }>;
+  /** the exam questions handed in by level and part */
+  exams: ExamCell[];
+  /** what the exams paid by level and kind, by what each paid */
+  examKcal: ExamKcal[];
+  /** the cheat days used and what they paid */
+  cheat: { times: number; kcal: number };
+}
+
+/** The study questions of one tab in one mode: the whole kcal they added to their days (after the play mode), how many, how many right. */
 export interface StatCell {
   tier: Tier;
   mode: Mode;
   kcal: number;
   answered: number;
   correct: number;
+}
+
+/** The exam questions of one level in one part: how many were handed in, how many right. */
+export interface ExamCell {
+  level: ExamLevel;
+  part: ExamPart;
+  answered: number;
+  correct: number;
+}
+
+export type ExamKcalKind = "pass" | "fail" | "review";
+
+/** What one kind of exam reward of a level paid, `each` a time (after the play mode), as in 150 kcal × 4回. */
+export interface ExamKcal {
+  level: ExamLevel;
+  kind: ExamKcalKind;
+  each: number;
+  times: number;
+  kcal: number;
 }
 
 /** One entry of お菓子作りレシピ, the learner's own word list. */

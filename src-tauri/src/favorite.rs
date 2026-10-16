@@ -9,7 +9,7 @@
 use rusqlite::{params, Connection, OptionalExtension};
 use tauri::State;
 
-use crate::commands::{build_session_question, credit, err, CmdResult, MODES, USER_ID};
+use crate::commands::{build_session_question, credit, err, CmdResult, Earning, MODES, USER_ID};
 use crate::db;
 use crate::exam;
 use crate::models::{Favorite, FavoriteKeys, FavoriteQuestionKey, FavoriteReview};
@@ -123,20 +123,32 @@ pub fn list(conn: &Connection) -> rusqlite::Result<Vec<Favorite>> {
 
 /// A favorite answered in its review: when it was gone over is kept, and answered right it pays
 /// once a day (英単語 [`KCAL_WORD`], the others [`KCAL_OTHER`], after the play mode as all study
-/// does). Nothing else is touched: the study and exam reviews and the answer log stay as they are.
+/// does). It counts in 累計回答数 and 正答率, and in the 記録's tables with the question it reviews
+/// (a study question's tab and mode, an exam question's level and part). Nothing else is touched:
+/// the study and exam reviews and the answer log stay as they are.
 pub fn review(conn: &Connection, id: i64, correct: bool) -> CmdResult<FavoriteReview> {
     let day = today();
-    let found: Option<(Option<String>, Option<String>)> = conn
+    type Found = (Option<String>, Option<String>, Option<String>, Option<String>);
+    let found: Option<Found> = conn
         .query_row(
-            "SELECT f.paid_on, q.tier FROM favorites f LEFT JOIN questions q ON q.id = f.question_id
+            "SELECT f.paid_on, q.tier, f.mode, f.exam_id FROM favorites f LEFT JOIN questions q ON q.id = f.question_id
              WHERE f.user_id = ?1 AND f.id = ?2",
             params![USER_ID, id],
-            |r| Ok((r.get(0)?, r.get(1)?)),
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
         )
         .optional()
         .map_err(err)?;
-    let Some((paid_on, tier)) = found else {
+    let Some((paid_on, tier, mode, exam_id)) = found else {
         return Err("favorite not found".into());
+    };
+    let exam = exam_id.as_deref().and_then(exam::question);
+    let what = match (&exam, &tier, &mode) {
+        (Some(q), _, _) => Some(Earning::FavoriteExam { level: &q.level }),
+        (None, Some(tier), Some(mode)) => Some(Earning::Favorite { tier, mode }),
+        _ => None,
+    };
+    let Some(what) = what else {
+        return Err("the question of the favorite is gone".into());
     };
     let tx = conn.unchecked_transaction().map_err(err)?;
     tx.execute(
@@ -144,11 +156,32 @@ pub fn review(conn: &Connection, id: i64, correct: bool) -> CmdResult<FavoriteRe
         params![USER_ID, id, now_ts()],
     )
     .map_err(err)?;
+    tx.execute("INSERT OR IGNORE INTO daily_stats (user_id, date) VALUES (?1, ?2)", params![USER_ID, day])
+        .map_err(err)?;
+    tx.execute(
+        "UPDATE daily_stats SET answered = answered + 1, correct = correct + ?3 WHERE user_id = ?1 AND date = ?2",
+        params![USER_ID, day, correct as i64],
+    )
+    .map_err(err)?;
+    tx.execute(
+        "INSERT INTO counted_answers (user_id, date, source, tier, mode, level, part, correct)
+         VALUES (?1, ?2, 'favorite', ?3, ?4, ?5, ?6, ?7)",
+        params![
+            USER_ID,
+            day,
+            tier,
+            mode,
+            exam.as_ref().map(|q| q.level.as_str()),
+            exam.as_ref().map(|q| q.part.as_str()),
+            correct as i64
+        ],
+    )
+    .map_err(err)?;
     let paid_before = correct && paid_on.as_deref() == Some(day.as_str());
     let mut out = FavoriteReview { points: 0.0, kcal_earned: 0, paid_before };
     if correct && !paid_before {
         let kcal = if tier.as_deref() == Some("word") { KCAL_WORD } else { KCAL_OTHER };
-        let paid = credit(&tx, &day, kcal * EIGHTHS).map_err(err)?;
+        let paid = credit(&tx, &day, kcal * EIGHTHS, what).map_err(err)?;
         tx.execute("UPDATE favorites SET paid_on = ?3 WHERE user_id = ?1 AND id = ?2", params![USER_ID, id, day])
             .map_err(err)?;
         out.points = paid.points();
