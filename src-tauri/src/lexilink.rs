@@ -31,6 +31,18 @@ pub const MISS_KCAL: i64 = 1;
 pub const CLEAR_KCAL: i64 = 10;
 /// what a ふたりで対戦 played to the end pays
 pub const VERSUS_KCAL: i64 = 30;
+/// ふたりで対戦 against the computer, played to the end: lost or drawn
+pub const COM_LOSE_KCAL: i64 = 10;
+
+/// ふたりで対戦 against the computer, won: by the computer's level (None for no level).
+pub fn com_win_kcal(level: &str) -> Option<i64> {
+    match level {
+        "easy" => Some(20),
+        "normal" => Some(30),
+        "hard" => Some(45),
+        _ => None,
+    }
+}
 pub const MODES: [&str; 2] = ["match", "opposites"];
 pub const GENRES: [&str; 5] = ["random", "noun", "verb", "adjective", "adverb"];
 
@@ -252,6 +264,17 @@ pub fn finish(conn: &mut Connection, game: &LexiFinish) -> CmdResult<LexiResult>
     }
     let kcal = if game.players == 1 {
         solo_kcal(game.pairs, game.misses, game.cleared)
+    } else if let Some(level) = game.com.as_deref() {
+        // Against the computer: won, by its level; lost or drawn, a little; left part-way, nothing.
+        let win = com_win_kcal(level).ok_or_else(|| format!("unknown LexiLink COM level {level}"))?;
+        let mine = game.player_pairs.filter(|p| (0..=game.pairs).contains(p)).ok_or("LexiLink の結果が正しくありません（取ったペア）")?;
+        if !game.cleared {
+            0
+        } else if mine > PAIRS as i64 - mine {
+            win
+        } else {
+            COM_LOSE_KCAL
+        }
     } else if game.cleared {
         VERSUS_KCAL
     } else {
@@ -402,17 +425,17 @@ mod tests {
 
         let mut c = conn();
         crate::commands::set_play_mode_in(&c, "hard").unwrap();
-        let solo = |pairs, misses, cleared| LexiFinish { players: 1, pairs, misses, cleared };
+        let solo = |pairs, misses, cleared| LexiFinish { players: 1, pairs, misses, cleared, ..Default::default() };
         let r = finish(&mut c, &solo(10, 6, true)).unwrap();
         assert_eq!((r.kcal_earned, r.today_kcal, r.streak), (37, 37, 1), "the day counts as a day of study");
         let r = finish(&mut c, &solo(10, 50, true)).unwrap();
         assert_eq!((r.kcal_earned, r.today_kcal), (-7, 30));
         let r = finish(&mut c, &solo(3, 20, false)).unwrap();
         assert_eq!(r.kcal_earned, 0);
-        let versus = |cleared| LexiFinish { players: 2, pairs: if cleared { 10 } else { 4 }, misses: 0, cleared };
+        let versus = |cleared| LexiFinish { players: 2, pairs: if cleared { 10 } else { 4 }, misses: 0, cleared, ..Default::default() };
         assert_eq!(finish(&mut c, &versus(true)).unwrap().kcal_earned, VERSUS_KCAL);
         assert_eq!(finish(&mut c, &versus(false)).unwrap().kcal_earned, 0);
-        assert!(finish(&mut c, &LexiFinish { players: 1, pairs: 4, misses: 0, cleared: true }).is_err());
+        assert!(finish(&mut c, &LexiFinish { players: 1, pairs: 4, misses: 0, cleared: true, ..Default::default() }).is_err());
 
         let s = crate::commands::load_stats(&c).unwrap();
         assert_eq!((s.breakdown.lexilink.times, s.breakdown.lexilink.kcal), (5, 60), "the games that paid nothing are games too");
@@ -420,5 +443,30 @@ mod tests {
         // A cleared game's minus never takes the day below zero.
         let mut fresh = conn();
         assert_eq!(finish(&mut fresh, &solo(10, 50, true)).unwrap().kcal_earned, 0);
+    }
+
+    /// ふたりで対戦 against the computer: won, 20 / 30 / 45 by its level; lost or drawn, 10; left
+    /// part-way, nothing. Against a person it stays 30.
+    #[test]
+    fn a_game_against_the_computer_pays_by_its_level_and_the_outcome() {
+        let mut c = conn();
+        let com = |level: &str, mine: i64, cleared: bool| LexiFinish {
+            players: 2,
+            pairs: if cleared { 10 } else { 4 },
+            misses: 0,
+            cleared,
+            com: Some(level.to_string()),
+            player_pairs: Some(mine),
+        };
+        let paid = |c: &mut Connection, game: LexiFinish| finish(c, &game).unwrap().kcal_earned;
+        assert_eq!(paid(&mut c, com("easy", 6, true)), 20);
+        assert_eq!(paid(&mut c, com("normal", 7, true)), 30);
+        assert_eq!(paid(&mut c, com("hard", 10, true)), 45);
+        assert_eq!(paid(&mut c, com("hard", 3, true)), COM_LOSE_KCAL, "lost");
+        assert_eq!(paid(&mut c, com("normal", 5, true)), COM_LOSE_KCAL, "drawn");
+        assert_eq!(paid(&mut c, com("hard", 3, false)), 0, "left part-way");
+        assert!(finish(&mut c, &com("expert", 6, true)).is_err(), "no such level");
+        assert!(finish(&mut c, &LexiFinish { player_pairs: None, ..com("easy", 6, true) }).is_err(), "whose pairs");
+        assert!(finish(&mut c, &com("easy", 11, true)).is_err(), "more pairs than taken");
     }
 }

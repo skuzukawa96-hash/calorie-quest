@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { COM_LEVEL_ORDER, COM_LEVELS } from "../lib/lexiCom";
-import { LEXI_GENRES, LEXI_MODES, type LexiMode } from "../types";
+import { LEXI, LEXI_GENRES, LEXI_MODES, type LexiMode } from "../types";
 import { LEXI_GENRE_LABEL, type LexiConfig } from "../screens/LexiLink";
 
 const KEY = "cq-lexilink";
@@ -163,9 +163,13 @@ export default function LexiLinkEntry({ onStart }: { onStart: (config: LexiConfi
             <>
               1ペア <b>+3 kcal</b>／お手つき4回目以降 <b>−1 kcal</b>。クリアで <b>+10 kcal</b>
             </>
+          ) : config.com ? (
+            <>
+              お手つきで交代。COM（{COM_LEVELS[config.com].label}）に勝つと <b>+{LEXI.comWinKcal[config.com]} kcal</b>、負けても <b>+{LEXI.comLoseKcal} kcal</b>
+            </>
           ) : (
             <>
-              取ったペアの数で勝負／お手つきで交代。最後まで遊ぶと <b>+30 kcal</b>
+              取ったペアの数で勝負／お手つきで交代。最後まで遊ぶと <b>+{LEXI.versusKcal} kcal</b>
             </>
           )}
         </div>

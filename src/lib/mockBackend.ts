@@ -95,7 +95,7 @@ import type {
   WordPart,
   WordUsage,
 } from "../types";
-import { LEXI, LEXI_GENRES, LEXI_MODES, lexiSoloKcal, PLAY_MODES, POINT_CATEGORIES } from "../types";
+import { LEXI, LEXI_GENRES, LEXI_MODES, lexiSoloKcal, lexiVersusKcal, PLAY_MODES, POINT_CATEGORIES } from "../types";
 
 interface SeedQuestion {
   key: string;
@@ -2455,7 +2455,15 @@ function dealLexiLink(mode: LexiMode, genre: LexiGenre, prefer: boolean): LexiDe
 function finishLexiLink(game: LexiFinish): LexiResult {
   if (![1, 2].includes(game.players) || game.pairs < 0 || game.pairs > LEXI_PAIRS || game.misses < 0) throw new Error("LexiLink の結果が正しくありません");
   if (game.cleared && game.pairs !== LEXI_PAIRS) throw new Error("LexiLink の結果が正しくありません（ペアがそろっていません）");
-  const kcal = game.players === 1 ? lexiSoloKcal(game.pairs, game.misses, game.cleared) : game.cleared ? LEXI.versusKcal : 0;
+  if (game.players === 2 && game.com) {
+    if (!(game.com in LEXI.comWinKcal)) throw new Error(`unknown LexiLink COM level ${String(game.com)}`);
+    const mine = game.playerPairs;
+    if (mine === undefined || mine < 0 || mine > game.pairs) throw new Error("LexiLink の結果が正しくありません（取ったペア）");
+  }
+  const kcal =
+    game.players === 1
+      ? lexiSoloKcal(game.pairs, game.misses, game.cleared)
+      : lexiVersusKcal(game.com ?? null, game.playerPairs ?? 0, game.cleared);
   const t = today();
   const d = daily(t);
   const added = Math.max(kcal, -d.kcalEarned);

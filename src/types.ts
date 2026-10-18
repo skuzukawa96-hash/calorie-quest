@@ -470,16 +470,33 @@ export interface Dashboard {
 export type LexiMode = "match" | "opposites";
 export type LexiGenre = "random" | "noun" | "verb" | "adjective" | "adverb";
 export const LEXI_MODES: LexiMode[] = ["match", "opposites"];
+/** ふたりで対戦 against the computer: its level (lib/lexiCom.ts) */
+export type ComLevel = "easy" | "normal" | "hard";
 export const LEXI_GENRES: LexiGenre[] = ["random", "noun", "verb", "adjective", "adverb"];
 
 /** The board and its kcal (mirrors lexilink.rs): ひとりで 3 a pair, お手つき free up to the third and
- * −1 each after, 10 for clearing the board; ふたりで 30 for a game played to the end. */
-export const LEXI = { pairs: 10, pairKcal: 3, freeMisses: 3, missKcal: 1, clearKcal: 10, versusKcal: 30 } as const;
+ * −1 each after, 10 for clearing the board; ふたりで 30 for a game played to the end, and against the
+ * computer 20 / 30 / 45 for a win by its level, 10 for a loss or a draw. */
+export const LEXI = {
+  pairs: 10,
+  pairKcal: 3,
+  freeMisses: 3,
+  missKcal: 1,
+  clearKcal: 10,
+  versusKcal: 30,
+  comWinKcal: { easy: 20, normal: 30, hard: 45 } as Record<ComLevel, number>,
+  comLoseKcal: 10,
+} as const;
 
 /** ひとりで: what the pairs and the お手つき so far come to (with the clear when `cleared`); below zero
  * when the misses outweigh the pairs. */
 export const lexiScore = (pairs: number, misses: number, cleared: boolean) =>
   pairs * LEXI.pairKcal - Math.max(0, misses - LEXI.freeMisses) * LEXI.missKcal + (cleared ? LEXI.clearKcal : 0);
+
+/** ふたりで: what a game adds (mirrors lexilink::finish): left part-way nothing; played to the end, 30
+ * against a person, and against the computer its level's win or, lost or drawn, 10. */
+export const lexiVersusKcal = (com: ComLevel | null, playerPairs: number, cleared: boolean) =>
+  !cleared ? 0 : !com ? LEXI.versusKcal : playerPairs > LEXI.pairs - playerPairs ? LEXI.comWinKcal[com] : LEXI.comLoseKcal;
 
 /** ひとりで: what a game adds (mirrors lexilink::solo_kcal): a cleared game its score as it is, one left
  * part-way what it is above zero. */
@@ -513,6 +530,10 @@ export interface LexiFinish {
   pairs: number;
   misses: number;
   cleared: boolean;
+  /** ふたりで対戦 against the computer: its level */
+  com?: ComLevel | null;
+  /** ふたりで対戦: the pairs 先攻 (the person, against the computer) took */
+  playerPairs?: number;
 }
 
 export interface LexiResult {

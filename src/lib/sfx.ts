@@ -176,6 +176,30 @@ function kit(c: BaseAudioContext, out: AudioNode) {
     o.start(at);
     o.stop(at + dur + 0.05);
   };
+  /** a held note that sinks from `f` to `f2` with a slow wobble: a sad horn's last note */
+  const sigh = (at: number, f: number, dur: number, type: OscillatorType, g: number, f2: number) => {
+    const o = c.createOscillator();
+    o.type = type;
+    o.frequency.setValueAtTime(f, at);
+    o.frequency.linearRampToValueAtTime(f2, at + dur);
+    const lfo = c.createOscillator();
+    lfo.frequency.value = 5.5;
+    const depth = c.createGain();
+    depth.gain.value = f * 0.025;
+    lfo.connect(depth);
+    depth.connect(o.frequency);
+    const gn = c.createGain();
+    gn.gain.setValueAtTime(0.0001, at);
+    gn.gain.exponentialRampToValueAtTime(g, at + 0.03);
+    gn.gain.setValueAtTime(g, at + dur * 0.6);
+    gn.gain.exponentialRampToValueAtTime(0.0001, at + dur);
+    o.connect(gn);
+    gn.connect(out);
+    o.start(at);
+    lfo.start(at);
+    o.stop(at + dur + 0.05);
+    lfo.stop(at + dur + 0.05);
+  };
   /** one bite of a candy: the hard snap, its ring and the crumbs, rounded off by `lp` */
   const crack = (at: number, f: number, g: number, thump: number, tau: number, bits: number, lp: number) => {
     const soft = [filt("lowpass", lp)];
@@ -185,7 +209,7 @@ function kit(c: BaseAudioContext, out: AudioNode) {
     for (let k = 0; k < bits; k++)
       play(decay(0.006, 0.0015), at + 0.01 + Math.random() * 0.05, [filt("highpass", 3200), filt("lowpass", lp)], g * (0.25 + Math.random() * 0.35));
   };
-  return { play, filt, swell, crinkle, rustle, tone, crack };
+  return { play, filt, swell, crinkle, rustle, tone, sigh, crack };
 }
 
 type Kit = ReturnType<typeof kit>;
@@ -236,6 +260,15 @@ const LEXI_SOUNDS = {
       [784, 1047, 1319].forEach((f, i) => k.tone(i * 0.1, f, 0.2, "square", 0.3));
       k.tone(0.32, 1568, 0.7, "square", 0.25);
       k.tone(0.32, 1568, 0.7, "sine", 0.3);
+    },
+  },
+  /** 対戦 lost to the computer: the win's fanfare turned over — ぷわ、ぷわ、ぷわ、ぷわ〜ん, down and sinking */
+  lose: {
+    dur: 2,
+    level: 0.5,
+    build: (k) => {
+      [392, 370, 349].forEach((f, i) => k.tone(i * 0.32, f, 0.3, "triangle", 0.45));
+      k.sigh(0.96, 330, 0.95, "triangle", 0.45, 300);
     },
   },
   /** 対戦 drawn: やわらかい下降チャイム */

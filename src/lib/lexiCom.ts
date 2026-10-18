@@ -9,7 +9,9 @@
 // The levels differ only in two numbers (`COM_LEVELS`): how likely a card shown is remembered, and
 // how many places it can hold; the thinking is the same for all.
 
-export type ComLevel = "easy" | "normal" | "hard";
+import type { ComLevel } from "../types";
+
+export type { ComLevel };
 export const COM_LEVEL_ORDER: ComLevel[] = ["easy", "normal", "hard"];
 
 export interface ComSettings {

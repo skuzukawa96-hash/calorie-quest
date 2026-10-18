@@ -6,7 +6,7 @@ import { COM_LEVELS, LexiCom, type ComLevel, type ComView } from "../lib/lexiCom
 import { loadDictionary, loadedDictionary, type Dictionary } from "../lib/dictionary";
 import { playFanfare, playLexi, prepareLexiSounds } from "../lib/sfx";
 import { prepareWords, stopSpeaking, type ReadyWords } from "../lib/speech";
-import { LEXI, lexiScore, lexiSoloKcal, type LexiCard, type LexiGenre, type LexiMode } from "../types";
+import { LEXI, lexiScore, lexiSoloKcal, lexiVersusKcal, type LexiCard, type LexiGenre, type LexiMode } from "../types";
 
 /** What the home screen starts a game with. */
 export interface LexiConfig {
@@ -46,7 +46,8 @@ interface Taken {
   /** who took it (0: 先攻 / ひとり, 1: 後攻) */
   by: 0 | 1;
 }
-type End = { kind: "complete"; kcal: number } | { kind: "win"; winner: 0 | 1 } | { kind: "draw" };
+/** the game over: ひとりで complete; ふたりで won by one, drawn, or (against the computer) lost by 先攻 */
+type End = { kind: "complete"; kcal: number } | { kind: "win"; winner: 0 | 1 } | { kind: "draw" } | { kind: "lose" };
 
 function shuffled<T>(list: T[]): T[] {
   const a = list.slice();
@@ -94,7 +95,7 @@ export default function LexiLink({
   const settled = useRef(false);
   /** where the game stands for its kcal: a pair or a miss counts here the moment it is judged, before
    * the board has shown it (eaten, wrapped again), so leaving in between pays it as it is */
-  const standing = useRef<{ pairs: number; misses: [number, number] }>({ pairs: 0, misses: [0, 0] });
+  const standing = useRef<{ pairs: number; misses: [number, number]; mine: number }>({ pairs: 0, misses: [0, 0], mine: 0 });
   /** the deal asked for last: one answered after another was asked for is not laid out */
   const dealt = useRef(0);
   /** the board's English, its voices made as soon as it is dealt (read the moment a candy is opened) */
@@ -116,7 +117,7 @@ export default function LexiLink({
       com.current.reset();
     } else com.current = null;
     settled.current = false;
-    standing.current = { pairs: 0, misses: [0, 0] };
+    standing.current = { pairs: 0, misses: [0, 0], mine: 0 };
     const asked = ++dealt.current;
     setCells(null);
     setError(null);
@@ -162,7 +163,14 @@ export default function LexiLink({
     if (settled.current) return Promise.resolve();
     settled.current = true;
     return api
-      .finishLexiLink({ players: config.players, pairs: pairCount, misses: missCount[0], cleared })
+      .finishLexiLink({
+        players: config.players,
+        pairs: pairCount,
+        misses: missCount[0],
+        cleared,
+        com: solo ? null : config.com,
+        playerPairs: standing.current.mine,
+      })
       .then((r) => {
         if (tell && r.kcalEarned > 0) toast(`🍬 LexiLink +${r.kcalEarned} kcal`);
         if (r.newTicket) toast(`🎫 ${r.streak}日連続達成！チートデイチケットを獲得しました`, 4000);
@@ -193,6 +201,10 @@ export default function LexiLink({
       if (a === b) {
         setEnd({ kind: "draw" });
         playLexi("draw");
+      } else if (b > a && config.com) {
+        // The computer is not the one cheered: the person lost.
+        setEnd({ kind: "lose" });
+        playLexi("lose");
       } else {
         setEnd({ kind: "win", winner: a > b ? 0 : 1 });
         playLexi("win");
@@ -220,7 +232,7 @@ export default function LexiLink({
       if (cells[x].pair === cells[y].pair) {
         com.current?.forget([x, y]);
         const got = standing.current.pairs + 1;
-        standing.current = { pairs: got, misses: missed };
+        standing.current = { pairs: got, misses: missed, mine: standing.current.mine + (turn === 0 ? 1 : 0) };
         // The board cleared is paid the moment it is, so leaving before COMPLETE shows keeps the clear.
         if (got === LEXI.pairs) void settle(got, missed, true, false);
         setGlow([x, y]);
@@ -240,7 +252,7 @@ export default function LexiLink({
         }, GLOW_MS);
       } else {
         const counted: [number, number] = turn === 0 ? [missed[0] + 1, missed[1]] : [missed[0], missed[1] + 1];
-        standing.current = { pairs: standing.current.pairs, misses: counted };
+        standing.current = { ...standing.current, misses: counted };
         later(() => {
           playLexi("rewrap");
           [x, y].forEach((k) => {
@@ -443,11 +455,13 @@ export default function LexiLink({
 
       {end && (
         <div className="lexi-overlay" role="dialog" aria-live="polite">
-          <div className="lexi-confetti" aria-hidden="true">
-            {Array.from({ length: 18 }, (_, k) => (
-              <i key={k} style={{ left: `${(k * 53) % 100}%`, animationDelay: `${(k % 6) * 0.12}s` }} />
-            ))}
-          </div>
+          {end.kind !== "lose" && (
+            <div className="lexi-confetti" aria-hidden="true">
+              {Array.from({ length: 18 }, (_, k) => (
+                <i key={k} style={{ left: `${(k * 53) % 100}%`, animationDelay: `${(k % 6) * 0.12}s` }} />
+              ))}
+            </div>
+          )}
           <div className="lexi-burst">
             {end.kind === "complete" ? (
               <>
@@ -459,7 +473,9 @@ export default function LexiLink({
               </>
             ) : (
               <>
-                <div className={"lexi-big" + (end.kind === "win" ? " win" : " draw")}>{end.kind === "win" ? `${name(end.winner)} WIN!` : "DRAW"}</div>
+                <div className={"lexi-big " + end.kind}>
+                  {end.kind === "win" ? `${name(end.winner)} WIN!` : end.kind === "lose" ? `${name(0)} LOSE...` : "DRAW"}
+                </div>
                 <div className="lexi-scoreline">
                   <span className="p1">
                     {name(0)} {pairsOf(0)}ペア
@@ -469,7 +485,8 @@ export default function LexiLink({
                   </span>
                 </div>
                 <div className="lexi-sub">
-                  対戦ボーナス <b>+{LEXI.versusKcal} kcal</b>
+                  対戦ボーナス <b>+{lexiVersusKcal(config.com, pairsOf(0), true)} kcal</b>
+                  {config.com && `（COM・${COM_LEVELS[config.com].label}）`}
                 </div>
               </>
             )}

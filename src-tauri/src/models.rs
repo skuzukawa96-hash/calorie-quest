@@ -945,7 +945,8 @@ pub struct LexiDeal {
 }
 
 /// LexiLink: how a game ended (finished, or left part-way), for its kcal.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct LexiFinish {
     /// 1: ひとりで挑戦, 2: ふたりで対戦
     pub players: i64,
@@ -955,6 +956,12 @@ pub struct LexiFinish {
     pub misses: i64,
     /// every pair was taken
     pub cleared: bool,
+    /// ふたりで対戦 against the computer: its level (easy / normal / hard); none against a person
+    #[serde(default)]
+    pub com: Option<String>,
+    /// ふたりで対戦: the pairs 先攻 (the person, against the computer) took
+    #[serde(default)]
+    pub player_pairs: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize)]

@@ -4973,6 +4973,11 @@ button.wp-link.open {
 .lexi-big.draw {
   text-shadow: 0 3px 0 var(--choco-light), 0 8px 24px rgba(0, 0, 0, 0.35);
 }
+/* ●● LOSE...: a cold, sunk blue-grey instead of the win's pink, and no confetti */
+.lexi-big.lose {
+  color: #e6ecf3;
+  text-shadow: 0 3px 0 #5f7690, 0 8px 24px rgba(0, 0, 0, 0.35);
+}
 .lexi-sub {
   margin-top: 8px;
   color: #fff;
