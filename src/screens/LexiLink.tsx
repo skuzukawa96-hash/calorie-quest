@@ -89,6 +89,10 @@ export default function LexiLink({
   const [asking, setAsking] = useState(false);
   const [dict, setDict] = useState<Dictionary | null>(loadedDictionary);
   const busy = useRef(false);
+  /** the game's kcal have been asked for (finished, or left part-way): never twice */
+  const settled = useRef(false);
+  /** where the game stands, for settling it when the screen is closed by the tabs above */
+  const standing = useRef<{ pairs: number; misses: [number, number] }>({ pairs: 0, misses: [0, 0] });
   const timers = useRef<number[]>([]);
   const later = (fn: () => void, ms: number) => timers.current.push(window.setTimeout(fn, ms));
 
@@ -96,6 +100,7 @@ export default function LexiLink({
     timers.current.forEach(clearTimeout);
     timers.current = [];
     busy.current = false;
+    settled.current = false;
     setCells(null);
     setError(null);
     setOpen([]);
@@ -129,9 +134,39 @@ export default function LexiLink({
   const pairs = taken.length;
   const pairsOf = (who: 0 | 1) => taken.filter((t) => t.by === who).length;
   const setFrame = (i: number, f: CandyFrame) => setFrames((cur) => cur.map((x, k) => (k === i ? f : x)));
+  const played = pairs > 0 || misses[0] + misses[1] > 0;
 
-  /** The game is over: its kcal, the sound and the words in the middle of the screen. */
+  /** Pays the game once: what it is worth, its ticket if the day brings one, and the home refreshed. */
+  const settle = (pairCount: number, missCount: [number, number], cleared: boolean, tell: boolean) => {
+    if (settled.current) return Promise.resolve();
+    settled.current = true;
+    return api
+      .finishLexiLink({ players: config.players, pairs: pairCount, misses: missCount[0], cleared })
+      .then((r) => {
+        if (tell && r.kcalEarned > 0) toast(`🍬 LexiLink +${r.kcalEarned} kcal`);
+        if (r.newTicket) toast(`🎫 ${r.streak}日連続達成！チートデイチケットを獲得しました`, 4000);
+        onProgress();
+      })
+      .catch((e) => toast(String(e)));
+  };
+
+  // Left by the tabs above: settled as ← やめる would (what is above zero ひとりで, nothing ふたりで;
+  // the day counts as studied either way).
+  useEffect(() => {
+    standing.current = { pairs, misses };
+  }, [pairs, misses]);
+  useEffect(
+    () => () => {
+      const { pairs: p, misses: m } = standing.current;
+      if (p > 0 || m[0] + m[1] > 0) void settle(p, m, false, true);
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
+
+  /** The game is over (already paid when the last pair was taken): the sound and the words in the middle of the screen. */
   const finish = (allTaken: Taken[], missCount: [number, number]) => {
+    setAsking(false);
     if (solo) {
       const kcal = soloKcal(10, missCount[0], true);
       setEnd({ kind: "complete", kcal });
@@ -146,13 +181,6 @@ export default function LexiLink({
         playLexi("win");
       }
     }
-    api
-      .finishLexiLink({ players: config.players, pairs: 10, misses: missCount[0], cleared: true })
-      .then((r) => {
-        if (r.newTicket) toast(`🎫 ${r.streak}日連続達成！チートデイチケットを獲得しました`, 4000);
-        onProgress();
-      })
-      .catch((e) => toast(String(e)));
   };
 
   const flip = (i: number) => {
@@ -182,7 +210,11 @@ export default function LexiLink({
           setTaken(next);
           setOpen([]);
           busy.current = false;
-          if (next.length === 10) later(() => finish(next, misses), 700);
+          if (next.length === 10) {
+            // Paid the moment the board is cleared, so that leaving before COMPLETE shows keeps the clear.
+            void settle(10, misses, true, false);
+            later(() => finish(next, misses), 700);
+          }
         }, 500);
       } else {
         later(() => {
@@ -206,19 +238,11 @@ export default function LexiLink({
 
   /** Left part-way: ひとりで, what the game is above zero; ふたりで, nothing (the day still counts). */
   const quit = () => {
-    const played = pairs > 0 || misses[0] + misses[1] > 0;
-    if (!played || end) {
+    if (!played || settled.current) {
       onExit();
       return;
     }
-    api
-      .finishLexiLink({ players: config.players, pairs, misses: misses[0], cleared: false })
-      .then((r) => {
-        if (r.kcalEarned > 0) toast(`🍬 LexiLink +${r.kcalEarned} kcal`);
-        onProgress();
-      })
-      .catch((e) => toast(String(e)))
-      .finally(onExit);
+    void settle(pairs, misses, false, true).finally(onExit);
   };
 
   const soFar = soloKcal(pairs, misses[0], pairs === 10);
@@ -243,7 +267,7 @@ export default function LexiLink({
       <section className="card lexi-card">
         <div className="lexi-hud">
           <div className="lexi-hud-left">
-            <button className="btn-link" onClick={() => (pairs > 0 || misses[0] + misses[1] > 0) && !end ? setAsking(true) : quit()}>
+            <button className="btn-link" onClick={() => (played && !settled.current ? setAsking(true) : quit())}>
               ← やめる
             </button>
             <span className="tag">{LEXI_MODE_LABEL[config.mode]}</span>
