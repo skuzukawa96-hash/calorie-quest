@@ -29,7 +29,7 @@ const VERSUS_KCAL = 30;
 /** how long two cards stay open before they are judged, and a miss before it is wrapped again
  * (long enough to read both) */
 const LOOK_MS = 450;
-const MISS_MS = 2000;
+const MISS_MS = 1500;
 
 interface Cell {
   pair: number;
