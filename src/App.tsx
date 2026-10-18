@@ -6,7 +6,7 @@ import DietSwitch from "./components/DietSwitch";
 import PlayModeSwitch from "./components/PlayModeSwitch";
 import { preloadWordTags } from "./components/PosTags";
 import RecipeProvider from "./components/RecipeProvider";
-import { playFanfare } from "./lib/sfx";
+import { playFanfare, warmUpAudio } from "./lib/sfx";
 import { loadSpeechCapabilities } from "./lib/speech";
 import Exam from "./screens/Exam";
 import Favorites from "./screens/Favorites";
@@ -129,11 +129,13 @@ export default function App() {
     void refresh();
     void loadSpeechCapabilities();
     // What the other tabs open with, loaded ahead once the home screen is up (and the notes' tables
-    // are built behind it), so that switching to them never blinks 読み込み中.
+    // are built behind it), so that switching to them never blinks 読み込み中; and the sound device
+    // opened, so the first sound neither holds the page up nor comes late.
     const ahead = window.setTimeout(() => {
       void loadDictionary();
       preloadWordTags();
       preloadScreens();
+      warmUpAudio();
     }, 1500);
     if (import.meta.env.VITE_SPEECH_PROBE) {
       import("./lib/probe").then((m) => m.runSpeechProbe()).catch(() => undefined);

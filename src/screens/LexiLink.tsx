@@ -4,7 +4,7 @@ import SpeakableText from "../components/SpeakableText";
 import { api } from "../lib/api";
 import { loadDictionary, loadedDictionary, type Dictionary } from "../lib/dictionary";
 import { playFanfare, playLexi, prepareLexiSounds } from "../lib/sfx";
-import { speak, speakInTurn } from "../lib/speech";
+import { prepareWords, stopSpeaking, type ReadyWords } from "../lib/speech";
 import { LEXI, lexiScore, lexiSoloKcal, type LexiCard, type LexiGenre, type LexiMode } from "../types";
 
 /** What the home screen starts a game with. */
@@ -24,6 +24,9 @@ export const LEXI_GENRE_LABEL: Record<LexiGenre, string> = { random: "ランダ�
  * (long enough to read both) */
 const LOOK_MS = 450;
 const MISS_MS = 1500;
+/** a pair taken: the glow, then the crunch, then (after its last bite) the English read aloud */
+const GLOW_MS = 500;
+const SAY_AFTER_CRUNCH_MS = 400;
 
 interface Cell {
   pair: number;
@@ -87,6 +90,8 @@ export default function LexiLink({
   const standing = useRef<{ pairs: number; misses: [number, number] }>({ pairs: 0, misses: [0, 0] });
   /** the deal asked for last: one answered after another was asked for is not laid out */
   const dealt = useRef(0);
+  /** the board's English, its voices made as soon as it is dealt (read the moment a pair is eaten) */
+  const voices = useRef<ReadyWords | null>(null);
   const timers = useRef<number[]>([]);
   const later = (fn: () => void, ms: number) => timers.current.push(window.setTimeout(fn, ms));
 
@@ -110,6 +115,7 @@ export default function LexiLink({
       .dealLexiLink(config.mode, config.genre, config.preferLearned)
       .then((d) => {
         if (asked !== dealt.current) return;
+        voices.current = prepareWords(d.pairs.flatMap((p) => [p.a, p.b]).filter((c) => c.english).map((c) => c.word));
         const list = shuffled(d.pairs.flatMap((p, i) => [{ pair: i, card: p.a }, { pair: i, card: p.b }]));
         setCells(list);
         setFrames(list.map(() => "wrapped"));
@@ -125,6 +131,7 @@ export default function LexiLink({
     return () => {
       alive = false;
       timers.current.forEach(clearTimeout);
+      stopSpeaking();
     };
   }, [deal]);
 
@@ -203,14 +210,14 @@ export default function LexiLink({
           // Word Match: English on the left; Opposites: the one opened first on the left.
           const [left, right] =
             config.mode === "match" ? (cells[x].card.english ? [cells[x].card, cells[y].card] : [cells[y].card, cells[x].card]) : [cells[x].card, cells[y].card];
-          if (config.mode === "match") void speak(left.word).catch(() => undefined);
-          else void speakInTurn([left.word, right.word], 350, () => undefined).catch(() => undefined);
+          const words = config.mode === "match" ? [left.word] : [left.word, right.word];
+          later(() => void voices.current?.say(words, 350).catch(() => undefined), SAY_AFTER_CRUNCH_MS);
           const next = [{ pair: cells[x].pair, left, right, by: turn }, ...taken];
           setTaken(next);
           setOpen([]);
           busy.current = false;
           if (next.length === LEXI.pairs) later(() => finish(next, missed), 700);
-        }, 500);
+        }, GLOW_MS);
       } else {
         const counted: [number, number] = turn === 0 ? [missed[0] + 1, missed[1]] : [missed[0], missed[1] + 1];
         standing.current = { pairs: standing.current.pairs, misses: counted };

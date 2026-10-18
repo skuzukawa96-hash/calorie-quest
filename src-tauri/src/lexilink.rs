@@ -268,13 +268,16 @@ pub fn finish(conn: &mut Connection, game: &LexiFinish) -> CmdResult<LexiResult>
 
 /* ---------- Tauri commands ---------- */
 
-#[tauri::command]
+// Off the main thread (`async`): a command on it holds up the window (the candies' animation, the
+// sounds' timers) for as long as it takes.
+
+#[tauri::command(async)]
 pub fn deal_lexilink(state: State<'_, AppState>, mode: String, genre: String, prefer_learned: bool) -> CmdResult<LexiDeal> {
     let conn = state.db.lock().map_err(err)?;
     deal(&conn, &mode, &genre, prefer_learned)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn finish_lexilink(state: State<'_, AppState>, game: LexiFinish) -> CmdResult<LexiResult> {
     let mut conn = state.db.lock().map_err(err)?;
     finish(&mut conn, &game)

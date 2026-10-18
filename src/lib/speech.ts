@@ -7,6 +7,7 @@
 //              WebView2 does not implement SpeechRecognition (it fails with `network`).
 import { listen } from "@tauri-apps/api/event";
 import { api, runningInTauri } from "./api";
+import { audio } from "./sfx";
 import type { NativeRecognition, SpeechCapabilities } from "../types";
 
 type RecognitionCtor = new () => any;
@@ -88,6 +89,8 @@ export function pickEnglishVoice(voices: SpeechSynthesisVoice[]): SpeechSynthesi
 }
 
 let currentAudio: HTMLAudioElement | null = null;
+/** a voice made ahead, playing through the app's AudioContext (`prepareWords`) */
+let currentSource: AudioBufferSourceNode | null = null;
 
 /** Counts the requests to speak. */
 let speakRequests = 0;
@@ -224,6 +227,82 @@ function splitWavs(buf: ArrayBuffer): ArrayBuffer[] {
   return out;
 }
 
+/** Words with their silence cut, joined with `gapMs` of silence between them, and when (ms) each starts. */
+function joinClips(parts: Int16Array[], rate: number, gapMs: number): { joined: Int16Array; starts: number[] } {
+  // The edges kept on either side count towards the pause, so the words are gapMs apart.
+  const gap = Math.round((rate * Math.max(0, gapMs - 2 * EDGE_MS)) / 1000);
+  const starts: number[] = [];
+  const joined = new Int16Array(parts.reduce((n, p) => n + p.length, 0) + gap * Math.max(0, parts.length - 1));
+  let at = 0;
+  parts.forEach((p) => {
+    starts.push((at / rate) * 1000);
+    joined.set(p, at);
+    at += p.length + gap;
+  });
+  return { joined, starts };
+}
+
+/**
+ * Words to be read the moment they are wanted (LexiLink: a pair's English as it is eaten). With the
+ * native voice they are made ahead, all in one go and with their silence cut, so a word plays at
+ * once instead of after the synthesizer (and the quiet it puts before a word); it plays through the
+ * app's AudioContext, which starts sooner than an <audio>. The browser's voice cannot be made ahead,
+ * so there `say` reads as speak / speakInTurn do.
+ */
+export interface ReadyWords {
+  /** reads `words` one after another, `gapMs` apart; resolves when done or stopped */
+  say(words: string[], gapMs: number): Promise<void>;
+}
+
+export function prepareWords(words: string[]): ReadyWords {
+  const plain: ReadyWords = {
+    say: (list, gapMs) => (list.length === 1 ? speak(list[0]) : speakInTurn(list, gapMs, () => undefined)),
+  };
+  if (!(runningInTauri && caps?.nativeTts)) return plain;
+  const unique = [...new Set(words)];
+  const made: Promise<Map<string, { rate: number; samples: Int16Array }> | null> = api
+    .nativeSynthesizeAll(unique, -2)
+    .then((buf) => {
+      const clips = new Map<string, { rate: number; samples: Int16Array }>();
+      splitWavs(buf).forEach((wav, i) => {
+        const c = wavSamples(wav);
+        clips.set(unique[i], { rate: c.rate, samples: trimSilence(c.samples, c.rate) });
+      });
+      return clips;
+    })
+    .catch(() => null);
+  return {
+    async say(list, gapMs) {
+      const wanted = speakRequest();
+      // Asked before the voices are made (a pair taken in the first second): played once they are.
+      const clips = await made;
+      if (!wanted()) return;
+      const parts = list.map((w) => clips?.get(w));
+      const ctx = audio();
+      if (!ctx || parts.some((c) => !c)) return plain.say(list, gapMs);
+      const rate = parts[0]!.rate;
+      const { joined } = joinClips(
+        parts.map((c) => c!.samples),
+        rate,
+        gapMs,
+      );
+      const buffer = ctx.createBuffer(1, Math.max(1, joined.length), rate);
+      const out = buffer.getChannelData(0);
+      for (let i = 0; i < joined.length; i++) out[i] = joined[i] / 32768;
+      stopSpeaking();
+      const source = ctx.createBufferSource();
+      source.buffer = buffer;
+      source.connect(ctx.destination);
+      currentSource = source;
+      await new Promise<void>((resolve) => {
+        source.onended = () => resolve();
+        source.start();
+      });
+      if (currentSource === source) currentSource = null;
+    },
+  };
+}
+
 /**
  * The native voice makes each word apart (one after another: the engine crashes the app when
  * it makes several at once); their silence is cut and they are joined with `gapMs` of silence
@@ -236,17 +315,11 @@ async function speakJoinedNative(words: string[], gapMs: number, onStep: (i: num
   if (!wanted()) return;
   const clips = splitWavs(made).map(wavSamples);
   const rate = clips[0]?.rate ?? 22050;
-  const parts = clips.map((c) => trimSilence(c.samples, c.rate));
-  // The edges kept on either side count towards the pause, so the words are gapMs apart.
-  const gap = Math.round((rate * Math.max(0, gapMs - 2 * EDGE_MS)) / 1000);
-  const starts: number[] = [];
-  const joined = new Int16Array(parts.reduce((n, p) => n + p.length, 0) + gap * Math.max(0, parts.length - 1));
-  let at = 0;
-  parts.forEach((p) => {
-    starts.push((at / rate) * 1000);
-    joined.set(p, at);
-    at += p.length + gap;
-  });
+  const { joined, starts } = joinClips(
+    clips.map((c) => trimSilence(c.samples, c.rate)),
+    rate,
+    gapMs,
+  );
   stopSpeaking();
   const url = URL.createObjectURL(wavBlob(joined, rate));
   const audio = new Audio(url);
@@ -295,6 +368,15 @@ export function stopSpeaking() {
   if (currentAudio) {
     currentAudio.pause();
     currentAudio = null;
+  }
+  if (currentSource) {
+    // its onended resolves the say() that started it
+    try {
+      currentSource.stop();
+    } catch {
+      /* already ended */
+    }
+    currentSource = null;
   }
   if ("speechSynthesis" in window) speechSynthesis.cancel();
 }

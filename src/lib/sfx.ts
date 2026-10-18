@@ -2,7 +2,10 @@
 
 let ctx: AudioContext | null = null;
 
-function audio(): AudioContext | null {
+/** The one AudioContext of the app (the sounds, and LexiLink's words made ahead). Opening it the
+ * first time holds the page up a third of a second (the sound device starts), so `warmUpAudio`
+ * opens it while the app is idle, not on the first sound. */
+export function audio(): AudioContext | null {
   try {
     if (!ctx) ctx = new AudioContext();
     if (ctx.state === "suspended") void ctx.resume();
@@ -10,6 +13,20 @@ function audio(): AudioContext | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * Opens the sound device and makes LexiLink's sounds ahead, a moment after the app starts: the
+ * first sound (a candy unwrapped, an answer's crunch) then neither holds the page up nor comes late.
+ * Opened before the learner has clicked anything, the context may wait suspended; the first click
+ * anywhere lets it start.
+ */
+export function warmUpAudio() {
+  const c = audio();
+  if (c && c.state === "suspended") {
+    window.addEventListener("pointerdown", () => void c.resume().catch(() => undefined), { once: true, capture: true });
+  }
+  prepareLexiSounds();
 }
 
 function noiseBurst(c: AudioContext, at: number, dur: number, freq: number, q: number, gain: number) {
@@ -240,7 +257,8 @@ export type LexiSound = keyof typeof LEXI_SOUNDS;
 const made = new Map<LexiSound, Promise<AudioBuffer[]>>();
 
 async function makeOne(spec: Made): Promise<AudioBuffer> {
-  const sr = 44100;
+  // made at the rate the device plays, so nothing is resampled as it plays
+  const sr = ctx?.sampleRate ?? 48000;
   const oc = new OfflineAudioContext(1, Math.ceil(sr * spec.dur), sr);
   spec.build(kit(oc, oc.destination));
   const b = await oc.startRendering();
@@ -263,8 +281,11 @@ function takes(name: LexiSound): Promise<AudioBuffer[]> {
   return p;
 }
 
-/** Makes LexiLink's sounds ahead (when the game opens), so the first candy does not wait for its. */
+/** Makes LexiLink's sounds ahead (when the app is idle, and again when a game opens if not yet), so
+ * the first candy does not wait for its. */
 export function prepareLexiSounds() {
+  // the device first, for the rate the sounds are made at
+  audio();
   try {
     (Object.keys(LEXI_SOUNDS) as LexiSound[]).forEach((n) => void takes(n).catch(() => undefined));
   } catch {

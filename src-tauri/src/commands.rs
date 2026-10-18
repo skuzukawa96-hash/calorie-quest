@@ -1325,7 +1325,9 @@ pub fn bank_counts(conn: &Connection) -> rusqlite::Result<BankCounts> {
     })
 }
 
-#[tauri::command]
+/// Off the main thread (`async`): it runs at every tab and after every game (a LexiLink game's end
+/// among them), and on the main thread it would hold up the window's animation while it counts.
+#[tauri::command(async)]
 pub fn get_dashboard(state: State<'_, AppState>) -> CmdResult<Dashboard> {
     let conn = state.db.lock().map_err(err)?;
     let mut bank = state.bank.lock().map_err(err)?;
