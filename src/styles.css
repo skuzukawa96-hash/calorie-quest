@@ -4407,3 +4407,585 @@ button.wp-link.open {
 .say-whole.saying {
   background: #fde7b8;
 }
+
+/* ---------- LexiLink（英単語の神経衰弱） ---------- */
+/* ホームの入口: Word Match・Opposites・人数（上下2段）を 2:2:3 の1行に */
+.lexi-entry .section-head {
+  align-items: baseline;
+  gap: 12px;
+  justify-content: flex-start;
+  flex-wrap: wrap;
+}
+.lexi-pick {
+  display: grid;
+  grid-template-columns: 2fr 2fr 3fr;
+  gap: 12px;
+  margin-top: 10px;
+}
+.lexi-tile {
+  position: relative;
+  overflow: hidden;
+  border: 2px solid var(--line);
+  border-radius: 16px;
+  background: #fff;
+  padding: 12px 16px;
+  font: inherit;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
+}
+.lexi-tile:hover {
+  border-color: #e9cfa5;
+}
+.lexi-tile.on {
+  border-color: #e3c18e;
+  background: #fffaf1;
+  box-shadow: 0 0 0 3px #f8ecd8;
+}
+.lexi-ill {
+  position: absolute;
+  pointer-events: none;
+  opacity: 0.28;
+  transition: opacity 0.15s;
+}
+.lexi-tile.on .lexi-ill {
+  opacity: 0.9;
+}
+.lexi-tile-text {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+.lexi-tile.mode {
+  min-height: 118px;
+  display: flex;
+  align-items: flex-start;
+}
+.lexi-tile.mode .lexi-ill {
+  right: 6px;
+  bottom: -2px;
+  width: 118px;
+  height: 90px;
+}
+.lexi-tile-en {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 21px;
+  color: var(--choco);
+  line-height: 1.2;
+}
+.lexi-tile-ja {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--choco-light);
+  margin-top: 2px;
+}
+.lexi-players {
+  display: grid;
+  grid-template-rows: 1fr 1fr;
+  gap: 10px;
+}
+.lexi-tile.player {
+  display: flex;
+  align-items: center;
+  padding: 8px 16px;
+}
+.lexi-tile.player .lexi-ill {
+  right: 10px;
+  bottom: -6px;
+  width: 84px;
+  height: 62px;
+}
+.lexi-tile-title {
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--choco);
+}
+.lexi-opts {
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 6px;
+  margin-top: 14px;
+  white-space: nowrap;
+}
+.lexi-opt-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+  margin-right: 2px;
+}
+.lexi-sep {
+  width: 1px;
+  height: 20px;
+  background: var(--line);
+  margin: 0 6px;
+  flex: none;
+}
+.lexi-chips {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 5px;
+}
+.lexi-chip {
+  border: 1px solid var(--line);
+  background: #fff;
+  border-radius: 999px;
+  padding: 3px 11px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--choco-light);
+  cursor: pointer;
+}
+.lexi-chip.on {
+  background: #fbf0dc;
+  border-color: #e3c18e;
+  color: var(--choco);
+  font-weight: 700;
+}
+.lexi-names {
+  display: flex;
+  gap: 14px;
+  margin-top: 12px;
+  flex-wrap: nowrap;
+  white-space: nowrap;
+}
+.lexi-names label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+  min-width: 0;
+}
+.lexi-names input {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 5px 10px;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  width: 150px;
+  min-width: 0;
+  background: #fff;
+}
+.lexi-names input.p1 {
+  color: #d9577f;
+  border-color: #f2b9ca;
+}
+.lexi-names input.p2 {
+  color: var(--sky);
+  border-color: #b9d2f2;
+}
+.lexi-go {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px dashed var(--line);
+  flex-wrap: wrap;
+}
+.lexi-rules {
+  font-size: 13px;
+  color: var(--muted);
+}
+.lexi-rules b {
+  color: var(--caramel-dark);
+}
+.btn.lexi-btn-go {
+  background: #f3dcb6;
+  color: var(--choco);
+  border: 1px solid #e3c18e;
+  border-radius: 999px;
+  padding: 9px 30px;
+  font-weight: 800;
+  box-shadow: 0 2px 6px rgba(168, 111, 43, 0.15);
+}
+.btn.lexi-btn-go:hover {
+  background: #efd2a3;
+}
+@media (max-width: 760px) {
+  .lexi-pick {
+    gap: 8px;
+  }
+  .lexi-tile-en {
+    font-size: 18px;
+  }
+  .lexi-tile.mode .lexi-ill {
+    width: 96px;
+    height: 74px;
+  }
+  .lexi-tile-title {
+    font-size: 14px;
+  }
+  .lexi-chip {
+    padding: 3px 8px;
+    font-size: 12px;
+  }
+}
+
+/* ゲーム画面 */
+.lexi .tag {
+  font-size: 12px;
+  background: var(--cream-2);
+  color: var(--choco-light);
+  border-radius: 999px;
+  padding: 2px 10px;
+  font-weight: 600;
+}
+.lexi-hud {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+.lexi-hud-left {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.lexi-stats {
+  display: flex;
+  gap: 16px;
+  font-size: 13px;
+  color: var(--muted);
+  align-items: center;
+}
+.lexi-stats b {
+  color: var(--choco);
+  font-size: 16px;
+}
+.lexi-stats .kcal b {
+  color: var(--caramel-dark);
+}
+.lexi .miss-dots {
+  display: inline-flex;
+  gap: 3px;
+  vertical-align: middle;
+  margin-left: 4px;
+}
+.lexi .miss-dots i {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--line);
+  display: inline-block;
+}
+.lexi .miss-dots i.used {
+  background: var(--caramel-light);
+}
+.lexi-ask {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: -4px 0 12px;
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: #fff8ec;
+  border: 1px dashed #e3c18e;
+  font-size: 13px;
+  color: var(--choco);
+}
+.lexi-versus {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.lexi-player {
+  border: 2px solid var(--line);
+  border-radius: 14px;
+  padding: 8px 16px;
+  background: #fff;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  transition: border-color 0.2s, background 0.2s, box-shadow 0.2s;
+}
+.lexi-player-name {
+  font-weight: 800;
+  font-size: 17px;
+}
+.lexi-player.p1 .lexi-player-name {
+  color: #d9577f;
+}
+.lexi-player.p2 .lexi-player-name {
+  color: var(--sky);
+}
+.lexi-player.p1.turn {
+  border-color: #e9668b;
+  background: #fdeef2;
+  box-shadow: 0 0 0 3px #fadbe4;
+}
+.lexi-player.p2.turn {
+  border-color: #6f9fe0;
+  background: #eef4fd;
+  box-shadow: 0 0 0 3px #d9e6fa;
+}
+.lexi-turn-badge {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 800;
+  color: #fff;
+  border-radius: 999px;
+  padding: 1px 8px;
+  margin-left: 6px;
+  vertical-align: 2px;
+}
+.lexi-player.p1 .lexi-turn-badge {
+  background: #e9668b;
+}
+.lexi-player.p2 .lexi-turn-badge {
+  background: var(--sky);
+}
+.lexi-player-pts {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 30px;
+  color: var(--choco);
+  line-height: 1;
+}
+.lexi-player-pts small {
+  font-family: var(--font);
+  font-size: 13px;
+  color: var(--muted);
+  font-weight: 600;
+  margin-left: 2px;
+}
+.lexi-board {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 140px));
+  grid-auto-rows: 84px;
+  gap: 10px 14px;
+  justify-content: center;
+  padding: 14px;
+  background: radial-gradient(circle at 50% 30%, #fffaf3, #f6e7d2);
+  border-radius: 16px;
+  border: 1px solid var(--line);
+}
+.lexi-candy {
+  position: relative;
+  border: none;
+  background: none;
+  padding: 0;
+  cursor: pointer;
+  font: inherit;
+}
+.lexi-candy:disabled {
+  cursor: default;
+}
+.candy-art {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  transition: filter 0.2s;
+}
+.lexi-candy:hover:not(:disabled) .candy-art {
+  filter: drop-shadow(0 2px 3px rgba(229, 149, 171, 0.45));
+}
+.lexi-candy.glow .candy-art {
+  filter: drop-shadow(0 0 7px rgba(255, 150, 40, 0.95)) drop-shadow(0 0 2px rgba(255, 170, 60, 0.9));
+}
+.lexi-word {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 0 14px;
+  pointer-events: none;
+  text-shadow: 0 1px 0 #fff;
+  line-height: 1.2;
+}
+.lexi-word.en {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 17px;
+  color: var(--choco);
+}
+.lexi-word.ja {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+}
+.lexi-taken {
+  margin-top: 14px;
+}
+.lexi-taken h4 {
+  margin: 0 0 8px;
+  font-size: 13px;
+  color: var(--muted);
+  font-weight: 700;
+}
+.lexi-taken-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.lexi-pair {
+  display: inline-grid;
+  grid-template-columns: auto auto;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  overflow: hidden;
+  background: #fff;
+  font-size: 14px;
+}
+.lexi-pair > span {
+  padding: 5px 12px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+.lexi-pair-l {
+  background: #fffaf3;
+  border-right: 1px solid var(--line);
+}
+.lexi-pair .say-whole {
+  font-family: var(--font-display);
+  font-weight: 700;
+  color: var(--choco);
+}
+.lexi-gloss {
+  font-size: 11.5px;
+  color: var(--muted);
+  line-height: 1.2;
+}
+.lexi-pair.new {
+  border-color: #f2a65a;
+  box-shadow: 0 0 0 3px #fde3c4;
+}
+.lexi-who {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+  margin-bottom: 2px;
+}
+.lexi-who.p1 {
+  background: #e9668b;
+}
+.lexi-who.p2 {
+  background: var(--sky);
+}
+.lexi-slot {
+  width: 110px;
+  height: 34px;
+  border: 1px dashed var(--line);
+  border-radius: 12px;
+}
+.lexi-hint {
+  margin-top: 6px;
+}
+/* 演出: 画面中央に COMPLETE! / 勝った人の WIN! / DRAW */
+.lexi-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(59, 42, 30, 0.45);
+  animation: lexi-fade 0.25s ease-out;
+}
+.lexi-burst {
+  position: relative;
+  text-align: center;
+  animation: lexi-pop 0.45s cubic-bezier(0.2, 1.4, 0.4, 1);
+}
+.lexi-big {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 52px;
+  letter-spacing: 2px;
+  color: #fff;
+  text-shadow: 0 3px 0 var(--caramel-dark), 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+.lexi-big.win {
+  text-shadow: 0 3px 0 #c0587a, 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+.lexi-big.draw {
+  text-shadow: 0 3px 0 var(--choco-light), 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+.lexi-sub {
+  margin-top: 8px;
+  color: #fff;
+  font-weight: 700;
+  font-size: 15px;
+}
+.lexi-sub b {
+  color: #ffe3a6;
+}
+.lexi-scoreline {
+  display: flex;
+  gap: 18px;
+  justify-content: center;
+  margin-top: 8px;
+  color: #fff;
+  font-size: 17px;
+  font-weight: 800;
+}
+.lexi-scoreline .p1 {
+  color: #ffc2d4;
+}
+.lexi-scoreline .p2 {
+  color: #b9d6ff;
+}
+.lexi-btns {
+  margin-top: 16px;
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+}
+.lexi-confetti {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+.lexi-confetti i {
+  position: absolute;
+  top: -20px;
+  width: 9px;
+  height: 14px;
+  border-radius: 2px;
+  animation: lexi-fall 2.4s linear infinite;
+}
+.lexi-confetti i:nth-child(4n) {
+  background: #e9668b;
+}
+.lexi-confetti i:nth-child(4n + 1) {
+  background: #f1cf9a;
+}
+.lexi-confetti i:nth-child(4n + 2) {
+  background: var(--mint);
+}
+.lexi-confetti i:nth-child(4n + 3) {
+  background: var(--sky);
+}
+@keyframes lexi-fall {
+  to {
+    transform: translateY(110vh) rotate(540deg);
+  }
+}
+@keyframes lexi-fade {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes lexi-pop {
+  from {
+    transform: scale(0.6);
+    opacity: 0;
+  }
+}

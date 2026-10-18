@@ -464,6 +464,49 @@ export interface Dashboard {
   exam: ExamOverview;
 }
 
+/* ---------- LexiLink（英単語の神経衰弱） ---------- */
+
+/** Word Match（英単語 × 意味）/ Opposites（英単語 × 対義語） */
+export type LexiMode = "match" | "opposites";
+export type LexiGenre = "random" | "noun" | "verb" | "adjective" | "adverb";
+
+/** One card: `text` is what it says (the English, or the meaning in Word Match); `word` and `meaning` are what the pair's line shows once it is taken. */
+export interface LexiCard {
+  text: string;
+  /** the card says English (read aloud when the pair is taken) */
+  english: boolean;
+  word: string;
+  meaning: string;
+}
+
+export interface LexiPair {
+  a: LexiCard;
+  b: LexiCard;
+}
+
+export interface LexiDeal {
+  mode: LexiMode;
+  genre: LexiGenre;
+  pairs: LexiPair[];
+}
+
+/** How a game ended (finished, or left part-way), for its kcal. */
+export interface LexiFinish {
+  /** 1: ひとりで挑戦, 2: ふたりで対戦 */
+  players: 1 | 2;
+  pairs: number;
+  misses: number;
+  cleared: boolean;
+}
+
+export interface LexiResult {
+  /** what the game added to today (below zero when a cleared game's misses outweighed it) */
+  kcalEarned: number;
+  todayKcal: number;
+  streak: number;
+  newTicket: boolean;
+}
+
 /* ---------- 試験 ---------- */
 
 export type ExamLevel = "basic" | "toeic600" | "toeic800";
@@ -765,6 +808,8 @@ export interface Breakdown {
   examKcal: ExamKcal[];
   /** the cheat days used and what they paid */
   cheat: { times: number; kcal: number };
+  /** LexiLink's games and what they added (below zero for one whose misses outweighed it) */
+  lexilink: { times: number; kcal: number };
 }
 
 /** The study questions of one tab in one mode: the whole kcal they added to their days (after the play mode), how many, how many right. */

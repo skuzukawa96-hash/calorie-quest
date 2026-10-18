@@ -11,6 +11,7 @@ import { loadSpeechCapabilities } from "./lib/speech";
 import Exam from "./screens/Exam";
 import Favorites from "./screens/Favorites";
 import Home from "./screens/Home";
+import LexiLink, { type LexiConfig } from "./screens/LexiLink";
 import Recipe from "./screens/Recipe";
 import Snacks from "./screens/Snacks";
 import Stats from "./screens/Stats";
@@ -50,6 +51,8 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [session, setSession] = useState<SessionConfig | null>(null);
   const [exam, setExam] = useState<ExamSession | null>(null);
+  /** LexiLink（英単語の神経衰弱）, started from home */
+  const [lexi, setLexi] = useState<LexiConfig | null>(null);
   const [toast, setToast] = useState<string | null>(null);
 
   // お菓子引換券: clicking the badge shows a 引換券 button on each goal (home) and each snack of the
@@ -162,6 +165,7 @@ export default function App() {
   const go = (t: Tab) => {
     setSession(null);
     setExam(null);
+    setLexi(null);
     setTab(t);
     void refresh();
   };
@@ -177,7 +181,7 @@ export default function App() {
           </button>
           <nav className="tabs">
             {TABS.map((t) => (
-              <button key={t.id} className={tab === t.id && !session && !exam ? "active" : ""} onClick={() => go(t.id)}>
+              <button key={t.id} className={tab === t.id && !session && !exam && !lexi ? "active" : ""} onClick={() => go(t.id)}>
                 {t.label}
               </button>
             ))}
@@ -212,7 +216,9 @@ export default function App() {
               </button>
             </div>
           )}
-          {exam && dash ? (
+          {lexi ? (
+            <LexiLink key={JSON.stringify(lexi)} config={lexi} onExit={() => go("home")} onProgress={() => void refresh()} toast={showToast} />
+          ) : exam && dash ? (
             <Exam
               kind={exam.kind}
               level={exam.kind === "exam" ? exam.level : undefined}
@@ -240,6 +246,7 @@ export default function App() {
                 onStart={(mode, tier, category) => setSession({ mode, tier, category })}
                 onExam={(level) => setExam({ kind: "exam", level })}
                 onExamReview={() => setExam({ kind: "review" })}
+                onLexiLink={setLexi}
                 onChanged={() => void refresh()}
                 goToSnacks={() => go("snacks")}
                 ticketMode={ticketMode}

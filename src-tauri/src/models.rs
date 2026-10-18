@@ -869,6 +869,8 @@ pub struct Breakdown {
     pub exam_kcal: Vec<ExamKcal>,
     /// the cheat days used and what they paid
     pub cheat: Times,
+    /// LexiLink's games and what they added (below zero for one whose misses outweighed it)
+    pub lexilink: Times,
 }
 
 /// The study questions of one tab (word / compound / grammar / idiom / phrase / example) in one
@@ -913,6 +915,57 @@ pub struct ExamKcal {
     pub each: f64,
     pub times: i64,
     pub kcal: i64,
+}
+
+/// LexiLink: one card of the board. `text` is what the card says (the English, or the meaning in
+/// Word Match); `word` and `meaning` are what the pair's line shows once it is taken.
+#[derive(Debug, Clone, Serialize)]
+pub struct LexiCard {
+    pub text: String,
+    /// the card says English (read aloud when the pair is taken)
+    pub english: bool,
+    pub word: String,
+    pub meaning: String,
+}
+
+/// LexiLink: a pair of the board (Word Match: the English and its meaning; Opposites: a word and
+/// its opposite).
+#[derive(Debug, Clone, Serialize)]
+pub struct LexiPair {
+    pub a: LexiCard,
+    pub b: LexiCard,
+}
+
+/// LexiLink: the ten pairs of a game.
+#[derive(Debug, Clone, Serialize)]
+pub struct LexiDeal {
+    pub mode: String,
+    pub genre: String,
+    pub pairs: Vec<LexiPair>,
+}
+
+/// LexiLink: how a game ended (finished, or left part-way), for its kcal.
+#[derive(Debug, Clone, Deserialize)]
+pub struct LexiFinish {
+    /// 1: ひとりで挑戦, 2: ふたりで対戦
+    pub players: i64,
+    /// pairs taken (by both players in 対戦)
+    pub pairs: i64,
+    /// お手つき (ひとりで)
+    pub misses: i64,
+    /// every pair was taken
+    pub cleared: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LexiResult {
+    /// what the game added to today (below zero when a cleared game's misses outweighed it)
+    pub kcal_earned: i64,
+    pub today_kcal: i64,
+    pub streak: i64,
+    /// the streak reached a multiple of 7 and earned a cheat-day ticket
+    pub new_ticket: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]

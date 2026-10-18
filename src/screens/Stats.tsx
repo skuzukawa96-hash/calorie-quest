@@ -382,8 +382,8 @@ const RECIPE_MODES: Mode[] = ["choice", "typing"];
 /**
  * 累計獲得カロリー in three groups, each with its total, and theirs at the end: the study questions
  * (英単語 … 例文 by mode, and 単語帳の復習 by 選択 / 記入), the exams (by level: what passing, failing
- * and the reviews paid, as 150 kcal × 4回), and the rest (the cheat days, and with ダイエット機能 on the
- * 課題 and 体重記録).
+ * and the reviews paid, as 150 kcal × 4回), and the rest (the cheat days, LexiLink, and with ダイエット機能
+ * on the 課題 and 体重記録).
  */
 function KcalBreakdown({ b, diet }: { b: BreakdownData; diet: DietKcal | null }) {
   const study = (tier: Tier | null, mode: Mode | null) =>
@@ -396,6 +396,7 @@ function KcalBreakdown({ b, diet }: { b: BreakdownData; diet: DietKcal | null })
     b.examKcal.filter((e) => (level === null || e.level === level) && (kind === null || e.kind === kind));
   const others = [
     { label: "チートデイ", sub: `${b.cheat.times}回`, kcal: b.cheat.kcal, diet: false },
+    { label: "LexiLink", sub: "", kcal: b.lexilink.kcal, diet: false },
     ...(diet
       ? [
           { label: "課題", sub: "", kcal: diet.tasks, diet: true },

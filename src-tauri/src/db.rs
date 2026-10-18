@@ -1689,8 +1689,32 @@ fn antonym_seeds() -> &'static HashMap<String, AntonymSeed> {
     TABLE.get_or_init(|| serde_json::from_str(ANTONYMS_JSON).expect("data/antonyms.json must be a valid JSON object"))
 }
 
+/// Every pair of 対義語 antonyms.json writes, each once: the word and the sense it is the opposite
+/// in (None when it is in every sense), the opposite and the sense written for it (else None). For
+/// LexiLink's Opposites.
+pub fn antonym_pairs() -> Vec<(String, Option<String>, String, Option<String>)> {
+    let mut seen: std::collections::HashSet<(String, String)> = std::collections::HashSet::new();
+    let mut out = Vec::new();
+    let mut words: Vec<&String> = antonym_seeds().keys().collect();
+    words.sort();
+    for word in words {
+        let each: Vec<(Option<String>, String, Option<String>)> = match &antonym_seeds()[word] {
+            AntonymSeed::Whole(en) => vec![(None, en.clone(), None)],
+            AntonymSeed::Shown(en, sense) => vec![(None, en.clone(), Some(sense.clone()))],
+            AntonymSeed::BySense(list) => list.iter().filter(|e| e.len() >= 2).map(|e| (Some(e[0].clone()), e[1].clone(), e.get(2).cloned())).collect(),
+        };
+        for (sense, opposite, its) in each {
+            let pair = if *word < opposite.to_lowercase() { (word.clone(), opposite.to_lowercase()) } else { (opposite.to_lowercase(), word.clone()) };
+            if seen.insert(pair) {
+                out.push((word.clone(), sense, opposite, its));
+            }
+        }
+    }
+    out
+}
+
 /// The meaning a word is shown with as an opposite: its word question's, else its glossary's.
-fn shown_meaning(en: &str) -> Option<String> {
+pub(crate) fn shown_meaning(en: &str) -> Option<String> {
     let key = en.to_lowercase();
     match words_by_english().0.get(&key) {
         Some(asked) => asked.first().map(|(ja, _, _)| ja.clone()),

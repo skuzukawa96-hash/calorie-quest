@@ -4,6 +4,7 @@ mod db;
 mod diet;
 mod exam;
 mod favorite;
+mod lexilink;
 mod models;
 mod recipe;
 mod speech;
@@ -35,6 +36,8 @@ pub fn run() {
             backup::create_backup,
             backup::restore_backup,
             backup::delete_backup,
+            lexilink::deal_lexilink,
+            lexilink::finish_lexilink,
             backup::open_backup_folder,
             commands::get_dashboard,
             commands::get_session_questions,

@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import CalorieBar from "../components/CalorieBar";
 import GoalAdder, { SNACK_GOALS, TASK_GOALS } from "../components/GoalAdder";
+import LexiLinkEntry from "../components/LexiLinkEntry";
+import type { LexiConfig } from "./LexiLink";
 import { DeleteButton, DoneButton, EatButton, SwitchViewButton } from "../components/IconButtons";
 import { iconLabel, ItemIcon } from "../components/ItemIcon";
 import PencilIcon from "../components/PencilIcon";
@@ -33,6 +35,8 @@ interface Props {
   /** 試験 of a level, and the review of the exam questions missed */
   onExam: (level: ExamLevel) => void;
   onExamReview: () => void;
+  /** LexiLink（英単語の神経衰弱）, as picked under the exams */
+  onLexiLink: (config: LexiConfig) => void;
   onChanged: () => void;
   goToSnacks: () => void;
   /** お菓子引換券 in use: each goal shows a 引換券 button (the 図鑑 shows them too) */
@@ -103,6 +107,7 @@ export default function Home({
   onStart,
   onExam,
   onExamReview,
+  onLexiLink,
   onChanged,
   goToSnacks,
   ticketMode,
@@ -579,6 +584,8 @@ export default function Home({
           )}
         </div>
       </section>
+
+      <LexiLinkEntry onStart={onLexiLink} />
     </div>
   );
 }

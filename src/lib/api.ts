@@ -16,6 +16,11 @@ import type {
   Favorite,
   FavoriteKeys,
   FavoriteReview,
+  LexiDeal,
+  LexiFinish,
+  LexiGenre,
+  LexiMode,
+  LexiResult,
   Mode,
   NativeRecognition,
   PlayMode,
@@ -108,6 +113,11 @@ export const api = {
   restoreBackup: (name: string) => call<void>("restore_backup", { name }),
   /** deletes backup `name` from the folder */
   deleteBackup: (name: string) => call<void>("delete_backup", { name }),
+  /** LexiLink: the ten pairs of a game */
+  dealLexiLink: (mode: LexiMode, genre: LexiGenre, preferLearned: boolean) =>
+    call<LexiDeal>("deal_lexilink", { mode, genre, preferLearned }),
+  /** LexiLink: a game finished or left part-way (its kcal, and the day counts as studied) */
+  finishLexiLink: (game: LexiFinish) => call<LexiResult>("finish_lexilink", { game }),
   openBackupFolder: () => call<void>("open_backup_folder"),
   getDictionary: () => call<Record<string, string>>("get_dictionary"),
   getIdioms: () => call<string[]>("get_idioms"),

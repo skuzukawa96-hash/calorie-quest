@@ -55,6 +55,12 @@ import type {
   Favorite,
   FavoriteKeys,
   FavoriteReview,
+  LexiDeal,
+  LexiFinish,
+  LexiGenre,
+  LexiMode,
+  LexiPair,
+  LexiResult,
   IrregularVerb,
   GrammarNote,
   Level,
@@ -2261,6 +2267,7 @@ function breakdown(): Breakdown {
   const recipe: Breakdown["recipe"] = [];
   const examKcal: ExamKcal[] = [];
   let cheat = { times: 0, kcal: 0 };
+  let lexilink = { times: 0, kcal: 0 };
   for (const [key, v] of Object.entries(state.earned)) {
     const [what, a, b, c] = key.split("|");
     if (what === "study") cellOf(`${a}|${b}`).kcal += v.kcal;
@@ -2268,6 +2275,7 @@ function breakdown(): Breakdown {
     else if (what === "exam")
       examKcal.push({ level: a as ExamLevel, kind: b as ExamKcalKind, each: Number(c) / 8, times: v.times, kcal: v.kcal });
     else if (what === "cheat") cheat = { times: v.times, kcal: v.kcal };
+    else if (what === "lexilink") lexilink = { times: v.times, kcal: v.kcal };
   }
   const exams: ExamCell[] = Object.entries(state.counted)
     .filter(([k]) => k.startsWith("exam|"))
@@ -2282,7 +2290,168 @@ function breakdown(): Breakdown {
     exams,
     examKcal: examKcal.sort((a, b) => a.level.localeCompare(b.level) || a.kind.localeCompare(b.kind) || b.each - a.each),
     cheat,
+    lexilink,
   };
+}
+
+/* ---------- LexiLink (mirrors lexilink.rs) ---------- */
+
+const LEXI_PAIRS = 10;
+const LEXI_GENRES: LexiGenre[] = ["random", "noun", "verb", "adjective", "adverb"];
+
+/** Mirrors lexilink::told_apart: what a meaning says once its notes in （） are put aside, and the notes. */
+function toldApart(meaning: string): [string, string] {
+  let said = "";
+  let notes = "";
+  let depth = 0;
+  for (const c of meaning) {
+    if (c === "（" || c === "(") {
+      depth += 1;
+      notes += c;
+    } else if (c === "）" || c === ")") {
+      depth -= 1;
+      notes += c;
+    } else if (depth > 0) notes += c;
+    else said += c;
+  }
+  return [said.trim(), notes];
+}
+
+/** Mirrors lexilink::alike: two meanings a player could not tell apart. */
+function alikeMeanings(a: string, b: string): boolean {
+  const [sa, na] = toldApart(a);
+  const [sb, nb] = toldApart(b);
+  return sa === sb && (na === "" || nb === "" || na === nb);
+}
+
+const firstSense = (ja: string) => glossSenses(ja)[0] ?? ja.trim();
+
+/** Mirrors db::shown_meaning: a word's word question's meaning, else its glossary's. */
+function shownMeaning(en: string): string | null {
+  const key = en.toLowerCase();
+  return questions.find((q) => q.kind === "word" && q.en.toLowerCase() === key)?.ja ?? (glossary as Record<string, string>)[key] ?? null;
+}
+
+/** Mirrors db::antonym_pairs: every pair antonyms.json writes, once: [word, its sense, opposite, its sense]. */
+function antonymPairs(): Array<[string, string | null, string, string | null]> {
+  const seen = new Set<string>();
+  const out: Array<[string, string | null, string, string | null]> = [];
+  for (const word of Object.keys(antonymSeeds).sort()) {
+    const seed = antonymSeeds[word];
+    const each: Array<[string | null, string, string | null]> =
+      typeof seed === "string"
+        ? [[null, seed, null]]
+        : typeof seed[0] === "string"
+          ? [[null, (seed as [string, string])[0], (seed as [string, string])[1]]]
+          : (seed as string[][]).filter((e) => e.length >= 2).map((e) => [e[0], e[1], e[2] ?? null] as [string, string, string | null]);
+    for (const [sense, opposite, its] of each) {
+      const o = opposite.toLowerCase();
+      const pair = word < o ? `${word}|${o}` : `${o}|${word}`;
+      if (seen.has(pair)) continue;
+      seen.add(pair);
+      out.push([word, sense, opposite, its]);
+    }
+  }
+  return out;
+}
+
+/** Mirrors lexilink::learned_words: answered in study, saved to the recipe, the answers of exam questions asked. */
+function learnedWords(): Set<string> {
+  const out = new Set<string>();
+  for (const q of questions) if (q.kind === "word" && state.history[q.key]) out.add(q.en.toLowerCase());
+  for (const w of state.recipe) out.add(w.word.trim().toLowerCase());
+  for (const level of EXAM_LEVELS)
+    for (const set of EXAM_SETS[level]) if (state.examSeen[set.id]) set.questions.forEach((q) => out.add(q.answer.trim().toLowerCase()));
+  return out;
+}
+
+/** Mirrors lexilink::ordered: shuffled, the learned ones first when asked. */
+function lexiOrdered<T>(items: T[], prefer: boolean, learned: (x: T) => boolean): T[] {
+  const mixed = shuffle(items);
+  return prefer ? [...mixed.filter(learned), ...mixed.filter((x) => !learned(x))] : mixed;
+}
+
+/** Mirrors lexilink::deal. */
+function dealLexiLink(mode: LexiMode, genre: LexiGenre, prefer: boolean): LexiDeal {
+  if (mode !== "match" && mode !== "opposites") throw new Error(`unknown LexiLink mode ${String(mode)}`);
+  if (!LEXI_GENRES.includes(genre)) throw new Error(`unknown LexiLink genre ${String(genre)}`);
+  const learned = prefer ? learnedWords() : new Set<string>();
+  const pairs: LexiPair[] = [];
+  if (mode === "match") {
+    const words = questions
+      .filter((q) => q.kind === "word" && (q.tier === "word" || q.tier === "compound") && (genre === "random" || (wordPos as Record<string, string>)[q.key] === genre))
+      .map((q) => [q.en, firstSense(q.ja)] as [string, string]);
+    const picked: Array<[string, string]> = [];
+    for (const [en, meaning] of lexiOrdered(words, prefer, ([en]) => learned.has(en.toLowerCase()))) {
+      if (picked.length === LEXI_PAIRS) break;
+      if (!meaning || picked.some(([e, m]) => e.toLowerCase() === en.toLowerCase() || alikeMeanings(m, meaning))) continue;
+      picked.push([en, meaning]);
+    }
+    for (const [en, meaning] of picked)
+      pairs.push({ a: { text: en, english: true, word: en, meaning }, b: { text: meaning, english: false, word: en, meaning } });
+  } else {
+    const all = antonymPairs();
+    const oppositeOf = new Map<string, Set<string>>();
+    const link = (x: string, y: string) => oppositeOf.set(x, (oppositeOf.get(x) ?? new Set<string>()).add(y));
+    for (const [w, , o] of all) {
+      link(w.toLowerCase(), o.toLowerCase());
+      link(o.toLowerCase(), w.toLowerCase());
+    }
+    const posOf = (word: string, meaning: string) => recipePoses(word, meaning)[0];
+    const cands: Array<[string, string, string, string]> = [];
+    for (const [w, ws, o, os] of all) {
+      const shown = (word: string) => {
+        const m = shownMeaning(word);
+        return m ? firstSense(m) : null;
+      };
+      const wm = ws ?? shown(w);
+      const om = os ?? shown(o);
+      if (!wm || !om) continue;
+      if (genre !== "random" && (posOf(w, wm) !== genre || posOf(o, om) !== genre)) continue;
+      cands.push([w, wm, o, om]);
+    }
+    const picked: Array<[string, string, string, string]> = [];
+    const used = new Set<string>();
+    const met = ([w, , o]: [string, string, string, string]) => learned.has(w.toLowerCase()) || learned.has(o.toLowerCase());
+    for (const pair of lexiOrdered(cands, prefer, met)) {
+      if (picked.length === LEXI_PAIRS) break;
+      const w = pair[0].toLowerCase();
+      const o = pair[2].toLowerCase();
+      const crosses = (x: string) => [...(oppositeOf.get(x) ?? [])].some((y) => used.has(y));
+      const sameSense = picked.some(([, pm, , qm]) => [pair[1], pair[3]].some((m) => alikeMeanings(m, pm) || alikeMeanings(m, qm)));
+      if (used.has(w) || used.has(o) || crosses(w) || crosses(o) || sameSense) continue;
+      used.add(w);
+      used.add(o);
+      picked.push(pair);
+    }
+    for (const [w, wm, o, om] of picked)
+      pairs.push({ a: { text: w, english: true, word: w, meaning: wm }, b: { text: o, english: true, word: o, meaning: om } });
+  }
+  if (pairs.length < LEXI_PAIRS) throw new Error("このジャンルでは10ペアそろいません");
+  return { mode, genre, pairs };
+}
+
+/** Mirrors lexilink::solo_kcal. */
+function lexiSoloKcal(pairs: number, misses: number, cleared: boolean): number {
+  const total = pairs * 3 - Math.max(0, misses - 3) * 1 + (cleared ? 10 : 0);
+  return cleared ? total : Math.max(0, total);
+}
+
+/** Mirrors lexilink::finish (and commands::credit_flat: as it is, the day not below zero). */
+function finishLexiLink(game: LexiFinish): LexiResult {
+  if (![1, 2].includes(game.players) || game.pairs < 0 || game.pairs > LEXI_PAIRS || game.misses < 0) throw new Error("LexiLink の結果が正しくありません");
+  if (game.cleared && game.pairs !== LEXI_PAIRS) throw new Error("LexiLink の結果が正しくありません（ペアがそろっていません）");
+  const kcal = game.players === 1 ? lexiSoloKcal(game.pairs, game.misses, game.cleared) : game.cleared ? 30 : 0;
+  const t = today();
+  const d = daily(t);
+  const added = Math.max(kcal, -d.kcalEarned);
+  if (added !== 0) {
+    d.kcalEarned += added;
+    addEarned("lexilink", added);
+  }
+  const { newTicket } = markStudied(t);
+  save();
+  return { kcalEarned: added, todayKcal: d.kcalEarned, streak: state.user.currentStreak, newTicket };
 }
 
 /* ---------- お気に入り (mirrors favorite.rs) ---------- */
@@ -3280,6 +3449,10 @@ export async function mockInvoke<T>(cmd: string, args: Record<string, unknown>):
       save();
       return moved as T;
     }
+    case "deal_lexilink":
+      return dealLexiLink(args.mode as LexiMode, args.genre as LexiGenre, Boolean(args.preferLearned)) as T;
+    case "finish_lexilink":
+      return finishLexiLink(args.game as LexiFinish) as T;
     case "list_backups":
     case "create_backup":
     case "restore_backup":
