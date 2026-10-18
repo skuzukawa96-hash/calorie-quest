@@ -89,6 +89,8 @@ export default function LexiLink({
   const [turn, setTurn] = useState<0 | 1>(0);
   const [end, setEnd] = useState<End | null>(null);
   const [asking, setAsking] = useState(false);
+  /** the game over, its end put away to save words from the pairs taken (単語を登録する) */
+  const [browsing, setBrowsing] = useState(false);
   const [dict, setDict] = useState<Dictionary | null>(loadedDictionary);
   const busy = useRef(false);
   /** the game's kcal have been asked for (finished, or left part-way): never twice */
@@ -129,6 +131,7 @@ export default function LexiLink({
     setTurn(0);
     setEnd(null);
     setAsking(false);
+    setBrowsing(false);
     api
       .dealLexiLink(config.mode, config.genre, config.preferLearned)
       .then((d) => {
@@ -419,13 +422,24 @@ export default function LexiLink({
                 )}
               </button>
             ))}
+            {/* The end put away: its two buttons in the middle of the board, now empty. The game was
+                paid when its last pair was taken, so leaving by ← やめる or the tabs pays nothing more. */}
+            {end && browsing && (
+              <div className="lexi-after">
+                <button className="btn" onClick={deal}>
+                  もう一度
+                </button>
+                <button className="btn" onClick={onExit}>
+                  ホームへ
+                </button>
+              </div>
+            )}
           </div>
         ) : (
           <div className="loading">キャンディを並べています…</div>
         )}
 
-        {/* Above the game's end too, its words still read aloud and saved to the recipe. */}
-        <div className={"lexi-taken" + (end ? " over-end" : "")}>
+        <div className="lexi-taken">
           <h4>取ったペア {pairs}/{LEXI.pairs}</h4>
           <div className="lexi-taken-list">
             {taken.map((t, k) => (
@@ -455,7 +469,7 @@ export default function LexiLink({
         </div>
       </section>
 
-      {end && (
+      {end && !browsing && (
         <div className="lexi-overlay" role="dialog" aria-live="polite">
           {end.kind !== "lose" && (
             <div className="lexi-confetti" aria-hidden="true">
@@ -498,6 +512,9 @@ export default function LexiLink({
               </button>
               <button className="btn" onClick={onExit}>
                 ホームへ
+              </button>
+              <button className="btn" onClick={() => setBrowsing(true)}>
+                単語を登録する
               </button>
             </div>
           </div>

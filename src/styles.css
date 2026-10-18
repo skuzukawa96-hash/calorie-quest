@@ -3705,8 +3705,7 @@ button.wp-link.open {
   padding: 12px 20px;
   border-radius: 999px;
   box-shadow: var(--shadow);
-  /* above LexiLink's end (60): a word saved from the pairs taken is told there */
-  z-index: 70;
+  z-index: 50;
   animation: rise 0.25s ease;
   max-width: 90vw;
 }
@@ -4817,6 +4816,7 @@ button.wp-link.open {
   margin-left: 2px;
 }
 .lexi-board {
+  position: relative;
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 140px));
   grid-auto-rows: 84px;
@@ -4826,6 +4826,18 @@ button.wp-link.open {
   background: radial-gradient(circle at 50% 30%, #fffaf3, #f6e7d2);
   border-radius: 16px;
   border: 1px solid var(--line);
+}
+/* 単語を登録する: the end put away, もう一度 and ホームへ in the middle of the empty board */
+.lexi-after {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+}
+.lexi-after .btn {
+  box-shadow: var(--shadow);
 }
 .lexi-candy {
   position: relative;
@@ -4877,16 +4889,6 @@ button.wp-link.open {
 }
 .lexi-taken {
   margin-top: 14px;
-}
-/* the game over: the pairs taken stand above the dimmed board, still to click and right-click */
-.lexi-taken.over-end {
-  position: relative;
-  z-index: 61;
-  margin: 14px -12px 0;
-  padding: 10px 12px 12px;
-  background: var(--card);
-  border-radius: 14px;
-  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.25);
 }
 .lexi-taken h4 {
   margin: 0 0 8px;
@@ -4964,11 +4966,6 @@ button.wp-link.open {
   justify-content: center;
   background: rgba(59, 42, 30, 0.45);
   animation: lexi-fade 0.25s ease-out;
-  /* clicks go through to the page (the pairs taken, the scroll); only its words and buttons take them */
-  pointer-events: none;
-}
-.lexi-overlay .lexi-burst {
-  pointer-events: auto;
 }
 .lexi-burst {
   position: relative;
