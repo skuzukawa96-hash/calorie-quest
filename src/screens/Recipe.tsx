@@ -1240,13 +1240,21 @@ export default function Recipe({ playMode, onProgress, toast }: Props) {
                       </div>
                       {isOpen && (
                         <div className="recipe-item-body">
-                          {w.example && (
-                            <div className="recipe-example">
-                              <GlossedText text={w.example} dict={dict} enabled highlight={w.form || w.word} />
-                            </div>
-                          )}
-                          {w.exampleJa && <div className="muted small">{w.exampleJa}</div>}
-                          <ListedNotes w={w} dict={dict} />
+                          <ListedNotes w={w} dict={dict}>
+                            {(w.example || w.exampleJa) && (
+                              <div className="brief-example">
+                                <span className="label">例文</span>
+                                <div>
+                                  {w.example && (
+                                    <div className="recipe-example">
+                                      <GlossedText text={w.example} dict={dict} enabled highlight={w.form || w.word} />
+                                    </div>
+                                  )}
+                                  {w.exampleJa && <div className="muted small">{w.exampleJa}</div>}
+                                </div>
+                              </div>
+                            )}
+                          </ListedNotes>
                           <div className="recipe-item-foot muted small">
                             {w.poses.map((p) => RECIPE_POS_LABEL[p]).join("・")}
                             {shownForm(w) && `・「${shownForm(w)}」から登録`}・{stamp(w.addedAt)} に追加
@@ -1273,10 +1281,10 @@ export default function Recipe({ playMode, onProgress, toast }: Props) {
 const listedNotes = new Map<string, WordNotes | null>();
 
 /**
- * A row of the list opened: its 対義語 and 成り立ち, and 用法 / 類似表現 to open (as its review
- * explains them), fetched when the row is first opened.
+ * A row of the list opened: its 対義語 and 成り立ち, the sentence it was saved with (`children`),
+ * and 用法 / 類似表現 to open (as its review explains them), fetched when the row is first opened.
  */
-function ListedNotes({ w, dict }: { w: RecipeWord; dict: Dictionary | null }) {
+function ListedNotes({ w, dict, children }: { w: RecipeWord; dict: Dictionary | null; children?: ReactNode }) {
   const key = `${w.word}
 ${w.meaning}`;
   const [notes, setNotes] = useState<WordNotes | null | undefined>(() => listedNotes.get(key));
@@ -1297,7 +1305,11 @@ ${w.meaning}`;
       alive = false;
     };
   }, [key, w.word, w.meaning]);
-  return notes ? <WordNotesBrief notes={notes} word={w.word} meaning={w.meaning} dict={dict} /> : null;
+  return (
+    <WordNotesBrief notes={notes ?? null} word={w.word} meaning={w.meaning} dict={dict}>
+      {children}
+    </WordNotesBrief>
+  );
 }
 
 /* ---------- review: 選択 / 記入 ---------- */

@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
 import AntonymTag from "./AntonymTag";
 import GlossedText from "./GlossedText";
 import { MeaningWithTags, PosTags, SlotText, useWordTags, WordTagsOnly } from "./PosTags";
@@ -507,14 +507,26 @@ export default function WordNotesPanel({
 
 /**
  * A word of the recipe's list, opened: what its review explains about it, kept short — 対義語 and
- * 成り立ち as they are, 用法 and 類似表現 each behind a button (open, they would make the list too
- * long). Nothing when there is none of them.
+ * 成り立ち as they are, then `children` (the sentence it was saved with), then 用法 and 類似表現
+ * each behind a button (open, they would make the list too long). Without notes (not read yet, or
+ * none), `children` alone.
  */
-export function WordNotesBrief({ notes, word, meaning, dict }: { notes: WordNotes; word: string; meaning: string; dict: Dictionary | null }) {
-  const { parts, usages, related, shift, antonym } = notes;
+export function WordNotesBrief({
+  notes,
+  word,
+  meaning,
+  dict,
+  children,
+}: {
+  notes: WordNotes | null;
+  word: string;
+  meaning: string;
+  dict: Dictionary | null;
+  children?: ReactNode;
+}) {
+  const { parts = [], usages = [], related = [], shift, antonym } = notes ?? {};
   const [usagesOpen, setUsagesOpen] = useState(false);
   const [relatedOpen, setRelatedOpen] = useState(false);
-  if (!antonym && parts.length === 0 && usages.length === 0 && related.length === 0) return null;
   return (
     <div className="brief-notes">
       {antonym && (
@@ -524,6 +536,7 @@ export function WordNotesBrief({ notes, word, meaning, dict }: { notes: WordNote
         </div>
       )}
       {parts.length > 0 && <WordParts parts={parts} word={word} meaning={meaning} dict={dict} shift={shift} />}
+      {children}
       {(usages.length > 0 || related.length > 0) && (
         <div className="brief-toggles">
           {usages.length > 0 && (

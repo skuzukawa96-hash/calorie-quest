@@ -890,6 +890,18 @@ main {
 .brief-antonym .antonym-mark {
   margin: 0 0.6em 0 0;
 }
+/* 例文: the sentence the word was saved with, under its label as 対義語 and 成り立ち are */
+.brief-example {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.brief-example > .label {
+  flex-shrink: 0;
+}
+.brief-example .recipe-example {
+  margin-top: 0;
+}
 .brief-toggles {
   display: flex;
   gap: 8px;
