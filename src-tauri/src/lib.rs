@@ -27,8 +27,12 @@ pub fn run() {
             std::fs::create_dir_all(&dir)?;
             let conn = db::init(&dir.join(backup::DB_FILE))?;
             app.manage(AppState { db: Mutex::new(conn), bank: Mutex::new(None) });
-            // The notes' tables, ready before the first お気に入り or answer asks for them.
-            std::thread::spawn(db::warm_up);
+            // The notes' tables, ready before the first お気に入り or answer asks for them, and
+            // LexiLink's 対義語 before the first game of Opposites.
+            std::thread::spawn(|| {
+                db::warm_up();
+                lexilink::warm_up();
+            });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

@@ -12,6 +12,7 @@
 //! the end. Either way the day counts as a day of study.
 
 use std::collections::{HashMap, HashSet};
+use std::sync::OnceLock;
 
 use rusqlite::{params, Connection};
 use tauri::State;
@@ -128,40 +129,75 @@ fn word_match(conn: &Connection, genre: &str, prefer: bool, learned: &HashSet<St
         .collect())
 }
 
-fn opposites(genre: &str, prefer: bool, learned: &HashSet<String>) -> Vec<LexiPair> {
-    let all = db::antonym_pairs();
-    // Each word's opposites in any sense: a pair whose word is the opposite of another pair's word
-    // (big–little beside large–small) is not set on the same board.
-    let mut opposite_of: HashMap<String, HashSet<String>> = HashMap::new();
-    for (w, _, o, _) in &all {
-        let (w, o) = (w.to_lowercase(), o.to_lowercase());
-        opposite_of.entry(w.clone()).or_default().insert(o.clone());
-        opposite_of.entry(o).or_default().insert(w);
-    }
-    let part_of_speech = |word: &str, meaning: &str| db::recipe_poses(word, meaning).into_iter().next();
-    let mut pairs = Vec::new();
-    for (w, w_sense, o, o_sense) in all {
-        let shown = |word: &str| db::shown_meaning(word).map(|m| first_sense(&m));
-        let (Some(wm), Some(om)) = (w_sense.or_else(|| shown(&w)), o_sense.or_else(|| shown(&o))) else {
-            continue;
-        };
-        if genre != "random" && (part_of_speech(&w, &wm).as_deref() != Some(genre) || part_of_speech(&o, &om).as_deref() != Some(genre)) {
-            continue;
+/// A pair of 対義語 as the board shows it: each word with its meaning and the part of speech that
+/// meaning is.
+struct Opposite {
+    word: String,
+    meaning: String,
+    pos: Option<String>,
+    opposite: String,
+    its_meaning: String,
+    its_pos: Option<String>,
+}
+
+/// Every pair of 対義語 with a meaning for both words, and each word's opposites in any sense
+/// (lowercase). Made once: it is read from the data alone (antonyms.json and the dictionary), and
+/// the parts of speech take a while to find.
+struct Opposites {
+    pairs: Vec<Opposite>,
+    opposite_of: HashMap<String, HashSet<String>>,
+}
+
+fn opposite_table() -> &'static Opposites {
+    static TABLE: OnceLock<Opposites> = OnceLock::new();
+    TABLE.get_or_init(|| {
+        let all = db::antonym_pairs();
+        let mut opposite_of: HashMap<String, HashSet<String>> = HashMap::new();
+        for (w, _, o, _) in &all {
+            let (w, o) = (w.to_lowercase(), o.to_lowercase());
+            opposite_of.entry(w.clone()).or_default().insert(o.clone());
+            opposite_of.entry(o).or_default().insert(w);
         }
-        pairs.push((w, wm, o, om));
-    }
-    let mut picked: Vec<(String, String, String, String)> = Vec::new();
+        let shown = |word: &str| db::shown_meaning(word).map(|m| first_sense(&m));
+        let part_of_speech = |word: &str, meaning: &str| db::recipe_poses(word, meaning).into_iter().next();
+        let pairs = all
+            .into_iter()
+            .filter_map(|(word, w_sense, opposite, o_sense)| {
+                let meaning = w_sense.or_else(|| shown(&word))?;
+                let its_meaning = o_sense.or_else(|| shown(&opposite))?;
+                let (pos, its_pos) = (part_of_speech(&word, &meaning), part_of_speech(&opposite, &its_meaning));
+                Some(Opposite { word, meaning, pos, opposite, its_meaning, its_pos })
+            })
+            .collect();
+        Opposites { pairs, opposite_of }
+    })
+}
+
+/// Made ahead at start-up, so the first game of Opposites does not wait for it.
+pub fn warm_up() {
+    let _ = opposite_table();
+}
+
+fn opposites(genre: &str, prefer: bool, learned: &HashSet<String>) -> Vec<LexiPair> {
+    let table = opposite_table();
+    let of_genre = |pos: &Option<String>| genre == "random" || pos.as_deref() == Some(genre);
+    let pairs: Vec<&Opposite> = table.pairs.iter().filter(|p| of_genre(&p.pos) && of_genre(&p.its_pos)).collect();
+    let mut picked: Vec<&Opposite> = Vec::new();
     let mut used: HashSet<String> = HashSet::new();
-    let met = |(w, _, o, _): &(String, String, String, String)| learned.contains(&w.to_lowercase()) || learned.contains(&o.to_lowercase());
+    let met = |p: &&Opposite| learned.contains(&p.word.to_lowercase()) || learned.contains(&p.opposite.to_lowercase());
     for pair in ordered(pairs, prefer, met) {
         if picked.len() == PAIRS {
             break;
         }
-        let (w, o) = (pair.0.to_lowercase(), pair.2.to_lowercase());
-        let crosses = |x: &String| opposite_of.get(x).is_some_and(|set| set.iter().any(|y| used.contains(y)));
+        let (w, o) = (pair.word.to_lowercase(), pair.opposite.to_lowercase());
+        // A pair whose word is the opposite of another pair's word (big–little beside large–small)
+        // is not set on the same board.
+        let crosses = |x: &String| table.opposite_of.get(x).is_some_and(|set| set.iter().any(|y| used.contains(y)));
         // A word meaning what a word of another pair means (stable and steady, 安定した) would pair
         // with that one's opposite too (stable–shaky beside shaky–steady).
-        let same_sense = picked.iter().any(|(_, pm, _, qm)| [&pair.1, &pair.3].iter().any(|m| alike(m, pm) || alike(m, qm)));
+        let same_sense = picked
+            .iter()
+            .any(|q| [&pair.meaning, &pair.its_meaning].iter().any(|m| alike(m, &q.meaning) || alike(m, &q.its_meaning)));
         if used.contains(&w) || used.contains(&o) || crosses(&w) || crosses(&o) || same_sense {
             continue;
         }
@@ -171,9 +207,9 @@ fn opposites(genre: &str, prefer: bool, learned: &HashSet<String>) -> Vec<LexiPa
     }
     picked
         .into_iter()
-        .map(|(w, wm, o, om)| LexiPair {
-            a: LexiCard { text: w.clone(), english: true, word: w, meaning: wm },
-            b: LexiCard { text: o.clone(), english: true, word: o, meaning: om },
+        .map(|p| LexiPair {
+            a: LexiCard { text: p.word.clone(), english: true, word: p.word.clone(), meaning: p.meaning.clone() },
+            b: LexiCard { text: p.opposite.clone(), english: true, word: p.opposite.clone(), meaning: p.its_meaning.clone() },
         })
         .collect()
 }
@@ -376,7 +412,7 @@ mod tests {
         assert!(finish(&mut c, &LexiFinish { players: 1, pairs: 4, misses: 0, cleared: true }).is_err());
 
         let s = crate::commands::load_stats(&c).unwrap();
-        assert_eq!((s.breakdown.lexilink.times, s.breakdown.lexilink.kcal), (3, 60));
+        assert_eq!((s.breakdown.lexilink.times, s.breakdown.lexilink.kcal), (5, 60), "the games that paid nothing are games too");
         assert_eq!(s.total_kcal, 60, "the table and the total agree");
         // A cleared game's minus never takes the day below zero.
         let mut fresh = conn();

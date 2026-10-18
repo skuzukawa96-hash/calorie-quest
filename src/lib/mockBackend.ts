@@ -95,7 +95,7 @@ import type {
   WordPart,
   WordUsage,
 } from "../types";
-import { PLAY_MODES, POINT_CATEGORIES } from "../types";
+import { LEXI, LEXI_GENRES, LEXI_MODES, lexiSoloKcal, PLAY_MODES, POINT_CATEGORIES } from "../types";
 
 interface SeedQuestion {
   key: string;
@@ -2296,8 +2296,7 @@ function breakdown(): Breakdown {
 
 /* ---------- LexiLink (mirrors lexilink.rs) ---------- */
 
-const LEXI_PAIRS = 10;
-const LEXI_GENRES: LexiGenre[] = ["random", "noun", "verb", "adjective", "adverb"];
+const LEXI_PAIRS = LEXI.pairs;
 
 /** Mirrors lexilink::told_apart: what a meaning says once its notes in （） are put aside, and the notes. */
 function toldApart(meaning: string): [string, string] {
@@ -2355,6 +2354,42 @@ function antonymPairs(): Array<[string, string | null, string, string | null]> {
   return out;
 }
 
+interface Opposite {
+  word: string;
+  meaning: string;
+  pos: string | undefined;
+  opposite: string;
+  itsMeaning: string;
+  itsPos: string | undefined;
+}
+let opposites: { pairs: Opposite[]; oppositeOf: Map<string, Set<string>> } | null = null;
+
+/** Mirrors lexilink::opposite_table: every pair with a meaning for both words and their parts of
+ * speech, and each word's opposites in any sense (lowercase); made once. */
+function oppositeTable() {
+  if (opposites) return opposites;
+  const all = antonymPairs();
+  const oppositeOf = new Map<string, Set<string>>();
+  const link = (x: string, y: string) => oppositeOf.set(x, (oppositeOf.get(x) ?? new Set<string>()).add(y));
+  for (const [w, , o] of all) {
+    link(w.toLowerCase(), o.toLowerCase());
+    link(o.toLowerCase(), w.toLowerCase());
+  }
+  const shown = (word: string) => {
+    const m = shownMeaning(word);
+    return m ? firstSense(m) : null;
+  };
+  const pairs: Opposite[] = [];
+  for (const [word, ws, opposite, os] of all) {
+    const meaning = ws ?? shown(word);
+    const itsMeaning = os ?? shown(opposite);
+    if (!meaning || !itsMeaning) continue;
+    pairs.push({ word, meaning, pos: recipePoses(word, meaning)[0], opposite, itsMeaning, itsPos: recipePoses(opposite, itsMeaning)[0] });
+  }
+  opposites = { pairs, oppositeOf };
+  return opposites;
+}
+
 /** Mirrors lexilink::learned_words: answered in study, saved to the recipe, the answers of exam questions asked. */
 function learnedWords(): Set<string> {
   const out = new Set<string>();
@@ -2373,7 +2408,7 @@ function lexiOrdered<T>(items: T[], prefer: boolean, learned: (x: T) => boolean)
 
 /** Mirrors lexilink::deal. */
 function dealLexiLink(mode: LexiMode, genre: LexiGenre, prefer: boolean): LexiDeal {
-  if (mode !== "match" && mode !== "opposites") throw new Error(`unknown LexiLink mode ${String(mode)}`);
+  if (!LEXI_MODES.includes(mode)) throw new Error(`unknown LexiLink mode ${String(mode)}`);
   if (!LEXI_GENRES.includes(genre)) throw new Error(`unknown LexiLink genre ${String(genre)}`);
   const learned = prefer ? learnedWords() : new Set<string>();
   const pairs: LexiPair[] = [];
@@ -2390,26 +2425,11 @@ function dealLexiLink(mode: LexiMode, genre: LexiGenre, prefer: boolean): LexiDe
     for (const [en, meaning] of picked)
       pairs.push({ a: { text: en, english: true, word: en, meaning }, b: { text: meaning, english: false, word: en, meaning } });
   } else {
-    const all = antonymPairs();
-    const oppositeOf = new Map<string, Set<string>>();
-    const link = (x: string, y: string) => oppositeOf.set(x, (oppositeOf.get(x) ?? new Set<string>()).add(y));
-    for (const [w, , o] of all) {
-      link(w.toLowerCase(), o.toLowerCase());
-      link(o.toLowerCase(), w.toLowerCase());
-    }
-    const posOf = (word: string, meaning: string) => recipePoses(word, meaning)[0];
-    const cands: Array<[string, string, string, string]> = [];
-    for (const [w, ws, o, os] of all) {
-      const shown = (word: string) => {
-        const m = shownMeaning(word);
-        return m ? firstSense(m) : null;
-      };
-      const wm = ws ?? shown(w);
-      const om = os ?? shown(o);
-      if (!wm || !om) continue;
-      if (genre !== "random" && (posOf(w, wm) !== genre || posOf(o, om) !== genre)) continue;
-      cands.push([w, wm, o, om]);
-    }
+    const { pairs: all, oppositeOf } = oppositeTable();
+    const ofGenre = (pos: string | undefined) => genre === "random" || pos === genre;
+    const cands: Array<[string, string, string, string]> = all
+      .filter((p) => ofGenre(p.pos) && ofGenre(p.itsPos))
+      .map((p) => [p.word, p.meaning, p.opposite, p.itsMeaning]);
     const picked: Array<[string, string, string, string]> = [];
     const used = new Set<string>();
     const met = ([w, , o]: [string, string, string, string]) => learned.has(w.toLowerCase()) || learned.has(o.toLowerCase());
@@ -2431,24 +2451,17 @@ function dealLexiLink(mode: LexiMode, genre: LexiGenre, prefer: boolean): LexiDe
   return { mode, genre, pairs };
 }
 
-/** Mirrors lexilink::solo_kcal. */
-function lexiSoloKcal(pairs: number, misses: number, cleared: boolean): number {
-  const total = pairs * 3 - Math.max(0, misses - 3) * 1 + (cleared ? 10 : 0);
-  return cleared ? total : Math.max(0, total);
-}
-
 /** Mirrors lexilink::finish (and commands::credit_flat: as it is, the day not below zero). */
 function finishLexiLink(game: LexiFinish): LexiResult {
   if (![1, 2].includes(game.players) || game.pairs < 0 || game.pairs > LEXI_PAIRS || game.misses < 0) throw new Error("LexiLink の結果が正しくありません");
   if (game.cleared && game.pairs !== LEXI_PAIRS) throw new Error("LexiLink の結果が正しくありません（ペアがそろっていません）");
-  const kcal = game.players === 1 ? lexiSoloKcal(game.pairs, game.misses, game.cleared) : game.cleared ? 30 : 0;
+  const kcal = game.players === 1 ? lexiSoloKcal(game.pairs, game.misses, game.cleared) : game.cleared ? LEXI.versusKcal : 0;
   const t = today();
   const d = daily(t);
   const added = Math.max(kcal, -d.kcalEarned);
-  if (added !== 0) {
-    d.kcalEarned += added;
-    addEarned("lexilink", added);
-  }
+  d.kcalEarned += added;
+  // a game that added nothing is still a game the table counts
+  addEarned("lexilink", added);
   const { newTicket } = markStudied(t);
   save();
   return { kcalEarned: added, todayKcal: d.kcalEarned, streak: state.user.currentStreak, newTicket };

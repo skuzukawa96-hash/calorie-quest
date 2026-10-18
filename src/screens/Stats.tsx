@@ -396,7 +396,7 @@ function KcalBreakdown({ b, diet }: { b: BreakdownData; diet: DietKcal | null })
     b.examKcal.filter((e) => (level === null || e.level === level) && (kind === null || e.kind === kind));
   const others = [
     { label: "チートデイ", sub: `${b.cheat.times}回`, kcal: b.cheat.kcal, diet: false },
-    { label: "LexiLink", sub: "", kcal: b.lexilink.kcal, diet: false },
+    { label: "LexiLink", sub: `${b.lexilink.times}回`, kcal: b.lexilink.kcal, diet: false },
     ...(diet
       ? [
           { label: "課題", sub: "", kcal: diet.tasks, diet: true },

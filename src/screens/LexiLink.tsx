@@ -5,7 +5,7 @@ import { api } from "../lib/api";
 import { loadDictionary, loadedDictionary, type Dictionary } from "../lib/dictionary";
 import { playFanfare, playLexi, prepareLexiSounds } from "../lib/sfx";
 import { speak, speakInTurn } from "../lib/speech";
-import type { LexiCard, LexiGenre, LexiMode } from "../types";
+import { LEXI, lexiScore, lexiSoloKcal, type LexiCard, type LexiGenre, type LexiMode } from "../types";
 
 /** What the home screen starts a game with. */
 export interface LexiConfig {
@@ -20,12 +20,6 @@ export interface LexiConfig {
 export const LEXI_MODE_LABEL: Record<LexiMode, string> = { match: "Word Match", opposites: "Opposites" };
 export const LEXI_GENRE_LABEL: Record<LexiGenre, string> = { random: "ランダム", noun: "名詞", verb: "動詞", adjective: "形容詞", adverb: "副詞" };
 
-/** ひとりで挑戦: 3 kcal a pair, −1 for each お手つき after the third, 10 for clearing (mirrors lexilink.rs). */
-const PAIR_KCAL = 3;
-const FREE_MISSES = 3;
-const MISS_KCAL = 1;
-const CLEAR_KCAL = 10;
-const VERSUS_KCAL = 30;
 /** how long two cards stay open before they are judged, and a miss before it is wrapped again
  * (long enough to read both) */
 const LOOK_MS = 450;
@@ -53,9 +47,6 @@ function shuffled<T>(list: T[]): T[] {
   return a;
 }
 
-/** ひとりで挑戦: what the game is worth so far. */
-const soloKcal = (pairs: number, misses: number, cleared: boolean) =>
-  pairs * PAIR_KCAL - Math.max(0, misses - FREE_MISSES) * MISS_KCAL + (cleared ? CLEAR_KCAL : 0);
 const signed = (n: number) => (n < 0 ? `−${-n}` : `+${n}`);
 
 /**
@@ -91,8 +82,11 @@ export default function LexiLink({
   const busy = useRef(false);
   /** the game's kcal have been asked for (finished, or left part-way): never twice */
   const settled = useRef(false);
-  /** where the game stands, for settling it when the screen is closed by the tabs above */
+  /** where the game stands for its kcal: a pair or a miss counts here the moment it is judged, before
+   * the board has shown it (eaten, wrapped again), so leaving in between pays it as it is */
   const standing = useRef<{ pairs: number; misses: [number, number] }>({ pairs: 0, misses: [0, 0] });
+  /** the deal asked for last: one answered after another was asked for is not laid out */
+  const dealt = useRef(0);
   const timers = useRef<number[]>([]);
   const later = (fn: () => void, ms: number) => timers.current.push(window.setTimeout(fn, ms));
 
@@ -101,6 +95,8 @@ export default function LexiLink({
     timers.current = [];
     busy.current = false;
     settled.current = false;
+    standing.current = { pairs: 0, misses: [0, 0] };
+    const asked = ++dealt.current;
     setCells(null);
     setError(null);
     setOpen([]);
@@ -113,11 +109,12 @@ export default function LexiLink({
     api
       .dealLexiLink(config.mode, config.genre, config.preferLearned)
       .then((d) => {
+        if (asked !== dealt.current) return;
         const list = shuffled(d.pairs.flatMap((p, i) => [{ pair: i, card: p.a }, { pair: i, card: p.b }]));
         setCells(list);
         setFrames(list.map(() => "wrapped"));
       })
-      .catch((e) => setError(String(e)));
+      .catch((e) => asked === dealt.current && setError(String(e)));
   }, [config.mode, config.genre, config.preferLearned]);
 
   useEffect(() => {
@@ -134,7 +131,8 @@ export default function LexiLink({
   const pairs = taken.length;
   const pairsOf = (who: 0 | 1) => taken.filter((t) => t.by === who).length;
   const setFrame = (i: number, f: CandyFrame) => setFrames((cur) => cur.map((x, k) => (k === i ? f : x)));
-  const played = pairs > 0 || misses[0] + misses[1] > 0;
+  /** a pair or a miss has been judged (read when a button is pressed: `standing` is ahead of the board) */
+  const played = () => standing.current.pairs > 0 || standing.current.misses[0] + standing.current.misses[1] > 0;
 
   /** Pays the game once: what it is worth, its ticket if the day brings one, and the home refreshed. */
   const settle = (pairCount: number, missCount: [number, number], cleared: boolean, tell: boolean) => {
@@ -152,13 +150,9 @@ export default function LexiLink({
 
   // Left by the tabs above: settled as ← やめる would (what is above zero ひとりで, nothing ふたりで;
   // the day counts as studied either way).
-  useEffect(() => {
-    standing.current = { pairs, misses };
-  }, [pairs, misses]);
   useEffect(
     () => () => {
-      const { pairs: p, misses: m } = standing.current;
-      if (p > 0 || m[0] + m[1] > 0) void settle(p, m, false, true);
+      if (played()) void settle(standing.current.pairs, standing.current.misses, false, true);
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [],
@@ -168,7 +162,7 @@ export default function LexiLink({
   const finish = (allTaken: Taken[], missCount: [number, number]) => {
     setAsking(false);
     if (solo) {
-      const kcal = soloKcal(10, missCount[0], true);
+      const kcal = lexiSoloKcal(LEXI.pairs, missCount[0], true);
       setEnd({ kind: "complete", kcal });
       playFanfare();
     } else {
@@ -194,7 +188,12 @@ export default function LexiLink({
     busy.current = true;
     const [x, y] = now;
     later(() => {
+      const missed = standing.current.misses;
       if (cells[x].pair === cells[y].pair) {
+        const got = standing.current.pairs + 1;
+        standing.current = { pairs: got, misses: missed };
+        // The board cleared is paid the moment it is, so leaving before COMPLETE shows keeps the clear.
+        if (got === LEXI.pairs) void settle(got, missed, true, false);
         setGlow([x, y]);
         playLexi("sparkle");
         later(() => {
@@ -210,20 +209,17 @@ export default function LexiLink({
           setTaken(next);
           setOpen([]);
           busy.current = false;
-          if (next.length === 10) {
-            // Paid the moment the board is cleared, so that leaving before COMPLETE shows keeps the clear.
-            void settle(10, misses, true, false);
-            later(() => finish(next, misses), 700);
-          }
+          if (next.length === LEXI.pairs) later(() => finish(next, missed), 700);
         }, 500);
       } else {
+        const counted: [number, number] = turn === 0 ? [missed[0] + 1, missed[1]] : [missed[0], missed[1] + 1];
+        standing.current = { pairs: standing.current.pairs, misses: counted };
         later(() => {
           playLexi("rewrap");
           [x, y].forEach((k) => {
             setFrame(k, "half");
             later(() => setFrame(k, "wrapped"), 90);
           });
-          const counted: [number, number] = turn === 0 ? [misses[0] + 1, misses[1]] : [misses[0], misses[1] + 1];
           setMisses(counted);
           setOpen([]);
           if (!solo) {
@@ -238,14 +234,18 @@ export default function LexiLink({
 
   /** Left part-way: ひとりで, what the game is above zero; ふたりで, nothing (the day still counts). */
   const quit = () => {
-    if (!played || settled.current) {
+    if (!played() || settled.current) {
       onExit();
       return;
     }
-    void settle(pairs, misses, false, true).finally(onExit);
+    void settle(standing.current.pairs, standing.current.misses, false, true).finally(onExit);
   };
 
-  const soFar = soloKcal(pairs, misses[0], pairs === 10);
+  /** ひとりで: the HUD's score so far (below zero when the misses outweigh the pairs) and what leaving now adds */
+  const soFar = lexiScore(pairs, misses[0], pairs === LEXI.pairs);
+  // From `standing`, which a pair still lighting up is already in (each change to it comes with a
+  // render: the glow, or the candies wrapped again).
+  const ifLeft = lexiSoloKcal(standing.current.pairs, standing.current.misses[0], false);
   const name = (who: 0 | 1) => config.names[who].trim() || `プレイヤー${who + 1}`;
 
   if (error) {
@@ -267,7 +267,7 @@ export default function LexiLink({
       <section className="card lexi-card">
         <div className="lexi-hud">
           <div className="lexi-hud-left">
-            <button className="btn-link" onClick={() => (played && !settled.current ? setAsking(true) : quit())}>
+            <button className="btn-link" onClick={() => (played() && !settled.current ? setAsking(true) : quit())}>
               ← やめる
             </button>
             <span className="tag">{LEXI_MODE_LABEL[config.mode]}</span>
@@ -276,12 +276,12 @@ export default function LexiLink({
           {solo && (
             <div className="lexi-stats">
               <span>
-                ペア <b>{pairs}</b>/10
+                ペア <b>{pairs}</b>/{LEXI.pairs}
               </span>
-              <span title={`お手つきは${FREE_MISSES}回まで無料、${FREE_MISSES + 1}回目から −${MISS_KCAL} kcal`}>
+              <span title={`お手つきは${LEXI.freeMisses}回まで無料、${LEXI.freeMisses + 1}回目から −${LEXI.missKcal} kcal`}>
                 お手つき <b>{misses[0]}</b>
                 <span className="miss-dots">
-                  {Array.from({ length: FREE_MISSES }, (_, k) => (
+                  {Array.from({ length: LEXI.freeMisses }, (_, k) => (
                     <i key={k} className={k < misses[0] ? "used" : ""} />
                   ))}
                 </span>
@@ -296,7 +296,7 @@ export default function LexiLink({
           <div className="lexi-ask">
             <span>
               途中でやめますか？
-              {solo ? (soFar > 0 ? `（ここまでの +${soFar} kcal はもらえます）` : "（カロリーは変わりません）") : "（対戦ボーナスはもらえません）"}
+              {solo ? (ifLeft > 0 ? `（ここまでの +${ifLeft} kcal はもらえます）` : "（カロリーは変わりません）") : "（対戦ボーナスはもらえません）"}
             </span>
             <button className="btn btn-small btn-danger" onClick={quit}>
               やめる
@@ -352,7 +352,7 @@ export default function LexiLink({
         )}
 
         <div className="lexi-taken">
-          <h4>取ったペア {pairs}/10</h4>
+          <h4>取ったペア {pairs}/{LEXI.pairs}</h4>
           <div className="lexi-taken-list">
             {taken.map((t, k) => (
               <span key={t.pair} className={"lexi-pair" + (k === 0 ? " new" : "")}>
@@ -373,7 +373,7 @@ export default function LexiLink({
                 </span>
               </span>
             ))}
-            {Array.from({ length: 10 - pairs }, (_, k) => (
+            {Array.from({ length: LEXI.pairs - pairs }, (_, k) => (
               <span key={`slot-${k}`} className="lexi-slot" />
             ))}
           </div>
@@ -393,8 +393,8 @@ export default function LexiLink({
               <>
                 <div className="lexi-big">COMPLETE!</div>
                 <div className="lexi-sub">
-                  合計 <b>{signed(end.kcal)} kcal</b>（ペア +{10 * PAIR_KCAL} ・ お手つき −{Math.max(0, misses[0] - FREE_MISSES) * MISS_KCAL} ・ クリア +
-                  {CLEAR_KCAL}）
+                  合計 <b>{signed(end.kcal)} kcal</b>（ペア +{LEXI.pairs * LEXI.pairKcal} ・ お手つき −{Math.max(0, misses[0] - LEXI.freeMisses) * LEXI.missKcal} ・ クリア +
+                  {LEXI.clearKcal}）
                 </div>
               </>
             ) : (
@@ -409,7 +409,7 @@ export default function LexiLink({
                   </span>
                 </div>
                 <div className="lexi-sub">
-                  対戦ボーナス <b>+{VERSUS_KCAL} kcal</b>
+                  対戦ボーナス <b>+{LEXI.versusKcal} kcal</b>
                 </div>
               </>
             )}

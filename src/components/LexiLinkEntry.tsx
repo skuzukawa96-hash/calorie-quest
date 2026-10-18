@@ -1,15 +1,26 @@
 import { useEffect, useState } from "react";
-import type { LexiGenre, LexiMode } from "../types";
+import { LEXI_GENRES, LEXI_MODES, type LexiMode } from "../types";
 import { LEXI_GENRE_LABEL, type LexiConfig } from "../screens/LexiLink";
 
 const KEY = "cq-lexilink";
-const GENRES: LexiGenre[] = ["random", "noun", "verb", "adjective", "adverb"];
 const DEFAULT: LexiConfig = { mode: "match", genre: "random", preferLearned: false, players: 1, names: ["プレイヤー1", "プレイヤー2"] };
 
+/** What was chosen last time, each part only if it is still one of the choices (else the default). */
 function loadConfig(): LexiConfig {
   try {
-    const kept = JSON.parse(localStorage.getItem(KEY) ?? "null") as Partial<LexiConfig> | null;
-    return kept ? { ...DEFAULT, ...kept, names: kept.names ?? DEFAULT.names } : DEFAULT;
+    const kept = JSON.parse(localStorage.getItem(KEY) ?? "null") as Record<string, unknown> | null;
+    if (!kept || typeof kept !== "object") return DEFAULT;
+    const names = kept.names;
+    return {
+      mode: LEXI_MODES.find((m) => m === kept.mode) ?? DEFAULT.mode,
+      genre: LEXI_GENRES.find((g) => g === kept.genre) ?? DEFAULT.genre,
+      preferLearned: typeof kept.preferLearned === "boolean" ? kept.preferLearned : DEFAULT.preferLearned,
+      players: kept.players === 2 ? 2 : 1,
+      names:
+        Array.isArray(names) && names.length === 2 && names.every((n) => typeof n === "string")
+          ? [names[0] as string, names[1] as string]
+          : DEFAULT.names,
+    };
   } catch {
     return DEFAULT;
   }
@@ -102,7 +113,7 @@ export default function LexiLinkEntry({ onStart }: { onStart: (config: LexiConfi
       </div>
       <div className="lexi-opts">
         <span className="lexi-opt-label">ジャンル</span>
-        <span className="lexi-chips">{GENRES.map((g) => chip(config.genre === g, LEXI_GENRE_LABEL[g], () => set({ genre: g })))}</span>
+        <span className="lexi-chips">{LEXI_GENRES.map((g) => chip(config.genre === g, LEXI_GENRE_LABEL[g], () => set({ genre: g })))}</span>
         <span className="lexi-sep" />
         <span className="lexi-opt-label">出題</span>
         <span className="lexi-chips">

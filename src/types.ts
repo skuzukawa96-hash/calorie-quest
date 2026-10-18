@@ -469,6 +469,22 @@ export interface Dashboard {
 /** Word Match（英単語 × 意味）/ Opposites（英単語 × 対義語） */
 export type LexiMode = "match" | "opposites";
 export type LexiGenre = "random" | "noun" | "verb" | "adjective" | "adverb";
+export const LEXI_MODES: LexiMode[] = ["match", "opposites"];
+export const LEXI_GENRES: LexiGenre[] = ["random", "noun", "verb", "adjective", "adverb"];
+
+/** The board and its kcal (mirrors lexilink.rs): ひとりで 3 a pair, お手つき free up to the third and
+ * −1 each after, 10 for clearing the board; ふたりで 30 for a game played to the end. */
+export const LEXI = { pairs: 10, pairKcal: 3, freeMisses: 3, missKcal: 1, clearKcal: 10, versusKcal: 30 } as const;
+
+/** ひとりで: what the pairs and the お手つき so far come to (with the clear when `cleared`); below zero
+ * when the misses outweigh the pairs. */
+export const lexiScore = (pairs: number, misses: number, cleared: boolean) =>
+  pairs * LEXI.pairKcal - Math.max(0, misses - LEXI.freeMisses) * LEXI.missKcal + (cleared ? LEXI.clearKcal : 0);
+
+/** ひとりで: what a game adds (mirrors lexilink::solo_kcal): a cleared game its score as it is, one left
+ * part-way what it is above zero. */
+export const lexiSoloKcal = (pairs: number, misses: number, cleared: boolean) =>
+  cleared ? lexiScore(pairs, misses, true) : Math.max(0, lexiScore(pairs, misses, false));
 
 /** One card: `text` is what it says (the English, or the meaning in Word Match); `word` and `meaning` are what the pair's line shows once it is taken. */
 export interface LexiCard {
@@ -808,7 +824,7 @@ export interface Breakdown {
   examKcal: ExamKcal[];
   /** the cheat days used and what they paid */
   cheat: { times: number; kcal: number };
-  /** LexiLink's games and what they added (below zero for one whose misses outweighed it) */
+  /** LexiLink's games (every one settled, those that added nothing too) and what they added (below zero for one whose misses outweighed it) */
   lexilink: { times: number; kcal: number };
 }
 

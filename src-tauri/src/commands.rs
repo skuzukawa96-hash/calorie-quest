@@ -129,7 +129,8 @@ pub(crate) fn credit(conn: &Connection, day: &str, eighths: i64, what: Earning) 
 
 /// Adds whole kcal to `day` as they are, without the play mode: LexiLink's score, which can be
 /// below zero (a cleared game whose misses outweighed its pairs). The day's earnings do not go below
-/// zero for it. Kept in `earn_log` under `source` like every reward, so the 記録's table still adds up;
+/// zero for it. Kept in `earn_log` under `source` like every reward, so the 記録's table still adds up,
+/// and kept even when nothing is added (a game that paid nothing is still a game the table counts);
 /// returns what was added.
 pub(crate) fn credit_flat(conn: &Connection, day: &str, kcal: i64, source: &str) -> rusqlite::Result<i64> {
     conn.execute("INSERT OR IGNORE INTO daily_stats (user_id, date) VALUES (?1, ?2)", params![USER_ID, day])?;
@@ -144,11 +145,11 @@ pub(crate) fn credit_flat(conn: &Connection, day: &str, kcal: i64, source: &str)
             "UPDATE daily_stats SET kcal_earned = kcal_earned + ?3 WHERE user_id = ?1 AND date = ?2",
             params![USER_ID, day, added],
         )?;
-        conn.execute(
-            "INSERT INTO earn_log (user_id, date, source, eighths, kcal) VALUES (?1, ?2, ?3, ?4, ?5)",
-            params![USER_ID, day, source, added * srs::EIGHTHS, added],
-        )?;
     }
+    conn.execute(
+        "INSERT INTO earn_log (user_id, date, source, eighths, kcal) VALUES (?1, ?2, ?3, ?4, ?5)",
+        params![USER_ID, day, source, added * srs::EIGHTHS, added],
+    )?;
     Ok(added)
 }
 
