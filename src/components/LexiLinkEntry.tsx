@@ -1,9 +1,12 @@
 import { useEffect, useState } from "react";
+import { COM_LEVEL_ORDER, COM_LEVELS } from "../lib/lexiCom";
 import { LEXI_GENRES, LEXI_MODES, type LexiMode } from "../types";
 import { LEXI_GENRE_LABEL, type LexiConfig } from "../screens/LexiLink";
 
 const KEY = "cq-lexilink";
-const DEFAULT: LexiConfig = { mode: "match", genre: "random", preferLearned: false, players: 1, names: ["プレイヤー1", "プレイヤー2"] };
+const DEFAULT: LexiConfig = { mode: "match", genre: "random", preferLearned: false, players: 1, names: ["プレイヤー1", "プレイヤー2"], com: null };
+/** 後攻's name while it is the computer (unless the learner named it) */
+const COM_NAME = "COM";
 
 /** What was chosen last time, each part only if it is still one of the choices (else the default). */
 function loadConfig(): LexiConfig {
@@ -20,6 +23,7 @@ function loadConfig(): LexiConfig {
         Array.isArray(names) && names.length === 2 && names.every((n) => typeof n === "string")
           ? [names[0] as string, names[1] as string]
           : DEFAULT.names,
+      com: COM_LEVEL_ORDER.find((l) => l === kept.com) ?? null,
     };
   } catch {
     return DEFAULT;
@@ -77,6 +81,13 @@ export default function LexiLinkEntry({ onStart }: { onStart: (config: LexiConfi
     }
   }, [config]);
   const set = (patch: Partial<LexiConfig>) => setConfig((c) => ({ ...c, ...patch }));
+  /** COM on (at 普通 to start with) or off; 後攻's name follows unless the learner named it */
+  const setCom = (on: boolean) =>
+    setConfig((c) => {
+      const second = c.names[1].trim();
+      const name = on ? (second === "" || second === DEFAULT.names[1] ? COM_NAME : c.names[1]) : second === COM_NAME ? DEFAULT.names[1] : c.names[1];
+      return { ...c, com: on ? "normal" : null, names: [c.names[0], name] };
+    });
   const mode = (m: LexiMode, title: string, sub: string) => (
     <button type="button" className={"lexi-tile mode" + (config.mode === m ? " on" : "")} onClick={() => set({ mode: m })} aria-pressed={config.mode === m}>
       <Picture kind={m} />
@@ -134,6 +145,16 @@ export default function LexiLinkEntry({ onStart }: { onStart: (config: LexiConfi
               />
             </label>
           ))}
+          {/* 後攻 played by the computer, at the level chosen beside it */}
+          <label className="lexi-com" title="後攻をコンピューターにする">
+            <input type="checkbox" checked={config.com !== null} onChange={(e) => setCom(e.target.checked)} />
+            COM
+          </label>
+          {config.com && (
+            <span className="lexi-chips">
+              {COM_LEVEL_ORDER.map((l) => chip(config.com === l, COM_LEVELS[l].label, () => set({ com: l })))}
+            </span>
+          )}
         </div>
       )}
       <div className="lexi-go">

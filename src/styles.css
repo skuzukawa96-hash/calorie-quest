@@ -4607,6 +4607,26 @@ button.wp-link.open {
   min-width: 0;
   background: #fff;
 }
+/* ✅ COM beside 後攻's name, and its level beside it once checked */
+.lexi-names .lexi-com {
+  gap: 4px;
+  color: var(--choco-light);
+  cursor: pointer;
+}
+.lexi-names .lexi-com input {
+  width: auto;
+  margin: 0;
+  padding: 0;
+  accent-color: var(--sky);
+  cursor: pointer;
+}
+.lexi-names .lexi-chips {
+  align-self: center;
+}
+/* the computer's turn: the candies are not the player's to turn */
+.lexi-board.com-turn .lexi-candy {
+  cursor: default;
+}
 .lexi-names input.p1 {
   color: #d9577f;
   border-color: #f2b9ca;

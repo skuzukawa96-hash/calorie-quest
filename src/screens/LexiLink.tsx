@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { CandyArt, CandyShapes, type CandyFrame } from "../components/Candy";
 import SpeakableText from "../components/SpeakableText";
 import { api } from "../lib/api";
+import { COM_LEVELS, LexiCom, type ComLevel, type ComView } from "../lib/lexiCom";
 import { loadDictionary, loadedDictionary, type Dictionary } from "../lib/dictionary";
 import { playFanfare, playLexi, prepareLexiSounds } from "../lib/sfx";
 import { prepareWords, stopSpeaking, type ReadyWords } from "../lib/speech";
@@ -15,6 +16,8 @@ export interface LexiConfig {
   players: 1 | 2;
   /** 先攻・後攻 (ふたりで対戦) */
   names: [string, string];
+  /** ふたりで対戦: 後攻 is the computer, at this level (null: a person) */
+  com: ComLevel | null;
 }
 
 export const LEXI_MODE_LABEL: Record<LexiMode, string> = { match: "Word Match", opposites: "Opposites" };
@@ -27,6 +30,9 @@ const MISS_MS = 1500;
 /** a pair taken: the glow, then the crunch, then (after its last bite) the English read aloud */
 const GLOW_MS = 500;
 const SAY_AFTER_CRUNCH_MS = 400;
+/** the computer's turn: a moment before it turns its first candy, and its second (to follow it by eye) */
+const COM_FIRST_MS = 900;
+const COM_SECOND_MS = 900;
 
 interface Cell {
   pair: number;
@@ -94,11 +100,20 @@ export default function LexiLink({
   const voices = useRef<ReadyWords | null>(null);
   const timers = useRef<number[]>([]);
   const later = (fn: () => void, ms: number) => timers.current.push(window.setTimeout(fn, ms));
+  /** the computer playing 後攻 (ふたりで対戦 with COM), one for the screen: its memory reset each game */
+  const com = useRef<LexiCom | null>(null);
+  /** the computer's next candy is on its way (one at a time) */
+  const comWaiting = useRef(false);
 
   const deal = useCallback(() => {
     timers.current.forEach(clearTimeout);
     timers.current = [];
     busy.current = false;
+    comWaiting.current = false;
+    if (config.players === 2 && config.com) {
+      com.current ??= new LexiCom(COM_LEVELS[config.com]);
+      com.current.reset();
+    } else com.current = null;
     settled.current = false;
     standing.current = { pairs: 0, misses: [0, 0] };
     const asked = ++dealt.current;
@@ -121,7 +136,7 @@ export default function LexiLink({
         setFrames(list.map(() => "wrapped"));
       })
       .catch((e) => asked === dealt.current && setError(String(e)));
-  }, [config.mode, config.genre, config.preferLearned]);
+  }, [config.mode, config.genre, config.preferLearned, config.players, config.com]);
 
   useEffect(() => {
     prepareLexiSounds();
@@ -186,6 +201,8 @@ export default function LexiLink({
 
   const flip = (i: number) => {
     if (!cells || busy.current || end || open.includes(i) || frames[i] === "empty") return;
+    // Shown to the computer as it is to the players: this card, now face up, and no other.
+    com.current?.see({ index: i, pair: cells[i].pair });
     playLexi("unwrap");
     setFrame(i, "half");
     later(() => setFrame(i, "open"), 90);
@@ -197,6 +214,7 @@ export default function LexiLink({
     later(() => {
       const missed = standing.current.misses;
       if (cells[x].pair === cells[y].pair) {
+        com.current?.forget([x, y]);
         const got = standing.current.pairs + 1;
         standing.current = { pairs: got, misses: missed };
         // The board cleared is paid the moment it is, so leaving before COMPLETE shows keeps the clear.
@@ -238,6 +256,37 @@ export default function LexiLink({
       }
     }, LOOK_MS);
   };
+
+  /** The computer's turn (後攻): its candies are its own; a click on the board waits for the turn back. */
+  const comTurn = !!com.current && turn === 1 && !end;
+
+  /** The computer turns its next candy, chosen from what can be chosen and what is face up (the
+   * board's faces down are not handed to it). */
+  const comMove = () => {
+    const ai = com.current;
+    if (!ai || !cells || end || turn !== 1 || busy.current || open.length >= 2) return;
+    const view: ComView = {
+      selectable: cells.map((_, k) => k).filter((k) => frames[k] !== "empty" && !open.includes(k)),
+      open: open.map((k) => ({ index: k, pair: cells[k].pair })),
+    };
+    const pick = open.length === 0 ? ai.pickFirst(view) : ai.pickSecond(view);
+    if (pick !== null) flip(pick);
+  };
+  const comMoveNow = useRef(comMove);
+  comMoveNow.current = comMove;
+  // Its turn, the board still: the next candy after a moment (the first, or the second once the first is open).
+  useEffect(() => {
+    if (!comTurn || !cells || busy.current || comWaiting.current || open.length >= 2 || standing.current.pairs >= LEXI.pairs) return;
+    comWaiting.current = true;
+    later(
+      () => {
+        comWaiting.current = false;
+        comMoveNow.current();
+      },
+      open.length === 0 ? COM_FIRST_MS : COM_SECOND_MS,
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [comTurn, cells, open, frames]);
 
   /** Left part-way: ひとりで, what the game is above zero; ふたりで, nothing (the day still counts). */
   const quit = () => {
@@ -323,7 +372,9 @@ export default function LexiLink({
                     {name(who)}
                     {turn === who && !end && <span className="lexi-turn-badge">番</span>}
                   </div>
-                  <div className="muted small">お手つき {misses[who]}</div>
+                  <div className="muted small">
+                    {who === 1 && config.com && `COM・${COM_LEVELS[config.com].label}・`}お手つき {misses[who]}
+                  </div>
                 </div>
                 <div className="lexi-player-pts">
                   {pairsOf(who)}
@@ -335,13 +386,13 @@ export default function LexiLink({
         )}
 
         {cells ? (
-          <div className="lexi-board">
+          <div className={"lexi-board" + (comTurn ? " com-turn" : "")}>
             {cells.map((c, i) => (
               <button
                 key={i}
                 type="button"
                 className={"lexi-candy" + (glow.includes(i) ? " glow" : "") + (frames[i] === "empty" ? " gone" : "")}
-                onClick={() => flip(i)}
+                onClick={() => !comTurn && flip(i)}
                 disabled={frames[i] === "empty"}
                 aria-label={frames[i] === "open" ? c.card.text : "キャンディ"}
               >
