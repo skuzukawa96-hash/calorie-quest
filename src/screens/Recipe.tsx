@@ -4,7 +4,7 @@ import { DeleteButton } from "../components/IconButtons";
 import PencilIcon from "../components/PencilIcon";
 import { PlayModeTag } from "../components/PlayModeSwitch";
 import WordCardIcon from "../components/WordCardIcon";
-import WordNotesPanel from "../components/WordNotes";
+import WordNotesPanel, { WordNotesBrief } from "../components/WordNotes";
 import AntonymTag from "../components/AntonymTag";
 import { CuedMeaningWithTags, MeaningWithTags, SlotText, useWordTags } from "../components/PosTags";
 import { cuedMeaning } from "../lib/pos";
@@ -1136,7 +1136,7 @@ export default function Recipe({ playMode, onProgress, toast }: Props) {
                         role="button"
                         tabIndex={0}
                         aria-expanded={isOpen}
-                        title={isOpen ? "閉じる" : "例文と追加日を見る"}
+                        title={isOpen ? "閉じる" : "例文・解説と追加日を見る"}
                         onClick={() => toggleOpen(w.id)}
                         onKeyDown={(e) => {
                           if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) {
@@ -1246,6 +1246,7 @@ export default function Recipe({ playMode, onProgress, toast }: Props) {
                             </div>
                           )}
                           {w.exampleJa && <div className="muted small">{w.exampleJa}</div>}
+                          <ListedNotes w={w} dict={dict} />
                           <div className="recipe-item-foot muted small">
                             {w.poses.map((p) => RECIPE_POS_LABEL[p]).join("・")}
                             {shownForm(w) && `・「${shownForm(w)}」から登録`}・{stamp(w.addedAt)} に追加
@@ -1266,6 +1267,37 @@ export default function Recipe({ playMode, onProgress, toast }: Props) {
       </section>
     </div>
   );
+}
+
+/** What each word's review explains, kept once fetched (a row opened again, or the list read again). */
+const listedNotes = new Map<string, WordNotes | null>();
+
+/**
+ * A row of the list opened: its 対義語 and 成り立ち, and 用法 / 類似表現 to open (as its review
+ * explains them), fetched when the row is first opened.
+ */
+function ListedNotes({ w, dict }: { w: RecipeWord; dict: Dictionary | null }) {
+  const key = `${w.word}
+${w.meaning}`;
+  const [notes, setNotes] = useState<WordNotes | null | undefined>(() => listedNotes.get(key));
+  useEffect(() => {
+    if (listedNotes.has(key)) {
+      setNotes(listedNotes.get(key));
+      return;
+    }
+    let alive = true;
+    api
+      .getWordNotes(w.word, w.meaning || undefined)
+      .then((n) => {
+        listedNotes.set(key, n);
+        if (alive) setNotes(n);
+      })
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, [key, w.word, w.meaning]);
+  return notes ? <WordNotesBrief notes={notes} word={w.word} meaning={w.meaning} dict={dict} /> : null;
 }
 
 /* ---------- review: 選択 / 記入 ---------- */

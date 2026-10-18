@@ -1399,8 +1399,9 @@ pub fn get_pronunciations() -> HashMap<String, String> {
 }
 
 /// What the answer explains about a word, for a word saved to the recipe (see `db::word_notes`),
-/// with its 対義語 in the sense it was saved with (`meaning`).
-#[tauri::command]
+/// with its 対義語 in the sense it was saved with (`meaning`). Off the main thread (`async`): the
+/// list opens many rows at once (一括で詳細を開く), each asking for its own.
+#[tauri::command(async)]
 pub fn get_word_notes(word: String, meaning: Option<String>) -> Option<WordNotes> {
     let mut notes = db::word_notes(&word).unwrap_or_default();
     notes.antonym = meaning.and_then(|m| db::antonym_of(&word, &m));

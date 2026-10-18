@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useRef, useState } from "react";
+import AntonymTag from "./AntonymTag";
 import GlossedText from "./GlossedText";
 import { MeaningWithTags, PosTags, SlotText, useWordTags, WordTagsOnly } from "./PosTags";
 import { homonymsApart, tagMeaning } from "../lib/pos";
@@ -501,6 +502,51 @@ export default function WordNotesPanel({
         </div>
       )}
     </>
+  );
+}
+
+/**
+ * A word of the recipe's list, opened: what its review explains about it, kept short — 対義語 and
+ * 成り立ち as they are, 用法 and 類似表現 each behind a button (open, they would make the list too
+ * long). Nothing when there is none of them.
+ */
+export function WordNotesBrief({ notes, word, meaning, dict }: { notes: WordNotes; word: string; meaning: string; dict: Dictionary | null }) {
+  const { parts, usages, related, shift, antonym } = notes;
+  const [usagesOpen, setUsagesOpen] = useState(false);
+  const [relatedOpen, setRelatedOpen] = useState(false);
+  if (!antonym && parts.length === 0 && usages.length === 0 && related.length === 0) return null;
+  return (
+    <div className="brief-notes">
+      {antonym && (
+        <div className="brief-antonym">
+          <span className="label">対義語</span>
+          <AntonymTag antonym={antonym} dict={dict} />
+        </div>
+      )}
+      {parts.length > 0 && <WordParts parts={parts} word={word} meaning={meaning} dict={dict} shift={shift} />}
+      {(usages.length > 0 || related.length > 0) && (
+        <div className="brief-toggles">
+          {usages.length > 0 && (
+            <button type="button" className="related-toggle" aria-expanded={usagesOpen} onClick={() => setUsagesOpen(!usagesOpen)}>
+              用法 {usagesOpen ? "▾" : "▸"}
+            </button>
+          )}
+          {related.length > 0 && (
+            <button type="button" className="related-toggle" aria-expanded={relatedOpen} onClick={() => setRelatedOpen(!relatedOpen)}>
+              類似表現 {relatedOpen ? "▾" : "▸"}
+            </button>
+          )}
+        </div>
+      )}
+      {usagesOpen && (
+        <div className="usage-line">
+          {usages.map((u, i) => (
+            <UsageItem key={i} u={u} word={word} dict={dict} gloss />
+          ))}
+        </div>
+      )}
+      {relatedOpen && <RelatedWords groups={related} dict={dict} gloss />}
+    </div>
   );
 }
 

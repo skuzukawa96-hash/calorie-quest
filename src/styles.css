@@ -874,6 +874,30 @@ main {
 .recipe-item-foot {
   margin-top: 8px;
 }
+/* a row opened: 対義語 and 成り立ち as its review shows them, 用法 / 類似表現 behind a button each */
+.brief-notes {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.brief-antonym {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+/* beside its label, ⇔ needs no room on its left */
+.brief-antonym .antonym-mark {
+  margin: 0 0.6em 0 0;
+}
+.brief-toggles {
+  display: flex;
+  gap: 8px;
+}
+.brief-notes .usage-line,
+.brief-notes .related {
+  margin: 0;
+}
 /* ✓ 覚えた / 復習に戻す and × at the right end of the row, kept to the row's height */
 /* a row's ☆ / ✓ 覚えた / × at its right end (only the row's: the review row has a class of its own) */
 .recipe-row-actions {
