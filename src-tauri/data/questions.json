@@ -1,5 +1,5 @@
 {
-  "version": 30,
+  "version": 31,
   "questions": [
     {"key":"w001","kind":"word","difficulty":"low","category":"食べ物","group":"果物","en":"apple","ja":"りんご","modes":["choice","typing","speaking"]},
     {"key":"w002","kind":"word","difficulty":"low","category":"食べ物","group":"飲み物","en":"water","ja":"水","modes":["choice","typing","speaking"]},
@@ -252,7 +252,7 @@
     {"key":"g011","kind":"grammar","difficulty":"mid","category":"文法","group":"文法","en":"have lost","ja":"鍵をなくしてしまった。見つからない。","prompt":"I ___ my keys. I can't find them.","choices":["lose","lost","have lost","am losing"],"modes":["choice"],"point":"present-perfect"},
     {"key":"g012","kind":"grammar","difficulty":"mid","category":"文法","group":"文法","en":"better","ja":"紅茶とコーヒー、どちらが好きですか？","prompt":"Which do you like ___, tea or coffee?","choices":["good","well","better","best"],"modes":["choice"],"point":"comparative"},
     {"key":"g013","kind":"grammar","difficulty":"mid","category":"文法","group":"文法","en":"was","ja":"その手紙は私のおばによって書かれた。","prompt":"The letter ___ written by my aunt.","choices":["is","was","were","be"],"modes":["choice"],"point":"passive"},
-    {"key":"g014","kind":"grammar","difficulty":"mid","category":"文法","group":"文法","en":"what","ja":"次に何をすべきかわからない。","prompt":"I don't know ___ to do next.","choices":["what","which","where","who"],"modes":["choice"],"point":"indirect-question"},
+    {"key":"g014","kind":"grammar","difficulty":"mid","category":"文法","group":"文法","en":"what","ja":"次に何をすべきかわからない。","prompt":"I don't know ___ to do next.","choices":["what","which","where","who"],"modes":["choice"],"point":"wh-infinitive"},
     {"key":"g015","kind":"grammar","difficulty":"mid","category":"文法","group":"文法","en":"wash","ja":"彼女は私に皿を洗わせた。","prompt":"She made me ___ the dishes.","choices":["wash","to wash","washing","washed"],"modes":["choice"],"point":"causative"},
     {"key":"g016","kind":"grammar","difficulty":"mid","category":"文法","group":"文法","en":"since","ja":"私は2010年からここに住んでいます。","prompt":"I have lived here ___ 2010.","choices":["for","since","from","during"],"modes":["choice"],"point":"preposition-time"},
     {"key":"g017","kind":"grammar","difficulty":"mid","category":"文法","group":"文法","en":"could","ja":"私は5歳のとき泳ぐことができた。","prompt":"I ___ swim when I was five.","choices":["can","could","may","must"],"modes":["choice"],"point":"modal"},

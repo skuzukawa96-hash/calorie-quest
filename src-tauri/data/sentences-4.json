@@ -113,7 +113,7 @@
   {"key":"s250","kind":"sentence","difficulty":"high","category":"気持ち・性格","group":"気持ち・性格","en":"He was so eager to start that he arrived an hour early.","ja":"彼は始めるのが待ちきれず、1時間早く着いた。","modes":["choice","typing","speaking"]},
 
   {"key":"s251","kind":"sentence","difficulty":"high","category":"趣味・スポーツ","group":"趣味・スポーツ","en":"The referee stopped the match because of the heavy rain.","ja":"大雨のため審判は試合を止めた。","modes":["choice","typing","speaking"]},
-  {"key":"s252","kind":"sentence","difficulty":"high","category":"趣味・スポーツ","group":"趣味・スポーツ","en":"He has been playing the violin since he was seven.","ja":"彼は7歳のときからバイオリンを弾いています。","modes":["typing","speaking"],"point":"present-perfect-progressive"},
+  {"key":"s252","kind":"sentence","difficulty":"high","category":"趣味・スポーツ","group":"趣味・スポーツ","en":"He has been playing the violin since he was seven.","ja":"彼は7歳のときからバイオリンを弾いています。","modes":["typing","speaking"],"point":"preposition-time"},
   {"key":"s253","kind":"sentence","difficulty":"high","category":"趣味・スポーツ","group":"趣味・スポーツ","en":"We packed the tent, a lantern and two sleeping bags.","ja":"テントとランタンと寝袋を2つ詰めた。","modes":["choice","typing","speaking"]},
   {"key":"s254","kind":"sentence","difficulty":"high","category":"趣味・スポーツ","group":"趣味・スポーツ","en":"The trail to the peak takes about three hours on foot.","ja":"頂上までの道は徒歩で約3時間かかります。","modes":["choice","typing","speaking"]},
   {"key":"s255","kind":"sentence","difficulty":"high","category":"趣味・スポーツ","group":"趣味・スポーツ","en":"She finished the marathon in under four hours.","ja":"彼女は4時間以内でマラソンを完走した。","modes":["choice","typing","speaking"]},

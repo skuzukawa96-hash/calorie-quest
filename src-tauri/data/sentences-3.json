@@ -22,7 +22,7 @@
   {"key":"s131","kind":"sentence","difficulty":"high","category":"自然・天気","group":"自然・天気","en":"The air was so humid that my shirt was wet in minutes.","ja":"空気がとても蒸し暑く、数分でシャツがぬれてしまった。","modes":["typing","speaking"],"point":"so-such-too-enough"},
   {"key":"s132","kind":"sentence","difficulty":"high","category":"自然・天気","group":"自然・天気","en":"We walked along the stream until we reached a small waterfall.","ja":"小川沿いを歩き、小さな滝にたどり着いた。","modes":["choice","typing","speaking"]},
   {"key":"s133","kind":"sentence","difficulty":"high","category":"自然・天気","group":"自然・天気","en":"There was frost on the field early this morning.","ja":"今朝早く、畑に霜が降りていた。","modes":["choice","typing","speaking"]},
-  {"key":"s134","kind":"sentence","difficulty":"high","category":"自然・天気","group":"自然・天気","en":"The weather has been mild since the middle of last week.","ja":"先週の半ばから穏やかな天気が続いている。","modes":["typing","speaking"],"point":"present-perfect"},
+  {"key":"s134","kind":"sentence","difficulty":"high","category":"自然・天気","group":"自然・天気","en":"The weather has been mild since the middle of last week.","ja":"先週の半ばから穏やかな天気が続いている。","modes":["typing","speaking"],"point":"preposition-time"},
 
   {"key":"s135","kind":"sentence","difficulty":"high","category":"気持ち・性格","group":"気持ち・性格","en":"I was embarrassed when I forgot my client's name.","ja":"顧客の名前を忘れてしまい、恥ずかしかった。","modes":["choice","typing","speaking"]},
   {"key":"s136","kind":"sentence","difficulty":"high","category":"気持ち・性格","group":"気持ち・性格","en":"She is patient with beginners and never loses her temper.","ja":"彼女は初心者に忍耐強く、決してかっとならない。","modes":["choice","typing","speaking"]},

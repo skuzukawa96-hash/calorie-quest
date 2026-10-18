@@ -1,5 +1,5 @@
 [
-  {"key":"s1569","kind":"sentence","difficulty":"high","category":"食べ物","group":"食べ物","en":"The vineyard has produced award-winning wine for three generations.","ja":"そのぶどう園は3世代にわたって受賞歴のあるワインを生産してきました。","modes":["typing","speaking"],"point":"present-perfect"},
+  {"key":"s1569","kind":"sentence","difficulty":"high","category":"食べ物","group":"食べ物","en":"The vineyard has produced award-winning wine for three generations.","ja":"そのぶどう園は3世代にわたって受賞歴のあるワインを生産してきました。","modes":["typing","speaking"],"point":"preposition-time"},
   {"key":"s1570","kind":"sentence","difficulty":"high","category":"食べ物","group":"食べ物","en":"She learned to identify edible mushrooms during a foraging workshop.","ja":"彼女は採集ワークショップの間に食べられるキノコを見分ける方法を学びました。","modes":["choice","typing","speaking"]},
   {"key":"s1571","kind":"sentence","difficulty":"high","category":"食べ物","group":"食べ物","en":"The restaurant reduced food waste by donating unused ingredients daily.","ja":"そのレストランは毎日使われなかった食材を寄付することで食品廃棄を減らしました。","modes":["choice","typing","speaking"]},
   {"key":"s1572","kind":"sentence","difficulty":"high","category":"食べ物","group":"食べ物","en":"He spent a summer working on a farm to understand where food comes from.","ja":"彼は食べ物がどこから来るのか理解するために夏を農場で働いて過ごしました。","modes":["choice","typing","speaking"]},

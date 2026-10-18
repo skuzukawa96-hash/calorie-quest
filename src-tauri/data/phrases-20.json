@@ -132,7 +132,7 @@
   {"key":"p4248","kind":"phrase","difficulty":"mid","category":"食べ物","group":"食べ物","en":"We reserved a table by the window for our anniversary.","ja":"私たちは記念日のために窓際の席を予約しました。","modes":["choice","typing","speaking"]},
   {"key":"p4249","kind":"phrase","difficulty":"mid","category":"食べ物","group":"食べ物","en":"She blended the fruit with yogurt for breakfast.","ja":"彼女は朝食のために果物をヨーグルトと混ぜました。","modes":["choice","typing","speaking"]},
   {"key":"p4250","kind":"phrase","difficulty":"mid","category":"食べ物","group":"食べ物","en":"He set the table with the good dishes for the guests.","ja":"彼はお客様のために良い食器でテーブルを整えました。","modes":["choice","typing","speaking"]},
-  {"key":"p4251","kind":"phrase","difficulty":"mid","category":"食べ物","group":"食べ物","en":"We asked for the check as soon as we finished eating.","ja":"私たちは食べ終わるとすぐに会計をお願いしました。","modes":["typing","speaking"],"point":"gerund-vs-infinitive"},
+  {"key":"p4251","kind":"phrase","difficulty":"mid","category":"食べ物","group":"食べ物","en":"We asked for the check as soon as we finished eating.","ja":"私たちは食べ終わるとすぐに会計をお願いしました。","modes":["typing","speaking"],"point":"gerund"},
   {"key":"p4252","kind":"phrase","difficulty":"mid","category":"食べ物","group":"食べ物","en":"She rinsed the berries before putting them in the bowl.","ja":"彼女はベリーをボウルに入れる前に洗いました。","modes":["choice","typing","speaking"]},
   {"key":"p4253","kind":"phrase","difficulty":"mid","category":"食べ物","group":"食べ物","en":"He carved the turkey carefully in front of the guests.","ja":"彼はお客様の前で七面鳥を丁寧に切り分けました。","modes":["choice","typing","speaking"]},
   {"key":"p4254","kind":"phrase","difficulty":"mid","category":"食べ物","group":"食べ物","en":"We warmed the leftover curry on the stove.","ja":"私たちは残りのカレーをコンロで温めました。","modes":["choice","typing","speaking"]},
