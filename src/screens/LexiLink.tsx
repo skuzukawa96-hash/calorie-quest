@@ -27,9 +27,10 @@ export const LEXI_GENRE_LABEL: Record<LexiGenre, string> = { random: "ランダ�
  * (long enough to read both) */
 const LOOK_MS = 450;
 const MISS_MS = 1500;
-/** a pair taken: the glow, then the crunch, then (after its last bite) the English read aloud */
+/** a pair taken: the glow, then the crunch */
 const GLOW_MS = 500;
-const SAY_AFTER_CRUNCH_MS = 400;
+/** a candy opened: its English read aloud once the unwrapping has sounded (its カサッ is over by then) */
+const SAY_AFTER_UNWRAP_MS = 450;
 /** the computer's turn: a moment before it turns its first candy, and its second (to follow it by eye) */
 const COM_FIRST_MS = 900;
 const COM_SECOND_MS = 900;
@@ -96,7 +97,7 @@ export default function LexiLink({
   const standing = useRef<{ pairs: number; misses: [number, number] }>({ pairs: 0, misses: [0, 0] });
   /** the deal asked for last: one answered after another was asked for is not laid out */
   const dealt = useRef(0);
-  /** the board's English, its voices made as soon as it is dealt (read the moment a pair is eaten) */
+  /** the board's English, its voices made as soon as it is dealt (read the moment a candy is opened) */
   const voices = useRef<ReadyWords | null>(null);
   const timers = useRef<number[]>([]);
   const later = (fn: () => void, ms: number) => timers.current.push(window.setTimeout(fn, ms));
@@ -206,6 +207,9 @@ export default function LexiLink({
     playLexi("unwrap");
     setFrame(i, "half");
     later(() => setFrame(i, "open"), 90);
+    // The English on it read aloud after the unwrapping (a meaning in Japanese is not read).
+    const card = cells[i].card;
+    if (card.english) later(() => void voices.current?.say([card.word], 0).catch(() => undefined), SAY_AFTER_UNWRAP_MS);
     const now = [...open, i];
     setOpen(now);
     if (now.length < 2) return;
@@ -228,8 +232,6 @@ export default function LexiLink({
           // Word Match: English on the left; Opposites: the one opened first on the left.
           const [left, right] =
             config.mode === "match" ? (cells[x].card.english ? [cells[x].card, cells[y].card] : [cells[y].card, cells[x].card]) : [cells[x].card, cells[y].card];
-          const words = config.mode === "match" ? [left.word] : [left.word, right.word];
-          later(() => void voices.current?.say(words, 350).catch(() => undefined), SAY_AFTER_CRUNCH_MS);
           const next = [{ pair: cells[x].pair, left, right, by: turn }, ...taken];
           setTaken(next);
           setOpen([]);
