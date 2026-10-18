@@ -3705,7 +3705,8 @@ button.wp-link.open {
   padding: 12px 20px;
   border-radius: 999px;
   box-shadow: var(--shadow);
-  z-index: 50;
+  /* above LexiLink's end (60): a word saved from the pairs taken is told there */
+  z-index: 70;
   animation: rise 0.25s ease;
   max-width: 90vw;
 }
@@ -4877,6 +4878,16 @@ button.wp-link.open {
 .lexi-taken {
   margin-top: 14px;
 }
+/* the game over: the pairs taken stand above the dimmed board, still to click and right-click */
+.lexi-taken.over-end {
+  position: relative;
+  z-index: 61;
+  margin: 14px -12px 0;
+  padding: 10px 12px 12px;
+  background: var(--card);
+  border-radius: 14px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.25);
+}
 .lexi-taken h4 {
   margin: 0 0 8px;
   font-size: 13px;
@@ -4953,6 +4964,11 @@ button.wp-link.open {
   justify-content: center;
   background: rgba(59, 42, 30, 0.45);
   animation: lexi-fade 0.25s ease-out;
+  /* clicks go through to the page (the pairs taken, the scroll); only its words and buttons take them */
+  pointer-events: none;
+}
+.lexi-overlay .lexi-burst {
+  pointer-events: auto;
 }
 .lexi-burst {
   position: relative;

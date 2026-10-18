@@ -424,7 +424,8 @@ export default function LexiLink({
           <div className="loading">キャンディを並べています…</div>
         )}
 
-        <div className="lexi-taken">
+        {/* Above the game's end too, its words still read aloud and saved to the recipe. */}
+        <div className={"lexi-taken" + (end ? " over-end" : "")}>
           <h4>取ったペア {pairs}/{LEXI.pairs}</h4>
           <div className="lexi-taken-list">
             {taken.map((t, k) => (
