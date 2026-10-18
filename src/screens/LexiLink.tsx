@@ -113,7 +113,8 @@ export default function LexiLink({
     busy.current = false;
     comWaiting.current = false;
     if (config.players === 2 && config.com) {
-      com.current ??= new LexiCom(COM_LEVELS[config.com]);
+      // In development, what it stores and recalls and why it chooses each card go to the console.
+      com.current ??= new LexiCom(COM_LEVELS[config.com], Math.random, import.meta.env.DEV ? (line) => console.info(`[LexiCom] ${line}`) : undefined);
       com.current.reset();
     } else com.current = null;
     settled.current = false;
