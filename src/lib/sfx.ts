@@ -187,7 +187,7 @@ const LEXI_SOUNDS = {
   /** a candy unwrapped: 紙の包みのカサッ (カサ…カサッ) */
   unwrap: {
     dur: 0.7,
-    level: 0.75,
+    level: 0.6,
     build: (k) => {
       k.play(k.rustle(0.5, twoBumps), 0, [k.filt("bandpass", 2600, 0.5)], 0.8);
       k.play(k.crinkle(0.5, 300, twoBumps), 0, [k.filt("highpass", 1500), k.filt("lowpass", 6000)], 0.7);
