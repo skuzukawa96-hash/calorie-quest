@@ -405,6 +405,7 @@ CREATE TABLE IF NOT EXISTS weight_log (
   date TEXT NOT NULL,
   weight_kg REAL NOT NULL,
   height_cm REAL NOT NULL,
+  body_fat REAL,
   bonus_kcal INTEGER NOT NULL DEFAULT 0,
   recorded_at TEXT NOT NULL,
   PRIMARY KEY (user_id, date)
@@ -550,6 +551,8 @@ fn setup(conn: Connection) -> rusqlite::Result<Connection> {
     // ダイエット機能のオン・オフと、BMI を出す身長。
     ensure_column(&conn, "users", "diet_mode", "INTEGER NOT NULL DEFAULT 0")?;
     ensure_column(&conn, "users", "height_cm", "REAL")?;
+    // 体脂肪率, given beside the weight when the scale measures it
+    ensure_column(&conn, "weight_log", "body_fat", "REAL")?;
     // レシピの単語がその日はじめて正解した日（同じ日の2回目からは半分を払う）。
     ensure_column(&conn, "recipe_words", "paid_on", "TEXT")?;
     ensure_column(&conn, "recipe_words", "kind", "TEXT NOT NULL DEFAULT 'word'")?;

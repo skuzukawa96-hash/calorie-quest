@@ -38,6 +38,7 @@ import type {
   ModeCount,
   Dashboard,
   DayPoint,
+  DoneTask,
   EatenSnack,
   ExamAnswer,
   ExamCell,
@@ -145,6 +146,8 @@ interface StoredWeight {
   weightKg: number;
   heightCm: number;
   bonus: number;
+  /** 体脂肪率 (%), when given (older entries have none) */
+  bodyFat?: number | null;
 }
 
 /** An exam set as asked: how many exams asked it, and when it was last asked (mirrors exam_seen). */
@@ -662,6 +665,19 @@ function listTasks(): Task[] {
   return countedTasks(state.tasks).sort((a, b) => a.calories - b.calories || a.id - b.id);
 }
 
+/** Mirrors load_stats's done: the 課題 done on a day, one a line (×count, kcal in all), the most kcal first. */
+function doneOn(date: string): DoneTask[] {
+  const done = new Map<string, DoneTask>();
+  for (const e of state.taskLog.filter((x) => x.date === date)) {
+    const key = `${e.taskIcon}|${e.taskName}`;
+    const d = done.get(key) ?? { icon: e.taskIcon, name: e.taskName, count: 0, kcal: 0 };
+    d.count += 1;
+    d.kcal += e.calories;
+    done.set(key, d);
+  }
+  return [...done.values()].sort((a, b) => b.kcal - a.kcal || a.name.localeCompare(b.name));
+}
+
 /** Mirrors diet::earn_on: a 課題 done now, logged and paid as it says (no play mode). */
 function earnTask(taskId: number | null, taskName: string, taskIcon: string, calories: number): DailyStats {
   const t = today();
@@ -678,7 +694,7 @@ function bmi(weightKg: number, heightCm: number): number {
 }
 
 function weightPoint(date: string, w: StoredWeight): WeightPoint {
-  return { date, weightKg: w.weightKg, heightCm: w.heightCm, bmi: bmi(w.weightKg, w.heightCm) };
+  return { date, weightKg: w.weightKg, heightCm: w.heightCm, bmi: bmi(w.weightKg, w.heightCm), bodyFat: w.bodyFat ?? null };
 }
 
 const round1 = (v: number) => Math.round(v * 10) / 10;
@@ -691,14 +707,17 @@ function setHeight(heightCm: number): number {
   return state.user.heightCm;
 }
 
-/** Mirrors diet::record_weight_in: today's weight at the height kept, once a day, paying the daily bonus. */
-function recordWeight(weightKg: number): WeightResult {
+/** Mirrors diet::record_weight_in: today's weight at the height kept, with its 体脂肪率 if given, once
+ * a day, paying the daily bonus. */
+function recordWeight(weightKg: number, bodyFat: number | null): WeightResult {
   if (!(Number.isFinite(weightKg) && weightKg >= 10 && weightKg <= 300)) throw new Error("体重は10〜300 kgの範囲で入力してください");
+  if (bodyFat !== null && !(Number.isFinite(bodyFat) && bodyFat >= 1 && bodyFat <= 75))
+    throw new Error("体脂肪率は1〜75 %の範囲で入力してください（測れないときは空けたままで記録できます）");
   const heightCm = state.user.heightCm;
   if (heightCm == null) throw new Error("先に記録の画面で身長を入れてください（BMI の計算に使います）");
   const t = today();
   if (state.weights[t]) throw new Error("今日の体重はもう記録しました（記録できるのは1日1回です）");
-  state.weights[t] = { weightKg: round1(weightKg), heightCm, bonus: WEIGHT_BONUS_KCAL };
+  state.weights[t] = { weightKg: round1(weightKg), heightCm, bonus: WEIGHT_BONUS_KCAL, bodyFat: bodyFat === null ? null : round1(bodyFat) };
   daily(t).kcalEarned += WEIGHT_BONUS_KCAL;
   save();
   return { point: weightPoint(t, state.weights[t]), bonus: WEIGHT_BONUS_KCAL, today: { ...daily(t) } };
@@ -2772,6 +2791,7 @@ function getStats(): Stats {
       eaten: [...eaten.values()].sort(
         (a, b) => Number(a.withTicket) - Number(b.withTicket) || b.kcal - a.kcal || a.name.localeCompare(b.name),
       ),
+      done: doneOn(date),
     });
   }
   const weakQuestions: WeakQuestion[] = Object.entries(state.history)
@@ -3290,7 +3310,7 @@ export async function mockInvoke<T>(cmd: string, args: Record<string, unknown>):
     case "set_height":
       return setHeight(Number(args.heightCm)) as T;
     case "record_weight":
-      return recordWeight(Number(args.weightKg)) as T;
+      return recordWeight(Number(args.weightKg), args.bodyFat == null ? null : Number(args.bodyFat)) as T;
     case "get_stats":
       return getStats() as T;
     case "reset_progress": {

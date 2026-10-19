@@ -1678,6 +1678,25 @@ pub fn load_stats(conn: &Connection) -> CmdResult<Stats> {
             eaten_by_date.entry(d).or_default().push(snack);
         }
     }
+    // The 課題 done each day, for the weight chart's dots (ダイエット機能): one a line, the most kcal first.
+    let mut done_by_date: HashMap<String, Vec<DoneTask>> = HashMap::new();
+    {
+        let mut stmt = conn
+            .prepare(
+                "SELECT date, task_icon, task_name, COUNT(*), SUM(calories) FROM task_log
+                 WHERE user_id = ?1 AND date >= ?2 GROUP BY date, task_icon, task_name",
+            )
+            .map_err(err)?;
+        let rows = stmt
+            .query_map(params![USER_ID, start], |r| {
+                Ok((r.get::<_, String>(0)?, DoneTask { icon: r.get(1)?, name: r.get(2)?, count: r.get(3)?, kcal: r.get(4)? }))
+            })
+            .map_err(err)?;
+        for row in rows {
+            let (d, task) = row.map_err(err)?;
+            done_by_date.entry(d).or_default().push(task);
+        }
+    }
     let diet_by_date = if user.diet_mode { HashMap::new() } else { crate::diet::diet_kcal_since(conn, &start).map_err(err)? };
     let last_14_days = (0..14)
         .map(|i| {
@@ -1686,7 +1705,9 @@ pub fn load_stats(conn: &Connection) -> CmdResult<Stats> {
             let k = (k - diet_by_date.get(&date).copied().unwrap_or(0)).max(0);
             let mut eaten = eaten_by_date.remove(&date).unwrap_or_default();
             eaten.sort_by(|x, y| x.with_ticket.cmp(&y.with_ticket).then(y.kcal.cmp(&x.kcal)).then(x.name.cmp(&y.name)));
-            DayPoint { date, kcal_earned: k, kcal_consumed: e, answered: a, correct: c, eaten }
+            let mut done = done_by_date.remove(&date).unwrap_or_default();
+            done.sort_by(|x, y| y.kcal.cmp(&x.kcal).then(x.name.cmp(&y.name)));
+            DayPoint { date, kcal_earned: k, kcal_consumed: e, answered: a, correct: c, eaten, done }
         })
         .collect();
 

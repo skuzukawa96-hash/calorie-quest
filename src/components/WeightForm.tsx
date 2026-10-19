@@ -8,10 +8,12 @@ import { EditButton } from "./IconButtons";
 export const d1 = (n: number) => n.toFixed(1);
 
 /**
- * 体重 / 記録 (ダイエット機能): today's weight alone, from the home's 目標の課題 or the 記録's weight
- * chart, whichever comes first, once a day; recording it pays `bonus` kcal (体重記録のデイリーボーナス).
+ * 体重 / 記録 (ダイエット機能): today's weight, from the home's 目標の課題 or the 記録's weight chart,
+ * whichever comes first, once a day; recording it pays `bonus` kcal (体重記録のデイリーボーナス).
+ * 体脂肪率 goes beside it when the scale measures it; left empty, the weight alone is recorded.
  * The BMI is worked out from the height kept (`HeightSetting`); with none yet, `noHeight` says where
- * to give it and the weight waits. Once recorded, today's weight and BMI stand in the form's place.
+ * to give it and the weight waits. Once recorded, today's weight, BMI and 体脂肪率 stand in the
+ * form's place (the BMI is shown there only, not in the chart).
  */
 export default function WeightForm({
   heightCm,
@@ -30,12 +32,18 @@ export default function WeightForm({
   toast: (msg: string, ms?: number) => void;
 }) {
   const [weight, setWeight] = useState("");
+  const [fat, setFat] = useState("");
   const [busy, setBusy] = useState(false);
 
   if (today) {
     return (
       <span className="weight-today" title="今日の体重は記録済みです（記録できるのは1日1回）">
         ⚖️ 今日 <b>{d1(today.weightKg)}</b> kg・BMI <b>{d1(today.bmi)}</b>
+        {today.bodyFat !== null && (
+          <>
+            ・体脂肪率 <b>{d1(today.bodyFat)}</b> %
+          </>
+        )}
         <span className="pill eaten">✓ 記録済み</span>
       </span>
     );
@@ -45,11 +53,13 @@ export default function WeightForm({
     e.preventDefault();
     setBusy(true);
     try {
-      const r = await api.recordWeight(Number(weight));
+      const r = await api.recordWeight(Number(weight), fat.trim() === "" ? null : Number(fat));
       playDone();
-      toast(`⚖️ 体重記録のデイリーボーナス${r.bonus}kcal獲得（${d1(r.point.weightKg)} kg・BMI ${d1(r.point.bmi)}）`, 4000);
+      const withFat = r.point.bodyFat !== null ? `・体脂肪率 ${d1(r.point.bodyFat)} %` : "";
+      toast(`⚖️ 体重記録のデイリーボーナス${r.bonus}kcal獲得（${d1(r.point.weightKg)} kg・BMI ${d1(r.point.bmi)}${withFat}）`, 4000);
       // Not kept for the next day's form (left open past midnight, it would offer yesterday's weight).
       setWeight("");
+      setFat("");
       onRecorded();
     } catch (err) {
       toast(String(err));
@@ -72,6 +82,21 @@ export default function WeightForm({
           onChange={(e) => setWeight(e.target.value)}
         />
         kg
+      </label>
+      {/* Not every scale measures it: left empty, the weight alone is recorded. */}
+      <label title="体重計で測れるときだけ（空けたままでも記録できます）">
+        体脂肪率
+        <input
+          type="number"
+          inputMode="decimal"
+          step="0.1"
+          min={1}
+          max={75}
+          value={fat}
+          placeholder="任意"
+          onChange={(e) => setFat(e.target.value)}
+        />
+        %
       </label>
       <button
         className="btn btn-primary btn-small"

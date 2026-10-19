@@ -105,7 +105,8 @@ export const api = {
   /** the height BMI is worked out from, kept until it is changed */
   setHeight: (heightCm: number) => call<number>("set_height", { heightCm }),
   /** today's weight at the height kept, once a day (it pays the daily bonus) */
-  recordWeight: (weightKg: number) => call<WeightResult>("record_weight", { weightKg }),
+  /** today's weight, with its 体脂肪率 if the scale gave one */
+  recordWeight: (weightKg: number, bodyFat: number | null = null) => call<WeightResult>("record_weight", { weightKg, bodyFat }),
   /** 💾 バックアップ: the backups folder and its files, newest first */
   listBackups: () => call<BackupList>("list_backups"),
   createBackup: () => call<BackupInfo>("create_backup"),

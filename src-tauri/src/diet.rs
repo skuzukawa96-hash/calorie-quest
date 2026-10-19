@@ -17,6 +17,8 @@ pub const WEIGHT_BONUS_KCAL: i64 = 10;
 pub const TASK_MAX_KCAL: i64 = 1000;
 const WEIGHT_KG: std::ops::RangeInclusive<f64> = 10.0..=300.0;
 const HEIGHT_CM: std::ops::RangeInclusive<f64> = 50.0..=250.0;
+/// 体脂肪率 (%) a scale can show
+const BODY_FAT_PCT: std::ops::RangeInclusive<f64> = 1.0..=75.0;
 
 /// An icon of the app's own drawing, for what has no emoji: a dumbbell, a vacuum cleaner
 /// (`components/ItemIcon.tsx` draws them).
@@ -246,8 +248,8 @@ pub fn bmi(weight_kg: f64, height_cm: f64) -> f64 {
     round1(weight_kg / (m * m))
 }
 
-fn point(date: String, weight_kg: f64, height_cm: f64) -> WeightPoint {
-    WeightPoint { date, weight_kg, height_cm, bmi: bmi(weight_kg, height_cm) }
+fn point(date: String, weight_kg: f64, height_cm: f64, body_fat: Option<f64>) -> WeightPoint {
+    WeightPoint { date, weight_kg, height_cm, bmi: bmi(weight_kg, height_cm), body_fat }
 }
 
 /// The height BMI is worked out from: given once in the 記録 and kept (`users.height_cm`) until it
@@ -261,12 +263,17 @@ pub fn set_height_in(conn: &Connection, height_cm: f64) -> CmdResult<f64> {
     Ok(h)
 }
 
-/// Records today's weight at the height kept, and pays [`WEIGHT_BONUS_KCAL`]. A day is weighed
-/// once: from the home or the 記録, whichever comes first.
-pub fn record_weight_in(conn: &Connection, weight_kg: f64) -> CmdResult<WeightResult> {
+/// Records today's weight at the height kept, with its 体脂肪率 if given (not every scale measures
+/// it: the weight alone is a record), and pays [`WEIGHT_BONUS_KCAL`]. A day is weighed once: from
+/// the home or the 記録, whichever comes first.
+pub fn record_weight_in(conn: &Connection, weight_kg: f64, body_fat: Option<f64>) -> CmdResult<WeightResult> {
     if !weight_kg.is_finite() || !WEIGHT_KG.contains(&weight_kg) {
         return Err("体重は10〜300 kgの範囲で入力してください".into());
     }
+    if body_fat.is_some_and(|f| !f.is_finite() || !BODY_FAT_PCT.contains(&f)) {
+        return Err("体脂肪率は1〜75 %の範囲で入力してください（測れないときは空けたままで記録できます）".into());
+    }
+    let fat = body_fat.map(round1);
     let h: Option<f64> = conn
         .query_row("SELECT height_cm FROM users WHERE id = ?1", params![USER_ID], |r| r.get(0))
         .map_err(err)?;
@@ -281,15 +288,15 @@ pub fn record_weight_in(conn: &Connection, weight_kg: f64) -> CmdResult<WeightRe
     }
     let tx = conn.unchecked_transaction().map_err(err)?;
     tx.execute(
-        "INSERT INTO weight_log (user_id, date, weight_kg, height_cm, bonus_kcal, recorded_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-        params![USER_ID, day, w, h, WEIGHT_BONUS_KCAL, now],
+        "INSERT INTO weight_log (user_id, date, weight_kg, height_cm, body_fat, bonus_kcal, recorded_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+        params![USER_ID, day, w, h, fat, WEIGHT_BONUS_KCAL, now],
     )
     .map_err(err)?;
     earn_flat(&tx, &day, WEIGHT_BONUS_KCAL).map_err(err)?;
     tx.commit().map_err(err)?;
     Ok(WeightResult {
-        point: point(day.clone(), w, h),
+        point: point(day.clone(), w, h, fat),
         bonus: WEIGHT_BONUS_KCAL,
         today: load_daily(conn, &day).map_err(err)?,
     })
@@ -298,9 +305,9 @@ pub fn record_weight_in(conn: &Connection, weight_kg: f64) -> CmdResult<WeightRe
 /// Today's weight, once recorded.
 pub fn today_weight(conn: &Connection) -> rusqlite::Result<Option<WeightPoint>> {
     conn.query_row(
-        "SELECT date, weight_kg, height_cm FROM weight_log WHERE user_id = ?1 AND date = ?2",
+        "SELECT date, weight_kg, height_cm, body_fat FROM weight_log WHERE user_id = ?1 AND date = ?2",
         params![USER_ID, today()],
-        |r| Ok(point(r.get(0)?, r.get(1)?, r.get(2)?)),
+        |r| Ok(point(r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
     )
     .optional()
 }
@@ -337,8 +344,8 @@ pub fn diet_kcal_since(conn: &Connection, start: &str) -> rusqlite::Result<HashM
 /// The weights recorded from `start` on, oldest first.
 pub fn weights_since(conn: &Connection, start: &str) -> rusqlite::Result<Vec<WeightPoint>> {
     let mut stmt =
-        conn.prepare("SELECT date, weight_kg, height_cm FROM weight_log WHERE user_id = ?1 AND date >= ?2 ORDER BY date")?;
-    let rows = stmt.query_map(params![USER_ID, start], |r| Ok(point(r.get(0)?, r.get(1)?, r.get(2)?)))?;
+        conn.prepare("SELECT date, weight_kg, height_cm, body_fat FROM weight_log WHERE user_id = ?1 AND date >= ?2 ORDER BY date")?;
+    let rows = stmt.query_map(params![USER_ID, start], |r| Ok(point(r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?;
     rows.collect()
 }
 
@@ -411,9 +418,9 @@ pub fn set_height(state: State<'_, AppState>, height_cm: f64) -> CmdResult<f64> 
 }
 
 #[tauri::command]
-pub fn record_weight(state: State<'_, AppState>, weight_kg: f64) -> CmdResult<WeightResult> {
+pub fn record_weight(state: State<'_, AppState>, weight_kg: f64, body_fat: Option<f64>) -> CmdResult<WeightResult> {
     let conn = state.db.lock().map_err(err)?;
-    record_weight_in(&conn, weight_kg)
+    record_weight_in(&conn, weight_kg, body_fat)
 }
 
 /* ---------- tests ---------- */
@@ -487,20 +494,20 @@ mod tests {
     #[test]
     fn a_weight_is_recorded_once_a_day_at_the_height_kept() {
         let conn = db::init_in_memory().unwrap();
-        assert!(record_weight_in(&conn, 60.0).is_err(), "no height yet");
+        assert!(record_weight_in(&conn, 60.0, None).is_err(), "no height yet");
         assert!(set_height_in(&conn, 30.0).is_err());
         assert!(set_height_in(&conn, f64::NAN).is_err());
         assert_eq!(set_height_in(&conn, 170.04).unwrap(), 170.0);
-        assert!(record_weight_in(&conn, 5.0).is_err());
-        assert!(record_weight_in(&conn, f64::NAN).is_err());
+        assert!(record_weight_in(&conn, 5.0, None).is_err());
+        assert!(record_weight_in(&conn, f64::NAN, None).is_err());
         assert!(load_dashboard(&conn).unwrap().weight_today.is_none());
 
         set_play_mode_in(&conn, "easy").unwrap();
-        let first = record_weight_in(&conn, 63.64).unwrap();
+        let first = record_weight_in(&conn, 63.64, None).unwrap();
         assert_eq!(first.bonus, WEIGHT_BONUS_KCAL);
         assert_eq!(first.today.kcal_earned, WEIGHT_BONUS_KCAL, "no ×1.5 for a weight");
         assert_eq!((first.point.weight_kg, first.point.height_cm, first.point.bmi), (63.6, 170.0, 22.0));
-        assert!(record_weight_in(&conn, 63.2).is_err(), "once a day");
+        assert!(record_weight_in(&conn, 63.2, None).is_err(), "once a day");
         assert_eq!(earned(&conn), WEIGHT_BONUS_KCAL);
 
         set_height_in(&conn, 172.0).unwrap();
@@ -512,6 +519,27 @@ mod tests {
         assert_eq!(dash.weight_today.map(|w| w.weight_kg), Some(63.6));
     }
 
+    /// 体脂肪率 goes with the weight when given (to one decimal), and may be left out; one out of
+    /// a scale's range is refused and records nothing.
+    #[test]
+    fn a_weight_may_carry_its_body_fat() {
+        let conn = crate::db::init_in_memory().unwrap();
+        set_height_in(&conn, 160.0).unwrap();
+        assert!(record_weight_in(&conn, 55.0, Some(0.5)).is_err());
+        assert!(record_weight_in(&conn, 55.0, Some(80.0)).is_err());
+        assert!(record_weight_in(&conn, 55.0, Some(f64::NAN)).is_err());
+        assert!(today_weight(&conn).unwrap().is_none(), "a refused one records nothing");
+        let r = record_weight_in(&conn, 55.0, Some(24.36)).unwrap();
+        assert_eq!(r.point.body_fat, Some(24.4));
+        assert_eq!(today_weight(&conn).unwrap().unwrap().body_fat, Some(24.4));
+        assert_eq!(weights_since(&conn, &today()).unwrap()[0].body_fat, Some(24.4));
+
+        let alone = crate::db::init_in_memory().unwrap();
+        set_height_in(&alone, 160.0).unwrap();
+        let r = record_weight_in(&alone, 55.0, None).unwrap();
+        assert_eq!((r.point.weight_kg, r.point.body_fat, r.bonus), (55.0, None, WEIGHT_BONUS_KCAL), "the weight alone is a record");
+    }
+
     /// With ダイエット機能 on, what the 課題 and the weight paid are in the 記録 (the chart's 獲得 and
     /// 累計獲得カロリー, with a 課題 / 体重 line of their own); off, they are left out of both.
     #[test]
@@ -520,7 +548,7 @@ mod tests {
         let task = add_task_in(&conn, "腹筋", 40, "").unwrap();
         log_done(&conn, task.id).unwrap();
         set_height_in(&conn, 160.0).unwrap();
-        record_weight_in(&conn, 50.0).unwrap();
+        record_weight_in(&conn, 50.0, None).unwrap();
         // 7 kcal from study
         let study = crate::commands::Earning::Answer { tier: "word", mode: "choice" };
         crate::commands::credit(&conn, &today(), 7 * crate::srs::EIGHTHS, study).unwrap();
@@ -539,6 +567,23 @@ mod tests {
         assert!(off.diet_kcal.is_none());
         // the day's budget keeps what was earned either way
         assert_eq!(earned(&conn), 57);
+    }
+
+    /// The weight chart's dot opens the 課題 done that day: one a line, done twice is ×2 with both
+    /// kcal, the most kcal first; a day with none has none.
+    #[test]
+    fn a_day_carries_the_tasks_done_on_it() {
+        let conn = db::init_in_memory().unwrap();
+        let sit_ups = add_task_in(&conn, "腹筋", 40, "💪").unwrap();
+        let walk = add_task_in(&conn, "散歩", 60, "🚶").unwrap();
+        log_done(&conn, sit_ups.id).unwrap();
+        log_done(&conn, sit_ups.id).unwrap();
+        log_done(&conn, walk.id).unwrap();
+        log_one_off_done(&conn, "階段", 15, "🏃").unwrap();
+        let stats = crate::commands::load_stats(&conn).unwrap();
+        let done: Vec<(&str, i64, i64)> = stats.last_14_days.last().unwrap().done.iter().map(|t| (t.name.as_str(), t.count, t.kcal)).collect();
+        assert_eq!(done, vec![("腹筋", 2, 80), ("散歩", 1, 60), ("階段", 1, 15)]);
+        assert!(stats.last_14_days[0].done.is_empty());
     }
 
     /// The first 課題 put in before their icons were chosen again take the new ones (and the two whose

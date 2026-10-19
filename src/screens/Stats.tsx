@@ -1,4 +1,5 @@
 import BackupPanel from "../components/BackupPanel";
+import { ItemIcon } from "../components/ItemIcon";
 import { SwitchViewButton } from "../components/IconButtons";
 import WeightForm, { d1, HeightSetting } from "../components/WeightForm";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
@@ -173,11 +174,11 @@ export default function Stats({ day, dietMode, onChanged, toast }: Props) {
           <h2 className="title-with-switch">
             {dietMode && (
               <SwitchViewButton
-                label={showWeight ? "獲得・消費カロリーのグラフに切り替える" : "体重・BMIのグラフに切り替える"}
+                label={showWeight ? "獲得・消費カロリーのグラフに切り替える" : "体重・体脂肪率のグラフに切り替える"}
                 onClick={switchChart}
               />
             )}
-            {showWeight ? "体重・BMIの推移" : "この2週間の獲得・消費カロリー"}
+            {showWeight ? "体重・体脂肪率の推移" : "この2週間の獲得・消費カロリー"}
           </h2>
           {showWeight && (
             <div className="weight-head">
@@ -204,12 +205,7 @@ export default function Stats({ day, dietMode, onChanged, toast }: Props) {
           )}
         </div>
         {showWeight ? (
-          <WeightChart
-            dates={stats.last14Days.map((d) => d.date)}
-            weights={stats.weights}
-            heightCm={stats.heightCm ?? null}
-            bonus={stats.weightBonusKcal}
-          />
+          <WeightChart days={stats.last14Days} weights={stats.weights} bonus={stats.weightBonusKcal} />
         ) : (
           <KcalLineChart days={stats.last14Days} />
         )}
@@ -683,13 +679,13 @@ const f1 = (n: number) => n.toFixed(1);
  * either (not always from 0), each line's highest and lowest days named in the legend. Clicking a
  * 消費 dot opens, from the dot, what was eaten that day.
  */
-function KcalLineChart({ days }: { days: DayPoint[] }) {
-  /** the day whose snacks are open, from its 消費 dot */
-  const [open, setOpen] = useState<number | null>(null);
+/** A chart's dot that opens a window from it: which is open, and the window's box. A click anywhere
+ * but the window or another dot closes it; so does Escape. */
+function useDotPopover<T>() {
+  const [open, setOpen] = useState<T | null>(null);
   const pop = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (open === null) return;
-    // Anywhere but the window or another 消費 dot closes it; so does Escape.
     const away = (e: MouseEvent) => {
       const t = e.target as Element;
       if (!pop.current?.contains(t) && !t.closest?.(".lc-hit")) setOpen(null);
@@ -702,6 +698,12 @@ function KcalLineChart({ days }: { days: DayPoint[] }) {
       document.removeEventListener("keydown", esc);
     };
   }, [open]);
+  return { open, setOpen, pop };
+}
+
+function KcalLineChart({ days }: { days: DayPoint[] }) {
+  /** the day whose snacks are open, from its 消費 dot */
+  const { open, setOpen, pop } = useDotPopover<number>();
 
   const all = days.flatMap((d) => SERIES.map((s) => s.value(d)));
   const { lo, hi, step } = axis(Math.min(...all), Math.max(...all));
@@ -881,98 +883,218 @@ function EatenPopover({
   );
 }
 
-/** BMI: kg over metres squared, to one decimal (as diet::bmi works it out). */
-function bmiOf(weightKg: number, heightCm: number): number {
-  const m = heightCm / 100;
-  return Math.round((weightKg / (m * m)) * 10) / 10;
-}
+/** 体重 and 体脂肪率 each as a line, and whether a dot of either opens the day's 課題. */
+type WeightDot = { date: string; at: "weight" | "fat" };
 
 /**
- * The fortnight's weight as one line through the days weighed (a day not weighed is passed over),
- * on a kg axis at the left; the axis at the right reads the same heights as BMI at the height last
- * given, so the line is both. A dot's tooltip has the day's own weight and BMI.
+ * The fortnight's weight as one line through the days weighed (a day not weighed is passed over), on
+ * a kg axis at the left with a faint line at every half kilo between its ticks; 体脂肪率, on the days
+ * it was given, as a second line on a % axis at the right. The BMI is not drawn: it shows beside the
+ * weight once recorded. A dot of either opens, from it, the 課題 done that day.
  */
-function WeightChart({
-  dates,
-  weights,
-  heightCm,
-  bonus,
-}: {
-  dates: string[];
-  weights: WeightPoint[];
-  heightCm: number | null;
-  bonus: number;
-}) {
+function WeightChart({ days, weights, bonus }: { days: DayPoint[]; weights: WeightPoint[]; bonus: number }) {
+  const { open, setOpen, pop } = useDotPopover<WeightDot>();
   const day = (date: string) => date.slice(5).replace("-", "/");
   if (weights.length === 0) {
     return (
       <div className="weight-empty muted">
-        まだ体重の記録がありません。右上に身長と今日の体重を入れて「記録」を押すと、BMI も一緒に記録されます（1日1回 +{bonus} kcal）。
+        まだ体重の記録がありません。右上に身長と今日の体重（体脂肪率は測れるときだけ）を入れて「記録」を押すと記録されます（1日1回 +{bonus} kcal）。
       </div>
     );
   }
+  const dates = days.map((d) => d.date);
   const values = weights.map((w) => w.weightKg);
   // Half a kilo of room either side, so a single day or a flat fortnight sits inside the axis.
   const { lo, hi, step } = axis(Math.min(...values) - 0.5, Math.max(...values) + 0.5);
+  const fats = weights.flatMap((w) => (w.bodyFat !== null ? [{ date: w.date, fat: w.bodyFat }] : []));
+  const fatAxis = fats.length > 0 ? axis(Math.min(...fats.map((f) => f.fat)) - 0.5, Math.max(...fats.map((f) => f.fat)) + 0.5) : null;
   const last = weights[weights.length - 1];
-  const height = heightCm ?? last.heightCm;
+  const lastFat = fats[fats.length - 1];
   const W = 700;
   const H = 240;
   const left = 52;
-  const right = 52;
-  // room above the top tick for the units (kg / BMI)
+  const right = fatAxis ? 52 : 16;
+  // room above the top tick for the units (kg / %)
   const top = 26;
   const bottom = 32;
   const x = (date: string) => left + (Math.max(0, dates.indexOf(date)) * (W - left - right)) / Math.max(1, dates.length - 1);
   const y = (v: number) => top + (H - top - bottom) * (1 - (v - lo) / (hi - lo));
-  const ticks: number[] = [];
-  for (let v = lo; v <= hi + step / 1000; v += step) ticks.push(Math.round(v * 100) / 100);
+  const yf = (v: number) => (fatAxis ? top + (H - top - bottom) * (1 - (v - fatAxis.lo) / (fatAxis.hi - fatAxis.lo)) : 0);
+  const ticksOf = (a: { lo: number; hi: number; step: number }) => {
+    const out: number[] = [];
+    for (let v = a.lo; v <= a.hi + a.step / 1000; v += a.step) out.push(Math.round(v * 100) / 100);
+    return out;
+  };
+  const ticks = ticksOf({ lo, hi, step });
+  // a faint line at every half kilo the ticks leave out
+  const halves: number[] = [];
+  for (let v = Math.ceil(lo * 2) / 2; v <= hi + 0.001; v += 0.5) {
+    const h = Math.round(v * 10) / 10;
+    if (!ticks.some((t) => Math.abs(t - h) < 0.001)) halves.push(h);
+  }
   const path = weights.map((w, i) => `${i ? "L" : "M"}${f1(x(w.date))},${f1(y(w.weightKg))}`).join(" ");
+  const fatPath = fats.map((f, i) => `${i ? "L" : "M"}${f1(x(f.date))},${f1(yf(f.fat))}`).join(" ");
   const change = Math.round((last.weightKg - weights[0].weightKg) * 10) / 10;
+  const toggle = (dot: WeightDot) => setOpen((cur) => (cur && cur.date === dot.date && cur.at === dot.at ? null : dot));
+  const shownDay = open ? days.find((d) => d.date === open.date) : undefined;
+  const shownWeight = open ? weights.find((w) => w.date === open.date) : undefined;
+  /** a dot that opens the day's 課題: its circle, and a larger invisible target around it */
+  const dot = (date: string, cy: number, at: WeightDot["at"], tip: string) => {
+    const isOpen = open?.date === date && open.at === at;
+    return (
+      <g
+        key={`${at}-${date}`}
+        className="lc-point"
+        role="button"
+        tabIndex={0}
+        aria-label={`${day(date)} にやった課題`}
+        aria-expanded={isOpen}
+        onClick={() => toggle({ date, at })}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            toggle({ date, at });
+          }
+        }}
+      >
+        <circle className={`lc-dot ${at}` + (isOpen ? " open" : "")} cx={x(date)} cy={cy} r={3.5} />
+        <circle className="lc-hit" cx={x(date)} cy={cy} r={11}>
+          <title>{`${tip}（クリックでやった課題）`}</title>
+        </circle>
+      </g>
+    );
+  };
   return (
     <div className="line-chart">
       <div className="muted small line-chart-legend">
         <span className="lc-key weight">
           <i className="lc-swatch" />
-          体重（左の目盛り）・BMI（右の目盛り） 最新 <b>{d1(last.weightKg)}</b> kg・BMI <b>{d1(last.bmi)}</b>（{day(last.date)}）
+          体重（左の目盛り） 最新 <b>{d1(last.weightKg)}</b> kg（{day(last.date)}）
         </span>
         {weights.length > 1 && (
           <span>
             この2週間で <b>{change > 0 ? `+${d1(change)}` : change < 0 ? `−${d1(-change)}` : "±0.0"}</b> kg
           </span>
         )}
+        {lastFat && (
+          <span className="lc-key fat">
+            <i className="lc-swatch" />
+            体脂肪率（右の目盛り） 最新 <b>{d1(lastFat.fat)}</b> %（{day(lastFat.date)}）
+          </span>
+        )}
       </div>
       <div className="lc-plot">
-        <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label="この2週間の体重とBMIの折れ線グラフ">
+        <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label="この2週間の体重と体脂肪率の折れ線グラフ">
+          {halves.map((h) => (
+            <line key={`half-${h}`} className="lc-grid minor" x1={left} x2={W - right} y1={y(h)} y2={y(h)} />
+          ))}
           {ticks.map((t) => (
             <g key={t}>
               <line className="lc-grid" x1={left} x2={W - right} y1={y(t)} y2={y(t)} />
               <text className="lc-axis" x={left - 8} y={y(t)} textAnchor="end" dominantBaseline="middle">
                 {t}
               </text>
-              <text className="lc-axis" x={W - right + 8} y={y(t)} textAnchor="start" dominantBaseline="middle">
-                {bmiOf(t, height).toFixed(1)}
-              </text>
             </g>
           ))}
+          {fatAxis &&
+            ticksOf(fatAxis).map((t) => (
+              <text key={`fat-${t}`} className="lc-axis fat" x={W - right + 8} y={yf(t)} textAnchor="start" dominantBaseline="middle">
+                {t}
+              </text>
+            ))}
           <text className="lc-unit" x={left - 8} y={top - 14} textAnchor="end">
             kg
           </text>
-          <text className="lc-unit" x={W - right + 8} y={top - 14} textAnchor="start">
-            BMI
-          </text>
+          {fatAxis && (
+            <text className="lc-unit fat" x={W - right + 8} y={top - 14} textAnchor="start">
+              %
+            </text>
+          )}
           <path className="lc-line weight" d={path} />
-          {weights.map((w) => (
-            <circle key={w.date} className="lc-dot weight" cx={x(w.date)} cy={y(w.weightKg)} r={3.5}>
-              <title>{`${day(w.date)} 体重 ${d1(w.weightKg)} kg・BMI ${d1(w.bmi)}（身長 ${w.heightCm} cm）`}</title>
-            </circle>
-          ))}
+          {fatAxis && <path className="lc-line fat" d={fatPath} />}
+          {weights.map((w) => dot(w.date, y(w.weightKg), "weight", `${day(w.date)} 体重 ${d1(w.weightKg)} kg`))}
+          {fats.map((f) => dot(f.date, yf(f.fat), "fat", `${day(f.date)} 体脂肪率 ${d1(f.fat)} %`))}
           {dates.map((d) => (
             <text key={d} className="lc-axis" x={x(d)} y={H - 10} textAnchor="middle">
               {day(d)}
             </text>
           ))}
         </svg>
+        {open && shownDay && (
+          <TasksPopover
+            refEl={pop}
+            day={shownDay}
+            weight={shownWeight}
+            label={day(open.date)}
+            left={x(open.date) / W}
+            top={(open.at === "fat" && shownWeight?.bodyFat != null ? yf(shownWeight.bodyFat) : y(shownWeight?.weightKg ?? lo)) / H}
+            onClose={() => setOpen(null)}
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The 課題 done on a day, opening from a dot of the weight chart (as the snacks eaten open from the
+ * kcal chart's 消費 dots): a 課題 a line (icon, name, how many, the kcal in all), the most kcal first,
+ * under the day's weight and 体脂肪率.
+ */
+function TasksPopover({
+  refEl,
+  day,
+  weight,
+  label,
+  left,
+  top,
+  onClose,
+}: {
+  refEl: React.RefObject<HTMLDivElement | null>;
+  day: DayPoint;
+  weight: WeightPoint | undefined;
+  label: string;
+  /** where the dot is, as a share of the chart's width and height */
+  left: number;
+  top: number;
+  onClose: () => void;
+}) {
+  const side = top < 0.45 ? "below" : "above";
+  const lean = left < 0.2 ? "lean-right" : left > 0.8 ? "lean-left" : "";
+  const total = day.done.reduce((n, t) => n + t.kcal, 0);
+  return (
+    <div className="lc-pop-anchor" style={{ left: `${left * 100}%`, top: `${top * 100}%` }}>
+      <div ref={refEl} className={`lc-pop done ${side} ${lean}`} role="dialog" aria-label={`${label} にやった課題`}>
+        <div className="lc-pop-head">
+          <span>
+            <b>{label}</b> にやった課題
+          </span>
+          <span className="lc-pop-total">+{total} kcal</span>
+          <button type="button" className="lc-pop-close" onClick={onClose} aria-label="閉じる" title="閉じる">
+            ×
+          </button>
+        </div>
+        {weight && (
+          <div className="muted small lc-pop-sub">
+            体重 {d1(weight.weightKg)} kg{weight.bodyFat !== null && `・体脂肪率 ${d1(weight.bodyFat)} %`}
+          </div>
+        )}
+        {day.done.length === 0 ? (
+          <div className="muted small lc-pop-empty">やった課題はありません</div>
+        ) : (
+          <ul className="lc-pop-list">
+            {day.done.map((t) => (
+              <li key={`${t.icon}|${t.name}`}>
+                <span className="lc-pop-icon">
+                  <ItemIcon icon={t.icon} />
+                </span>
+                <span className="lc-pop-name">{t.name}</span>
+                <span className="lc-pop-count">×{t.count}</span>
+                <span className="lc-pop-kcal">+{t.kcal} kcal</span>
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
     </div>
   );

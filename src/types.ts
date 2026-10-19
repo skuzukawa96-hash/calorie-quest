@@ -280,6 +280,8 @@ export interface WeightPoint {
   weightKg: number;
   heightCm: number;
   bmi: number;
+  /** 体脂肪率 (%), when given with the weight (not every scale measures it) */
+  bodyFat: number | null;
 }
 
 /** What ダイエット機能 has paid: the 課題 done and the weights' daily bonus. */
@@ -784,6 +786,16 @@ export interface DayPoint {
   correct: number;
   /** what was eaten that day, one snack a line, the most kcal first (those eaten with a ticket last) */
   eaten: EatenSnack[];
+  /** the 課題 done that day, one a line, the most kcal first (ダイエット機能: the weight chart's dots) */
+  done: DoneTask[];
+}
+
+/** A 課題 done on a day: how many times and how many kcal in all. */
+export interface DoneTask {
+  icon: string;
+  name: string;
+  count: number;
+  kcal: number;
 }
 
 /** A snack eaten on a day: how many times and how many kcal in all (a ticket's cost no kcal of the day). */

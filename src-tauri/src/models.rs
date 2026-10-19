@@ -303,7 +303,8 @@ pub struct TaskEntry {
     pub done_at: String,
 }
 
-/// The weight of a day, the height it was weighed at, and the BMI they make.
+/// The weight of a day, the height it was weighed at, and the BMI they make; and the 体脂肪率 when
+/// it was given (not every scale measures it, so it may be left out).
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WeightPoint {
@@ -311,6 +312,8 @@ pub struct WeightPoint {
     pub weight_kg: f64,
     pub height_cm: f64,
     pub bmi: f64,
+    /// 体脂肪率 (%), to one decimal
+    pub body_fat: Option<f64>,
 }
 
 /// What ダイエット機能 has paid: the 課題 done and the weights' daily bonus.
@@ -719,7 +722,19 @@ pub struct DayPoint {
     pub answered: i64,
     /// what was eaten that day, one snack a line, the most kcal first (those eaten with a ticket last)
     pub eaten: Vec<EatenSnack>,
+    /// the 課題 done that day, one a line, the most kcal first (ダイエット機能: the weight chart's dots)
+    pub done: Vec<DoneTask>,
     pub correct: i64,
+}
+
+/// A 課題 done on a day: how many times and how many kcal in all.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DoneTask {
+    pub icon: String,
+    pub name: String,
+    pub count: i64,
+    pub kcal: i64,
 }
 
 #[derive(Debug, Serialize)]

@@ -3443,6 +3443,25 @@ button.wp-link.open {
 .lc-dot.weight {
   stroke: var(--sky);
 }
+/* 体脂肪率: a second line, on the % axis at the right */
+.lc-key.fat .lc-swatch {
+  background: #e08a4f;
+}
+.lc-line.fat {
+  stroke: #e08a4f;
+}
+.lc-dot.fat {
+  stroke: #e08a4f;
+}
+.lc-axis.fat,
+.lc-unit.fat {
+  fill: #c2703a;
+}
+/* a faint line at every half kilo between the weight's ticks */
+.lc-grid.minor {
+  stroke-opacity: 0.5;
+  stroke-dasharray: 1 4;
+}
 /* The fortnight's kcal as a line, over an axis from the lowest day to the highest */
 .line-chart svg {
   display: block;
@@ -3661,6 +3680,19 @@ button.wp-link.open {
 }
 .lc-pop-empty {
   padding: 4px 0 2px;
+}
+/* the 課題 done on a day, from the weight chart: what they earned, in green */
+.lc-pop.done .lc-pop-total,
+.lc-pop.done .lc-pop-kcal {
+  color: var(--mint);
+}
+.lc-pop-sub {
+  margin: -2px 0 4px;
+}
+.lc-pop-icon .item-icon {
+  width: 18px;
+  height: 18px;
+  vertical-align: middle;
 }
 .weak-table {
   width: 100%;
