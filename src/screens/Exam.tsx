@@ -10,6 +10,7 @@ import { formatKcal } from "../lib/scoring";
 import { playCrunch, playFanfare, playWrong } from "../lib/sfx";
 import { sentences } from "../lib/sentences";
 import { isTtsSupported, speak, stopSpeaking } from "../lib/speech";
+import { revealOnTouch, withEnter } from "../lib/touch";
 import {
   EXAM_PART_LABEL,
   type ExamAnswer,
@@ -477,10 +478,10 @@ export default function Exam({ kind, level, favorites, overview, playMode, onExi
             );
           })}
         </div>
-        {!mine && <div className="muted small">キーボードの 1〜{current.choices.length} や A〜{LETTERS[current.choices.length - 1]} でも回答できます</div>}
+        {!mine && <div className="muted small keys-hint">キーボードの 1〜{current.choices.length} や A〜{LETTERS[current.choices.length - 1]} でも回答できます</div>}
 
         {mine && (
-          <div className={"feedback " + (mine.correct ? "ok" : "ng")}>
+          <div className={"feedback " + (mine.correct ? "ok" : "ng")} ref={revealOnTouch}>
             <div className="feedback-main">
               <div className="feedback-title">{mine.correct ? "正解！" : "不正解…"}</div>
               {kind === "favorites" ? (
@@ -520,7 +521,7 @@ export default function Exam({ kind, level, favorites, overview, playMode, onExi
                 ) : null)}
             </div>
             <button className="btn btn-primary" onClick={next} disabled={busy} autoFocus>
-              {idx + 1 >= questions.length ? (kind === "exam" ? "採点する" : "結果を見る") : "次へ（Enter）"}
+              {idx + 1 >= questions.length ? (kind === "exam" ? "採点する" : "結果を見る") : withEnter("次へ")}
             </button>
           </div>
         )}

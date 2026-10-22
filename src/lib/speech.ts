@@ -4,9 +4,11 @@
 // Two backends:
 //  - "web":    the Web Speech API (works in normal browsers)
 //  - "native": Windows SAPI5 / WinRT through the Rust side. Used inside Tauri, because
-//              WebView2 does not implement SpeechRecognition (it fails with `network`).
+//              WebView2 does not implement SpeechRecognition (it fails with `network`). On
+//              Android, the phone's own text-to-speech and recognizer (Android's WebView has
+//              neither part of the Web Speech API).
 import { listen } from "@tauri-apps/api/event";
-import { api, runningInTauri } from "./api";
+import { api, runningInTauri, runningOnAndroid } from "./api";
 import { audio } from "./sfx";
 import type { NativeRecognition, SpeechCapabilities } from "../types";
 
@@ -435,6 +437,8 @@ function recognizeNative(opts: RecognizeOptions): RecognitionHandle {
         throw new Error(native.heard ? "unclear" : "no-speech");
       }
       if (native.status !== "success" && !guessed) throw new Error(native.status);
+      // Android's recognizer wrote down what it heard: scored by closeness, as the browser's is.
+      if (native.transcripts?.length) return { transcripts: native.transcripts, durationMs: native.durationMs };
       return { transcripts: native.text ? [native.text] : [], durationMs: native.durationMs, native };
     })
     .finally(() => void ready.then((stop) => stop()));
@@ -513,7 +517,9 @@ export function describeRecognitionError(code: string): string {
       return "この環境では音声認識が利用できません。";
     case "not-allowed":
     case "service-not-allowed":
-      return "マイクの使用が許可されていません。Windowsの設定でマイクへのアクセスを許可してください。";
+      return runningOnAndroid
+        ? "マイクの使用が許可されていません。スマホの設定 → アプリ → Calorie Quest → 権限 で、マイクを許可してください。"
+        : "マイクの使用が許可されていません。Windowsの設定でマイクへのアクセスを許可してください。";
     case "audio-capture":
     case "microphone-unavailable":
       return "マイクが見つかりません。マイクの接続を確認してください。";
@@ -535,6 +541,7 @@ export function describeRecognitionError(code: string): string {
   }
 }
 
-/** Japanese instructions for enabling the Windows English recognizer. */
-export const INSTALL_STT_GUIDE =
-  "Windowsに英語の音声認識を追加すると、発音判定が使えるようになります: 設定 → 時刻と言語 → 言語と地域 → 「言語の追加」で English (United States) を追加 → 言語のオプション → 「音声認識」をインストール。";
+/** Japanese instructions for enabling the English recognizer: Windows's, or a phone's (Google's). */
+export const INSTALL_STT_GUIDE = runningOnAndroid
+  ? "スマホに音声入力のアプリ（Google アプリ、または「Google の音声サービス」）を入れて有効にすると、発音判定が使えるようになります。"
+  : "Windowsに英語の音声認識を追加すると、発音判定が使えるようになります: 設定 → 時刻と言語 → 言語と地域 → 「言語の追加」で English (United States) を追加 → 言語のオプション → 「音声認識」をインストール。";

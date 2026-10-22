@@ -8,6 +8,7 @@ import { preloadWordTags } from "./components/PosTags";
 import RecipeProvider from "./components/RecipeProvider";
 import { playFanfare, warmUpAudio } from "./lib/sfx";
 import { loadSpeechCapabilities } from "./lib/speech";
+import { touchScreen } from "./lib/touch";
 import Exam from "./screens/Exam";
 import Favorites from "./screens/Favorites";
 import Home from "./screens/Home";
@@ -16,16 +17,17 @@ import Recipe from "./screens/Recipe";
 import Snacks from "./screens/Snacks";
 import Stats from "./screens/Stats";
 import Study from "./screens/Study";
-import { remainingKcal, type Dashboard, type ExamLevel, type PlayMode, type SessionMode, type TierChoice } from "./types";
+import { PLAY_MODE_INFO, remainingKcal, type Dashboard, type ExamLevel, type PlayMode, type SessionMode, type TierChoice } from "./types";
 
 type Tab = "home" | "snacks" | "favorites" | "recipe" | "stats";
 
-const TABS: Array<{ id: Tab; label: string }> = [
-  { id: "home", label: "🏠 ホーム" },
-  { id: "snacks", label: "🍰 お菓子図鑑" },
-  { id: "favorites", label: "⭐ お気に入り" },
-  { id: "recipe", label: "📖 レシピ" },
-  { id: "stats", label: "📈 記録" },
+/** `short`: the name under the icon in a phone's bottom tab bar */
+const TABS: Array<{ id: Tab; icon: string; label: string; short: string }> = [
+  { id: "home", icon: "🏠", label: "ホーム", short: "ホーム" },
+  { id: "snacks", icon: "🍰", label: "お菓子図鑑", short: "図鑑" },
+  { id: "favorites", icon: "⭐", label: "お気に入り", short: "お気に入り" },
+  { id: "recipe", icon: "📖", label: "レシピ", short: "レシピ" },
+  { id: "stats", icon: "📈", label: "記録", short: "記録" },
 ];
 
 /** Today in the computer's own time, as the backend dates days (util::today). */
@@ -99,11 +101,13 @@ export default function App() {
       try {
         await api.setPlayMode(mode);
         await refresh();
+        // No hover to explain the modes on a phone: what was switched to, said once.
+        if (touchScreen) showToast(`${PLAY_MODE_INFO[mode].label}モード: ${PLAY_MODE_INFO[mode].desc}`);
       } catch (e) {
         setError(String(e));
       }
     },
-    [refresh],
+    [refresh, showToast],
   );
 
   // ダイエット機能: on, the 課題一覧, the 課題 goals and the weight chart come out.
@@ -163,6 +167,29 @@ export default function App() {
     };
   }, [refresh]);
 
+  // Android's back button (and back gesture) goes to ホーム, and from ホーム closes the app: away
+  // from it the page holds one history entry of its own, for the back to take.
+  const away = tab !== "home" || session !== null || exam !== null || lexi !== null;
+  const awayNow = useRef(away);
+  awayNow.current = away;
+  useEffect(() => {
+    const held = (history.state as { away?: boolean } | null)?.away === true;
+    if (away && !held) history.pushState({ away: true }, "");
+    else if (!away && held) history.back();
+  }, [away]);
+  useEffect(() => {
+    const back = () => {
+      // the entry given up on the way home by ← やめる or the ホーム tab: already there
+      if (!awayNow.current) return;
+      setSession(null);
+      setExam(null);
+      setLexi(null);
+      setTab("home");
+      void refresh();
+    };
+    window.addEventListener("popstate", back);
+    return () => window.removeEventListener("popstate", back);
+  }, [refresh]);
 
   const go = (t: Tab) => {
     setSession(null);
@@ -184,7 +211,7 @@ export default function App() {
           <nav className="tabs">
             {TABS.map((t) => (
               <button key={t.id} className={tab === t.id && !session && !exam && !lexi ? "active" : ""} onClick={() => go(t.id)}>
-                {t.label}
+                {t.icon} {t.label}
               </button>
             ))}
           </nav>
@@ -286,6 +313,16 @@ export default function App() {
             <Stats day={dash?.today.date} dietMode={dash?.user.dietMode ?? false} onChanged={() => void refresh()} toast={showToast} />
           )}
         </main>
+
+        {/* A phone has the tabs at the bottom, under the thumb, instead of in the top bar. */}
+        <nav className="bottom-tabs">
+          {TABS.map((t) => (
+            <button key={t.id} className={tab === t.id && !session && !exam && !lexi ? "active" : ""} onClick={() => go(t.id)}>
+              <span className="bottom-tab-icon">{t.icon}</span>
+              <span className="bottom-tab-label">{t.short}</span>
+            </button>
+          ))}
+        </nav>
 
         {toast && <div className="toast">{toast}</div>}
         {!runningInTauri && <div className="dev-note">ブラウザプレビュー（データはこのブラウザ内のモック）</div>}

@@ -11,7 +11,7 @@ import SpeakableText from "../components/SpeakableText";
 import { MeaningWithTags, useAskedMeaning, useOptionLabels } from "../components/PosTags";
 import { PHONEMES } from "../lib/phonemes";
 import { loadPronunciations, type Pronunciations } from "../lib/pronunciation";
-import { api, runningInTauri } from "../lib/api";
+import { api, runningInTauri, runningOnAndroid } from "../lib/api";
 import { loadDictionary, loadedDictionary, type Dictionary } from "../lib/dictionary";
 import {
   answerWordCount,
@@ -28,6 +28,7 @@ import {
   type TypingGrade,
 } from "../lib/scoring";
 import { playCrunch, playFanfare, playPop, playWrong } from "../lib/sfx";
+import { revealOnTouch, touchScreen, withEnter } from "../lib/touch";
 import {
   describeRecognitionError,
   INSTALL_STT_GUIDE,
@@ -461,7 +462,7 @@ export default function Study({ mode, tier, category, rates, playMode, favorites
         )}
 
         {feedback && (
-          <div className={"feedback " + (feedback.correct ? "ok" : "ng")}>
+          <div className={"feedback " + (feedback.correct ? "ok" : "ng")} ref={revealOnTouch}>
             <div className="feedback-main">
               <div className="feedback-title">
                 {feedback.correct
@@ -599,7 +600,7 @@ export default function Study({ mode, tier, category, rates, playMode, favorites
               {feedback.result && <ReviewNote result={feedback.result} correct={feedback.correct} rate={rates.reviewMultiplier} />}
             </div>
             <button className="btn btn-primary" onClick={next} autoFocus>
-              {idx + 1 >= questions.length ? "結果を見る" : "次へ（Enter）"}
+              {idx + 1 >= questions.length ? "結果を見る" : withEnter("次へ")}
             </button>
           </div>
         )}
@@ -714,7 +715,7 @@ function ChoiceCard({
           );
         })}
       </div>
-      <div className="muted small">キーボードの 1〜4 でも回答できます</div>
+      <div className="muted small keys-hint">キーボードの 1〜4 でも回答できます</div>
     </>
   );
 }
@@ -768,9 +769,11 @@ function TypingCard({
         value={value}
         disabled={disabled}
         onChange={(e) => setValue(e.target.value)}
-        placeholder="英語で入力して Enter"
+        placeholder={touchScreen ? "英語で入力" : "英語で入力して Enter"}
         autoComplete="off"
         autoCapitalize="off"
+        autoCorrect="off"
+        enterKeyHint="send"
         spellCheck={false}
         lang="en"
       />
@@ -907,7 +910,7 @@ function ListeningCard({
           );
         })}
       </div>
-      <div className="muted small">キーボードの 1〜4 でも回答できます</div>
+      <div className="muted small keys-hint">キーボードの 1〜4 でも回答できます</div>
     </>
   );
 }
@@ -1073,7 +1076,7 @@ function SpeakingCard({
             {runningInTauri ? (
               <>
                 <div>
-                  <b>英語の音声認識がこのPCにまだ入っていません。</b>
+                  <b>英語の音声認識がこの{runningOnAndroid ? "スマホ" : "PC"}にまだ入っていません。</b>
                   {speechCaps()?.sttLanguages.length ? `（利用可能: ${speechCaps()!.sttLanguages.join(", ")}）` : ""}
                 </div>
                 <div className="small">{INSTALL_STT_GUIDE}</div>

@@ -3,8 +3,9 @@ import { ItemIcon } from "../components/ItemIcon";
 import { SwitchViewButton } from "../components/IconButtons";
 import WeightForm, { d1, HeightSetting } from "../components/WeightForm";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { api } from "../lib/api";
+import { api, runningOnAndroid } from "../lib/api";
 import { keep, keptData } from "../lib/screenCache";
+import { usePhoneWidth } from "../lib/touch";
 import {
   EXAM_PART_LABEL,
   TIER_LABEL,
@@ -265,7 +266,8 @@ export default function Stats({ day, dietMode, onChanged, toast }: Props) {
         )}
       </section>
 
-      <BackupPanel toast={toast} />
+      {/* A backup is a file in the PC's Documents folder; the phone keeps a record of its own. */}
+      {!runningOnAndroid && <BackupPanel toast={toast} />}
 
       <section className="card danger-zone">
         <h2>データ</h2>
@@ -704,12 +706,14 @@ function useDotPopover<T>() {
 function KcalLineChart({ days }: { days: DayPoint[] }) {
   /** the day whose snacks are open, from its 消費 dot */
   const { open, setOpen, pop } = useDotPopover<number>();
+  const phone = usePhoneWidth();
 
   const all = days.flatMap((d) => SERIES.map((s) => s.value(d)));
   const { lo, hi, step } = axis(Math.min(...all), Math.max(...all));
-  const W = 700;
-  const H = 240;
-  const left = 52;
+  // A phone draws the chart at about its own width, so that the numbers stay a readable size.
+  const W = phone ? 360 : 700;
+  const H = phone ? 220 : 240;
+  const left = phone ? 40 : 52;
   const right = 16;
   const top = 16;
   const bottom = 32;
@@ -807,11 +811,14 @@ function KcalLineChart({ days }: { days: DayPoint[] }) {
             );
           }),
         )}
-        {days.map((d, i) => (
-          <text key={d.date} className="lc-axis" x={x(i)} y={H - 10} textAnchor="middle">
-            {day(d.date)}
-          </text>
-        ))}
+        {days.map((d, i) =>
+          // a phone has room for every other day's date, ending with today's
+          phone && (days.length - 1 - i) % 2 ? null : (
+            <text key={d.date} className="lc-axis" x={x(i)} y={H - 10} textAnchor="middle">
+              {day(d.date)}
+            </text>
+          ),
+        )}
       </svg>
       {shown && open !== null && (
         <EatenPopover
@@ -894,6 +901,7 @@ type WeightDot = { date: string; at: "weight" | "fat" };
  */
 function WeightChart({ days, weights, bonus }: { days: DayPoint[]; weights: WeightPoint[]; bonus: number }) {
   const { open, setOpen, pop } = useDotPopover<WeightDot>();
+  const phone = usePhoneWidth();
   const day = (date: string) => date.slice(5).replace("-", "/");
   if (weights.length === 0) {
     return (
@@ -910,10 +918,11 @@ function WeightChart({ days, weights, bonus }: { days: DayPoint[]; weights: Weig
   const fatAxis = fats.length > 0 ? axis(Math.min(...fats.map((f) => f.fat)) - 0.5, Math.max(...fats.map((f) => f.fat)) + 0.5) : null;
   const last = weights[weights.length - 1];
   const lastFat = fats[fats.length - 1];
-  const W = 700;
-  const H = 240;
-  const left = 52;
-  const right = fatAxis ? 52 : 16;
+  // A phone draws the chart at about its own width, so that the numbers stay a readable size.
+  const W = phone ? 360 : 700;
+  const H = phone ? 220 : 240;
+  const left = phone ? 40 : 52;
+  const right = fatAxis ? (phone ? 40 : 52) : 16;
   // room above the top tick for the units (kg / %)
   const top = 26;
   const bottom = 32;
@@ -1014,11 +1023,13 @@ function WeightChart({ days, weights, bonus }: { days: DayPoint[]; weights: Weig
           {fatAxis && <path className="lc-line fat" d={fatPath} />}
           {weights.map((w) => dot(w.date, y(w.weightKg), "weight", `${day(w.date)} 体重 ${d1(w.weightKg)} kg`))}
           {fats.map((f) => dot(f.date, yf(f.fat), "fat", `${day(f.date)} 体脂肪率 ${d1(f.fat)} %`))}
-          {dates.map((d) => (
-            <text key={d} className="lc-axis" x={x(d)} y={H - 10} textAnchor="middle">
-              {day(d)}
-            </text>
-          ))}
+          {dates.map((d, i) =>
+            phone && (dates.length - 1 - i) % 2 ? null : (
+              <text key={d} className="lc-axis" x={x(d)} y={H - 10} textAnchor="middle">
+                {day(d)}
+              </text>
+            ),
+          )}
         </svg>
         {open && shownDay && (
           <TasksPopover

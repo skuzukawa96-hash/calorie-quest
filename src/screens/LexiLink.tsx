@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
 import { CandyArt, CandyShapes, type CandyFrame } from "../components/Candy";
 import SpeakableText from "../components/SpeakableText";
 import { api } from "../lib/api";
@@ -6,6 +6,7 @@ import { COM_LEVELS, LexiCom, type ComLevel, type ComView } from "../lib/lexiCom
 import { loadDictionary, loadedDictionary, type Dictionary } from "../lib/dictionary";
 import { playFanfare, playLexi, prepareLexiSounds } from "../lib/sfx";
 import { prepareWords, stopSpeaking, type ReadyWords } from "../lib/speech";
+import { CLICK, RIGHT_CLICK } from "../lib/touch";
 import { LEXI, lexiScore, lexiSoloKcal, lexiVersusKcal, type LexiCard, type LexiGenre, type LexiMode } from "../types";
 
 /** What the home screen starts a game with. */
@@ -59,6 +60,17 @@ function shuffled<T>(list: T[]): T[] {
 }
 
 const signed = (n: number) => (n < 0 ? `−${-n}` : `+${n}`);
+
+/**
+ * How many letters an open candy has to fit across, for its text's size (styles.css: the width of
+ * the candy over this, up to the usual size): an English card its longest word (a phrase breaks at
+ * its spaces), a Japanese one its length on one line up to six, else on two lines.
+ */
+function fitOf(card: LexiCard): number {
+  if (card.english) return Math.max(...card.text.split(/[\s-]+/).map((w) => w.length));
+  const n = [...card.text].length;
+  return n <= 6 ? n : Math.ceil(n / 2);
+}
 
 /**
  * LexiLink（英単語の神経衰弱）: twenty wrapped candies, ten pairs. A candy opens in two frames with a
@@ -416,7 +428,11 @@ export default function LexiLink({
               >
                 <CandyArt frame={frames[i] ?? "wrapped"} />
                 {frames[i] === "open" && (
-                  <span className={"lexi-word" + (c.card.english ? " en" : " ja")} lang={c.card.english ? "en" : undefined}>
+                  <span
+                    className={"lexi-word" + (c.card.english ? " en" : " ja")}
+                    lang={c.card.english ? "en" : undefined}
+                    style={{ "--fit": fitOf(c.card) } as CSSProperties}
+                  >
                     {c.card.text}
                   </span>
                 )}
@@ -465,7 +481,9 @@ export default function LexiLink({
               <span key={`slot-${k}`} className="lexi-slot" />
             ))}
           </div>
-          <div className="muted small lexi-hint">英語のクリックで読み上げ、右クリックで単語帳に登録</div>
+          <div className="muted small lexi-hint">
+            英語の{CLICK}で読み上げ、{RIGHT_CLICK}で単語帳に登録
+          </div>
         </div>
       </section>
 

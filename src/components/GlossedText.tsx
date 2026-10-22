@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   buildPhraseIndex,
   headword,
@@ -154,6 +154,7 @@ export default function GlossedText({
   const [tip, setTip] = useState<Tip | null>(null);
   const [saying, setSaying] = useState<number | null>(null);
   const [stashed, setStashed] = useState<number | null>(null);
+  const tipBox = useRef<HTMLSpanElement>(null);
   const canSpeak = speakOnClick && isTtsSupported();
   const addToRecipe = useAddToRecipe();
 
@@ -192,6 +193,17 @@ export default function GlossedText({
     const clear = () => setTip(null);
     window.addEventListener("scroll", clear, true);
     return () => window.removeEventListener("scroll", clear, true);
+  }, [tip]);
+  // The tip is centred over its word: one near the edge of the window (a phone's above all) is
+  // moved back inside it, before it is painted.
+  useLayoutEffect(() => {
+    const el = tipBox.current;
+    if (!el) return;
+    el.style.marginLeft = "";
+    const r = el.getBoundingClientRect();
+    const edge = 8;
+    const shift = r.left < edge ? edge - r.left : r.right > window.innerWidth - edge ? window.innerWidth - edge - r.right : 0;
+    if (shift) el.style.marginLeft = `${shift}px`;
   }, [tip]);
   useEffect(() => {
     if (stashed === null) return;
@@ -300,7 +312,7 @@ export default function GlossedText({
         );
       })}
       {tip && (tip.phrase || tip.gloss) && (
-        <span className="gloss-tip" style={{ left: tip.x, top: tip.y }} role="tooltip">
+        <span ref={tipBox} className="gloss-tip" style={{ left: tip.x, top: tip.y }} role="tooltip">
           {tip.phrase && (
             <span className="gloss-line">
               <b>{tip.phrase.key}</b>

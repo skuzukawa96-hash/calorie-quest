@@ -11,6 +11,7 @@ import { PHONEMES } from "../lib/phonemes";
 import { loadPronunciations, type Pronunciations } from "../lib/pronunciation";
 import type { TipKey } from "../lib/scoring";
 import { isTtsSupported, speak, stopSpeaking } from "../lib/speech";
+import { CLICK } from "../lib/touch";
 import {
   EXAM_PART_LABEL,
   POINT_CATEGORIES,
@@ -479,7 +480,7 @@ export default function Favorites({ rates, overview, playMode, onProgress, toast
           )}
         </div>
         <p className="muted small fav-intro">
-          学習や試験の問題の右上の <b>☆</b> を押すと、ここに集まります。行をクリックすると解説が開きます。復習では一覧に出ている問題をすべて出題し、正解すると1問につき1日1回カロリーがもらえます（英単語 1 kcal、ほかは 2 kcal）。途中でやめても、同じ日ならまだカロリーをもらっていない問題から続きます。
+          学習や試験の問題の右上の <b>☆</b> を押すと、ここに集まります。行を{CLICK}すると解説が開きます。復習では一覧に出ている問題をすべて出題し、正解すると1問につき1日1回カロリーがもらえます（英単語 1 kcal、ほかは 2 kcal）。途中でやめても、同じ日ならまだカロリーをもらっていない問題から続きます。
         </p>
       </section>
 

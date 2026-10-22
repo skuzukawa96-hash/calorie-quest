@@ -246,6 +246,14 @@ p {
 .play-mode-btn:focus-visible + .play-mode-tip {
   display: block;
 }
+/* A tap leaves :hover on the button, which would keep the explanation open over the page: a phone
+   says what was switched to in a toast instead (App's changePlayMode). */
+@media (hover: none) {
+  .play-mode:hover .play-mode-tip,
+  .play-mode-btn:focus-visible + .play-mode-tip {
+    display: none;
+  }
+}
 .play-mode-line {
   display: block;
   padding: 2px 6px;
@@ -288,6 +296,70 @@ main {
   max-width: 1000px;
   margin: 0 auto;
   padding: 22px 22px 60px;
+}
+/* The phone's tab bar, at the bottom under the thumb: on a PC the tabs are in the top bar. */
+.bottom-tabs {
+  display: none;
+}
+@media (max-width: 640px) {
+  .topbar {
+    gap: 8px;
+    padding: calc(6px + env(safe-area-inset-top)) 12px 6px;
+  }
+  .topbar .brand-name,
+  .topbar .tabs {
+    display: none;
+  }
+  .topbar .topbar-stats {
+    gap: 8px;
+    font-size: 14px;
+  }
+  main {
+    padding: 14px 12px calc(84px + env(safe-area-inset-bottom));
+  }
+  .bottom-tabs {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 20;
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 2px;
+    padding: 4px 4px calc(4px + env(safe-area-inset-bottom));
+    background: var(--cream);
+    border-top: 1px solid var(--line);
+  }
+  .bottom-tabs button {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1px;
+    border: 0;
+    background: none;
+    padding: 5px 0 4px;
+    border-radius: 12px;
+    color: var(--choco-light);
+    font-size: 11px;
+    white-space: nowrap;
+  }
+  .bottom-tabs button.active {
+    background: var(--cream-2);
+    color: var(--choco);
+    font-weight: 700;
+  }
+  .bottom-tab-icon {
+    font-size: 20px;
+    line-height: 1.2;
+  }
+  /* above the tab bar (body: the plain .toast rule comes later in the file); the recipe's, which
+     can show with another, above that */
+  body .toast {
+    bottom: calc(76px + env(safe-area-inset-bottom));
+  }
+  body .recipe-toast {
+    bottom: calc(132px + env(safe-area-inset-bottom));
+  }
 }
 .screen {
   display: flex;
@@ -4878,6 +4950,8 @@ button.wp-link.open {
   padding: 0;
   cursor: pointer;
   font: inherit;
+  /* its width sizes the words on it (.lexi-word) */
+  container-type: inline-size;
 }
 .lexi-candy:disabled {
   cursor: default;
@@ -4903,19 +4977,21 @@ button.wp-link.open {
   align-items: center;
   justify-content: center;
   text-align: center;
-  padding: 0 14px;
+  padding: 0 var(--word-pad, 14px);
   pointer-events: none;
   text-shadow: 0 1px 0 #fff;
   line-height: 1.2;
 }
+/* The usual size, or smaller for a word too long to fit across the candy at it: --fit is how many
+   letters it has to fit (LexiLink's fitOf), an English letter about 0.6 of the size wide. */
 .lexi-word.en {
   font-family: var(--font-display);
   font-weight: 700;
-  font-size: 17px;
+  font-size: min(17px, (100cqi - 2 * var(--word-pad, 14px)) / (0.6 * var(--fit, 1)));
   color: var(--choco);
 }
 .lexi-word.ja {
-  font-size: 14px;
+  font-size: min(14px, (100cqi - 2 * var(--word-pad, 14px)) / var(--fit, 1));
   font-weight: 700;
   color: var(--text);
 }
@@ -5093,5 +5169,176 @@ button.wp-link.open {
   from {
     transform: scale(0.6);
     opacity: 0;
+  }
+}
+
+/* ---------- phone (the Android app) ----------
+   The screens' own narrow rules stop at a tablet's width; these take them down to a phone's
+   (360–430px), where nothing may be wider than the screen: a WebView zooms the whole page out to
+   fit the widest thing on it. Kept together at the end so that no later rule outweighs them. */
+@media (max-width: 640px) {
+  .screen {
+    gap: 12px;
+  }
+  .card {
+    padding: 16px 14px;
+  }
+  /* The tier tabs and the like: two lines rather than every name broken a letter a line. */
+  .segmented {
+    flex-wrap: wrap;
+    border-radius: 16px;
+  }
+  .segmented button {
+    padding: 6px 10px;
+    white-space: nowrap;
+  }
+  /* The four modes two by two: the name and the count, without the description. */
+  .mode-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+  /* the exam levels keep their two lines of what they ask, one level a row */
+  .mode-grid.exam-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .mode-grid .mode-card {
+    padding: 10px;
+    gap: 4px;
+  }
+  .mode-grid:not(.exam-grid) .mode-desc {
+    display: none;
+  }
+  .mode-grid .mode-head {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .mode-grid .mode-icon {
+    font-size: 20px;
+  }
+  .mode-grid .mode-title {
+    font-size: 14px;
+  }
+  .mode-grid .mode-count {
+    flex-basis: 100%;
+    margin-left: 0;
+  }
+  .mode-grid .mode-cta {
+    font-size: 13px;
+  }
+  /* LexiLink's entry: the two games side by side, the two ways to play under them */
+  .lexi-pick {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+  .lexi-players {
+    grid-column: 1 / -1;
+    grid-template-rows: none;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+  .lexi-tile {
+    padding: 10px 12px;
+  }
+  .lexi-tile.mode {
+    min-height: 100px;
+  }
+  .lexi-tile.mode .lexi-ill {
+    width: 92px;
+    height: 70px;
+  }
+  .lexi-tile-en {
+    font-size: 18px;
+  }
+  .lexi-tile.player {
+    min-height: 54px;
+    padding: 8px 12px;
+  }
+  .lexi-tile.player .lexi-ill {
+    width: 62px;
+    height: 46px;
+  }
+  .lexi-tile-title {
+    font-size: 14px;
+  }
+  /* 記録's figures two a row (one a row from a tablet's width down) */
+  .stat-grid,
+  .stat-grid.stat-grid-5 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+  .stat-grid + .stat-grid {
+    margin-top: 8px;
+  }
+  .stat {
+    padding: 10px 12px;
+  }
+  .stat-value {
+    font-size: 20px;
+  }
+  /* the recipe's rows in two lines: the word, its speaker and the buttons, then the meaning */
+  .recipe-item-head {
+    flex-wrap: wrap;
+    align-items: center;
+    column-gap: 8px;
+    row-gap: 2px;
+    padding: 7px 10px;
+  }
+  .recipe-word {
+    order: 1;
+    max-width: none;
+    font-size: 16px;
+  }
+  .btn-link.recipe-speak {
+    order: 2;
+  }
+  .recipe-row-actions {
+    order: 3;
+    margin-left: auto;
+  }
+  .recipe-meaning {
+    order: 4;
+    flex: 1 0 100%;
+  }
+  .recipe-misses {
+    order: 5;
+  }
+  /* the explanation an answer opens, scrolled into view clear of the top bar and the tab bar */
+  .feedback {
+    scroll-margin: 64px 0 80px;
+  }
+  /* LexiLink's board three candies a row, wide enough for a long word at a size still read */
+  .lexi-board {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-auto-rows: 62px;
+    gap: 6px;
+    padding: 8px;
+  }
+  .lexi-word {
+    --word-pad: 6px;
+  }
+  /* LexiLink's ジャンル and 出題 chips, one line on a PC */
+  .lexi-opts,
+  .lexi-chips {
+    flex-wrap: wrap;
+    white-space: normal;
+    row-gap: 6px;
+  }
+  .lexi-sep {
+    display: none;
+  }
+}
+/* A touch screen: no keys to answer with, and a long press is the right-click that saves a word to
+   the recipe, so it must not start selecting the word's text instead. */
+@media (hover: none) and (pointer: coarse) {
+  .keys-hint {
+    display: none;
+  }
+  .glossed,
+  .speakable,
+  .usage-bracket b,
+  .ipa-sound {
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
   }
 }

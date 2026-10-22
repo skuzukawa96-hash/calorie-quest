@@ -48,6 +48,9 @@ import type {
 export const runningInTauri =
   typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
+/** The Android app: Tauri in the phone's WebView, with no Documents folder or Explorer for backups. */
+export const runningOnAndroid = runningInTauri && /Android/i.test(navigator.userAgent);
+
 async function call<T>(cmd: string, args: Record<string, unknown> = {}): Promise<T> {
   if (runningInTauri) {
     return invoke<T>(cmd, args);

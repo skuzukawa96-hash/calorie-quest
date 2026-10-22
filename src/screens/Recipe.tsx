@@ -15,6 +15,7 @@ import { onRecipeChanged } from "../lib/recipe";
 import { formatKcal } from "../lib/scoring";
 import { playCrunch, playFanfare, playWrong } from "../lib/sfx";
 import { isTtsSupported, speak, speakInTurn, stopSpeaking } from "../lib/speech";
+import { revealOnTouch, RIGHT_CLICK, touchScreen, withEnter } from "../lib/touch";
 import {
   PLAY_MODE_INFO,
   RECIPE_POS,
@@ -905,7 +906,7 @@ export default function Recipe({ playMode, onProgress, toast }: Props) {
         </div>
         <div className="recipe-intro">
           <p className="recipe-intro-lead">
-            問題や解説の英単語を<b>右クリック</b>すると、ここに材料として集まります。
+            問題や解説の英単語を<b>{RIGHT_CLICK}</b>すると、ここに材料として集まります。
           </p>
           <dl className="recipe-guide">
             <dt>選択式・記入式</dt>
@@ -921,7 +922,7 @@ export default function Recipe({ playMode, onProgress, toast }: Props) {
             <dt>×</dt>
             <dd>単語を「除外」に移します。「除外」のタブで × を押すと完全に削除します。</dd>
             <dt>単語カード</dt>
-            <dd>クリック・右クリック・Enter でめくって覚えます（カロリーはもらえません）。</dd>
+            <dd>{touchScreen ? "タップ" : "クリック・右クリック・Enter"} でめくって覚えます（カロリーはもらえません）。</dd>
           </dl>
         </div>
         <div className="row recipe-actions">
@@ -1012,7 +1013,7 @@ export default function Recipe({ playMode, onProgress, toast }: Props) {
           <div className="recipe-empty">
             <div className="recipe-empty-icon">🥣</div>
             <p>まだ材料がありません。</p>
-            <p className="muted">学習中に、問題文・正解・完成した文・解説・例文の英単語を右クリックしてみましょう。</p>
+            <p className="muted">学習中に、問題文・正解・完成した文・解説・例文の英単語を{RIGHT_CLICK}してみましょう。</p>
           </div>
         ) : (
           <>
@@ -1764,7 +1765,7 @@ function RecipeReview({
                 );
               })}
             </div>
-            {!answered && <div className="muted small">キーボードの 1〜4 でも回答できます</div>}
+            {!answered && <div className="muted small keys-hint">キーボードの 1〜4 でも回答できます</div>}
           </div>
         ) : (
           <form
@@ -1794,9 +1795,11 @@ function RecipeReview({
               value={typed}
               disabled={!!answered || saving}
               onChange={(e) => setTyped(e.target.value)}
-              placeholder="英語で入力して Enter"
+              placeholder={touchScreen ? "英語で入力" : "英語で入力して Enter"}
               autoComplete="off"
               autoCapitalize="off"
+              autoCorrect="off"
+              enterKeyHint="send"
               spellCheck={false}
               lang="en"
             />
@@ -1814,7 +1817,7 @@ function RecipeReview({
         )}
 
         {answered && (
-          <div className={"feedback " + (answered.correct ? "ok" : "ng")}>
+          <div className={"feedback " + (answered.correct ? "ok" : "ng")} ref={revealOnTouch}>
             <div className="feedback-main">
               <div className="feedback-title">{answered.correct ? "正解！ サクサク🍪" : "ざんねん…"}</div>
               <div className="feedback-kcal">
@@ -1875,7 +1878,7 @@ function RecipeReview({
               </div>
             ) : (
               <button className="btn btn-primary" onClick={next} autoFocus>
-                {idx + 1 >= queue.length ? "結果を見る" : "次へ（Enter）"}
+                {idx + 1 >= queue.length ? "結果を見る" : withEnter("次へ")}
               </button>
             )}
           </div>
@@ -2105,7 +2108,7 @@ function RecipeCards({
           )}
         </div>
         <p className="word-card-hint">
-          クリック・右クリック・Enter で
+          {touchScreen ? "タップ" : "クリック・右クリック・Enter"} で
           {turned ? (idx + 1 >= queue.length ? "おしまい" : "次の単語へ") : direction === "ja-en" ? "英語を表示" : "意味を表示"}
         </p>
       </section>

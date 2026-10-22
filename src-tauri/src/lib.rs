@@ -20,8 +20,13 @@ pub struct AppState {
     pub bank: Mutex<Option<commands::BankCounts>>,
 }
 
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default();
+    // The phone's text-to-speech and speech recognizer (speech.rs).
+    #[cfg(target_os = "android")]
+    let builder = builder.plugin(speech::android_plugin());
+    builder
         .setup(|app| {
             let dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&dir)?;

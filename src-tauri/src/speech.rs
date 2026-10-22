@@ -3,6 +3,10 @@
 //! - SAPI 5 text-to-speech, rendered to a WAV buffer that the frontend plays back
 //! - the WinRT `SpeechRecognizer` with a list grammar, which reports a confidence score
 //!   for the phrase the learner was asked to say.
+//!
+//! Android's WebView has neither part of the Web Speech API, so the phone's own text-to-speech
+//! and speech recognizer are used there, through the Kotlin `SpeechPlugin`
+//! (gen/android/app/src/main/java/com/caloriequest/app/SpeechPlugin.kt).
 use serde::Serialize;
 
 #[derive(Debug, Serialize)]
@@ -30,11 +34,31 @@ pub struct NativeRecognition {
     pub target_confidence: Option<f64>,
     /// the engine heard speech, even if it could not make out a phrase
     pub heard: bool,
+    /// Android: what the recognizer took down, its best guess first. It writes down whatever was
+    /// said (there is no list of phrases to pick from), so the frontend scores these by how close
+    /// they come to the target, as it does the browser's. Empty on Windows.
+    pub transcripts: Vec<String>,
+}
+
+/// The recognizer returns the phrase without the punctuation we store ("Nice to meet you." comes
+/// back as "Nice to meet you"), so compare on letters only.
+#[cfg(any(windows, target_os = "android"))]
+fn same_phrase(a: &str, b: &str) -> bool {
+    let norm = |s: &str| -> String {
+        s.to_lowercase()
+            .chars()
+            .filter(|c| c.is_alphanumeric() || c.is_whitespace())
+            .collect::<String>()
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ")
+    };
+    !a.trim().is_empty() && norm(a) == norm(b)
 }
 
 #[cfg(windows)]
 mod platform {
-    use super::{NativeRecognition, SpeechCapabilities};
+    use super::{same_phrase, NativeRecognition, SpeechCapabilities};
     use std::ffi::c_void;
     use windows::core::{GUID, HSTRING, PCWSTR};
     use windows::Foundation::TimeSpan;
@@ -239,21 +263,6 @@ mod platform {
         .to_string()
     }
 
-    /// The recognizer returns the grammar phrase without the punctuation we store
-    /// ("Nice to meet you." comes back as "Nice to meet you"), so compare on letters only.
-    fn same_phrase(a: &str, b: &str) -> bool {
-        let norm = |s: &str| -> String {
-            s.to_lowercase()
-                .chars()
-                .filter(|c| c.is_alphanumeric() || c.is_whitespace())
-                .collect::<String>()
-                .split_whitespace()
-                .collect::<Vec<_>>()
-                .join(" ")
-        };
-        !a.trim().is_empty() && norm(a) == norm(b)
-    }
-
     fn confidence_name(c: SpeechRecognitionConfidence) -> String {
         match c {
             SpeechRecognitionConfidence::High => "high",
@@ -369,6 +378,7 @@ mod platform {
                 duration_ms,
                 target_confidence,
                 heard,
+                transcripts: Vec::new(),
             })
         })
         .join()
@@ -376,7 +386,158 @@ mod platform {
     }
 }
 
-#[cfg(not(windows))]
+#[cfg(target_os = "android")]
+mod platform {
+    use super::{same_phrase, NativeRecognition, SpeechCapabilities};
+    use serde::{Deserialize, Serialize};
+    use serde_json::json;
+    use std::sync::OnceLock;
+    use tauri::plugin::{Builder, PluginHandle, TauriPlugin};
+    use tauri::Wry;
+
+    /// The Kotlin SpeechPlugin, once the app has loaded it (`init`).
+    static PLUGIN: OnceLock<PluginHandle<Wry>> = OnceLock::new();
+
+    /// The plugin that loads SpeechPlugin.kt from the app's own package.
+    pub fn init() -> TauriPlugin<Wry> {
+        Builder::new("speech")
+            .setup(|_app, api| {
+                let handle = api.register_android_plugin("com.caloriequest.app", "SpeechPlugin")?;
+                let _ = PLUGIN.set(handle);
+                Ok(())
+            })
+            .build()
+    }
+
+    /// Runs a command of SpeechPlugin.kt and waits for its answer.
+    fn run<T: serde::de::DeserializeOwned>(command: &str, args: impl Serialize) -> Result<T, String> {
+        let plugin = PLUGIN.get().ok_or("音声の準備ができていません")?;
+        plugin.run_mobile_plugin(command, args).map_err(|e| e.to_string())
+    }
+
+    #[derive(Deserialize)]
+    struct Abilities {
+        /// the English voices of the phone's text-to-speech
+        voices: Vec<String>,
+        /// a speech recognizer is installed (Google's, on most phones)
+        recognizer: bool,
+        error: Option<String>,
+    }
+
+    pub fn capabilities() -> SpeechCapabilities {
+        match run::<Abilities>("capabilities", json!({})) {
+            Ok(a) => SpeechCapabilities {
+                native_tts: !a.voices.is_empty(),
+                tts_voices: a.voices,
+                native_stt: a.recognizer,
+                stt_languages: if a.recognizer { vec!["en-US".to_string()] } else { Vec::new() },
+                stt_error: a.error,
+            },
+            Err(err) => SpeechCapabilities {
+                native_tts: false,
+                tts_voices: Vec::new(),
+                native_stt: false,
+                stt_languages: Vec::new(),
+                stt_error: Some(err),
+            },
+        }
+    }
+
+    /// SAPI's rate (−10 to 10; the app reads at −2, a little slow) as Android's, where 1.0 is the
+    /// voice's own speed: ten steps make it three times as fast, or as slow, as SAPI's do.
+    fn speech_rate(rate: i32) -> f32 {
+        3f32.powf(rate.clamp(-10, 10) as f32 / 10.0)
+    }
+
+    #[derive(Serialize)]
+    struct SynthesizeArgs<'a> {
+        texts: &'a [String],
+        rate: f32,
+    }
+
+    #[derive(Deserialize)]
+    struct Synthesized {
+        /// a WAV file in the app's cache for each text, in order
+        paths: Vec<String>,
+    }
+
+    pub fn synthesize_all(texts: &[String], rate: i32) -> Result<Vec<Vec<u8>>, String> {
+        let made: Synthesized = run("synthesize", SynthesizeArgs { texts, rate: speech_rate(rate) })?;
+        let wavs: Vec<_> = made.paths.iter().map(std::fs::read).collect();
+        for path in &made.paths {
+            let _ = std::fs::remove_file(path);
+        }
+        wavs.into_iter().collect::<Result<_, _>>().map_err(|e| e.to_string())
+    }
+
+    pub fn synthesize(text: &str, rate: i32) -> Result<Vec<u8>, String> {
+        synthesize_all(&[text.to_string()], rate)?.pop().ok_or_else(|| "音声を作れませんでした".to_string())
+    }
+
+    #[derive(Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct ListenArgs<'a> {
+        lang: &'a str,
+        timeout_secs: u32,
+    }
+
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Heard {
+        /// its guesses, the best first
+        transcripts: Vec<String>,
+        /// how sure it was of each guess, where it says (0 to 1)
+        confidences: Vec<f64>,
+        /// it heard speech begin, whether or not it made out the words
+        heard: bool,
+        /// what went wrong, as the Web Speech API names it ("no-speech", "network", "not-allowed"…);
+        /// "no-match" is speech it could not make out
+        error: Option<String>,
+        duration_ms: i64,
+    }
+
+    /// Listens once. `alternatives` go unused: Android's recognizer takes down what was said
+    /// rather than choosing among phrases, and the frontend compares that with the target.
+    pub fn recognize(
+        lang: &str,
+        target: &str,
+        _alternatives: Vec<String>,
+        timeout_secs: u32,
+        on_listening: impl FnOnce() + Send + 'static,
+    ) -> Result<NativeRecognition, String> {
+        // "listen" answers once the recognizer is ready for speech (after asking for the
+        // microphone the first time), "heard" once it has made out what was said.
+        run::<serde_json::Value>("listen", ListenArgs { lang, timeout_secs })?;
+        on_listening();
+        let h: Heard = run("heard", json!({}))?;
+        let text = h.transcripts.first().cloned().unwrap_or_default();
+        let status = match h.error.as_deref() {
+            None | Some("no-match") => "success",
+            Some("no-speech") => "timeout",
+            Some(other) => other,
+        };
+        let matched = same_phrase(&text, target);
+        let target_confidence = h
+            .transcripts
+            .iter()
+            .zip(&h.confidences)
+            .find(|(t, _)| same_phrase(t, target))
+            .map(|(_, &c)| c);
+        Ok(NativeRecognition {
+            status: status.to_string(),
+            confidence: if matched { "high" } else { "low" }.to_string(),
+            raw_confidence: h.confidences.first().copied().unwrap_or(0.0),
+            duration_ms: h.duration_ms,
+            matched,
+            target_confidence,
+            heard: h.heard || !text.is_empty(),
+            text,
+            transcripts: h.transcripts,
+        })
+    }
+}
+
+#[cfg(not(any(windows, target_os = "android")))]
 mod platform {
     use super::{NativeRecognition, SpeechCapabilities};
 
@@ -408,6 +569,10 @@ mod platform {
         Err("native speech is only implemented on Windows".to_string())
     }
 }
+
+/// Android's speech plugin (SpeechPlugin.kt), for lib.rs to load.
+#[cfg(target_os = "android")]
+pub use platform::init as android_plugin;
 
 #[tauri::command(async)]
 pub fn speech_capabilities() -> SpeechCapabilities {

@@ -989,6 +989,12 @@ export interface NativeRecognition {
   targetConfidence: number | null;
   /** the engine heard speech, even if it could not make out a phrase */
   heard: boolean;
+  /**
+   * Android: what the phone's recognizer took down, its best guess first (empty on Windows). It
+   * writes down whatever was said rather than choosing among phrases, so these are scored by how
+   * close they come to the target, as the browser's are.
+   */
+  transcripts: string[];
 }
 
 export const MODE_LABEL: Record<Mode, string> = {
