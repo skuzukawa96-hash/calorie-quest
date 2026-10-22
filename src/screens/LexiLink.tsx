@@ -63,13 +63,34 @@ const signed = (n: number) => (n < 0 ? `−${-n}` : `+${n}`);
 
 /**
  * How many letters an open candy has to fit across, for its text's size (styles.css: the width of
- * the candy over this, up to the usual size): an English card its longest word (a phrase breaks at
- * its spaces), a Japanese one its length on one line up to six, else on two lines.
+ * the candy over this, up to the usual size), so that it takes two lines at most: an English card
+ * the narrowest line its words break into two lines at (a word alone fits on one), a Japanese one
+ * its length on one line up to six, else on two lines.
  */
 function fitOf(card: LexiCard): number {
-  if (card.english) return Math.max(...card.text.split(/[\s-]+/).map((w) => w.length));
+  if (card.english) return twoLineWidth(card.text.split(/\s+/).filter(Boolean));
   const n = [...card.text].length;
   return n <= 6 ? n : Math.ceil(n / 2);
+}
+
+/** The fewest letters a line must hold for `words`, broken at their spaces, to take two lines. */
+function twoLineWidth(words: string[]): number {
+  const total = words.join(" ").length;
+  for (let width = Math.max(1, ...words.map((w) => w.length)); width < total; width++) {
+    let lines = 1;
+    let line = 0;
+    for (const w of words) {
+      const joined = line ? line + 1 + w.length : w.length;
+      if (joined > width) {
+        lines++;
+        line = w.length;
+      } else {
+        line = joined;
+      }
+    }
+    if (lines <= 2) return width;
+  }
+  return Math.max(1, total);
 }
 
 /**

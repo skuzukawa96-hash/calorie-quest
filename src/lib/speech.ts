@@ -23,6 +23,12 @@ function recognitionCtor(): RecognitionCtor | null {
 
 let caps: SpeechCapabilities | null = null;
 
+/**
+ * When the phone is asked again for a text-to-speech it did not have (an engine slow to start, or
+ * failed: SpeechPlugin.kt starts it again each time it is asked), after the first answer.
+ */
+const ASK_TTS_AGAIN_MS = [10_000, 30_000, 60_000];
+
 export async function loadSpeechCapabilities(): Promise<SpeechCapabilities> {
   if (caps) return caps;
   try {
@@ -30,7 +36,21 @@ export async function loadSpeechCapabilities(): Promise<SpeechCapabilities> {
   } catch (e) {
     caps = { nativeTts: false, ttsVoices: [], nativeStt: false, sttLanguages: [], sttError: String(e) };
   }
+  if (runningOnAndroid && !caps.nativeTts) askTtsAgain(0);
   return caps;
+}
+
+function askTtsAgain(round: number) {
+  if (round >= ASK_TTS_AGAIN_MS.length) return;
+  window.setTimeout(() => {
+    api
+      .speechCapabilities()
+      .then((again) => {
+        caps = again;
+        if (!again.nativeTts) askTtsAgain(round + 1);
+      })
+      .catch(() => askTtsAgain(round + 1));
+  }, ASK_TTS_AGAIN_MS[round]);
 }
 
 export function speechCaps(): SpeechCapabilities | null {

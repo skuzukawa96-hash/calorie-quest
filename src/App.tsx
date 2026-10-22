@@ -167,37 +167,52 @@ export default function App() {
     };
   }, [refresh]);
 
-  // Android's back button (and back gesture) goes to ホーム, and from ホーム closes the app: away
-  // from it the page holds one history entry of its own, for the back to take.
-  const away = tab !== "home" || session !== null || exam !== null || lexi !== null;
-  const awayNow = useRef(away);
-  awayNow.current = away;
-  useEffect(() => {
-    const held = (history.state as { away?: boolean } | null)?.away === true;
-    if (away && !held) history.pushState({ away: true }, "");
-    else if (!away && held) history.back();
-  }, [away]);
-  useEffect(() => {
-    const back = () => {
-      // the entry given up on the way home by ← やめる or the ホーム tab: already there
-      if (!awayNow.current) return;
+  const go = useCallback(
+    (t: Tab) => {
       setSession(null);
       setExam(null);
       setLexi(null);
-      setTab("home");
+      setTab(t);
       void refresh();
+    },
+    [refresh],
+  );
+
+  // Android's back button (and back gesture) goes to ホーム, and from ホーム closes the app: away
+  // from it the page holds one history entry of its own, for the back to take. Coming home another
+  // way (← やめる, the ホーム tab) gives the entry up by going back, which lands a moment later:
+  // `leaving` says it is on its way, and its popstate settles the entry for wherever the learner
+  // is by then (a tab tapped meanwhile holds a new one).
+  const away = tab !== "home" || session !== null || exam !== null || lexi !== null;
+  const awayNow = useRef(away);
+  awayNow.current = away;
+  const leaving = useRef(false);
+  const held = () => (history.state as { away?: boolean } | null)?.away === true;
+  useEffect(() => {
+    // A reload keeps the entry while the app starts again at ホーム: given up where it is, since
+    // going back to it would load the page once more.
+    if (!awayNow.current && held()) history.replaceState(null, "");
+  }, []);
+  useEffect(() => {
+    if (leaving.current) return;
+    if (away && !held()) history.pushState({ away: true }, "");
+    else if (!away && held()) {
+      leaving.current = true;
+      history.back();
+    }
+  }, [away]);
+  useEffect(() => {
+    const back = () => {
+      if (leaving.current) {
+        leaving.current = false;
+        if (awayNow.current) history.pushState({ away: true }, "");
+        return;
+      }
+      if (awayNow.current) go("home");
     };
     window.addEventListener("popstate", back);
     return () => window.removeEventListener("popstate", back);
-  }, [refresh]);
-
-  const go = (t: Tab) => {
-    setSession(null);
-    setExam(null);
-    setLexi(null);
-    setTab(t);
-    void refresh();
-  };
+  }, [go]);
 
   return (
     <RecipeProvider>

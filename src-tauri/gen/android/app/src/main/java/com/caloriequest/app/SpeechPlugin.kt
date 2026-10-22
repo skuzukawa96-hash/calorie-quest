@@ -54,26 +54,46 @@ class SpeechPlugin(private val activity: Activity) : Plugin(activity) {
 
     /* ---------- text to speech ---------- */
 
-    private var tts: TextToSpeech? = null
-    private val ttsReady = CountDownLatch(1)
+    private val ttsLock = Any()
+    /** the engine, once it is set up for American English */
+    @Volatile private var tts: TextToSpeech? = null
+    /** opens when the engine being started is set up, or has failed; null when none is starting or running (ttsLock) */
+    private var ttsReady: CountDownLatch? = null
     @Volatile private var ttsVoices: List<String> = emptyList()
     /** what each utterance being made into a file is waited on by: true when it is made */
     private val making = ConcurrentHashMap<String, (Boolean) -> Unit>()
 
-    /** Starts the engine once; ttsReady opens when it is set up for American English (or failed). */
-    private fun startTts() {
-        main.post {
-            if (tts != null) return@post
-            tts = TextToSpeech(activity.applicationContext) { status ->
-                if (status == TextToSpeech.SUCCESS) ttsVoices = setUpVoice()
-                ttsReady.countDown()
+    /**
+     * The engine's start, begun if it is neither running nor starting: the latch opens once it is set
+     * up for American English, or has failed, in which case the next call starts it again.
+     */
+    private fun startTts(): CountDownLatch = synchronized(ttsLock) {
+        ttsReady ?: CountDownLatch(1).also { ready ->
+            ttsReady = ready
+            main.post {
+                var engine: TextToSpeech? = null
+                engine = TextToSpeech(activity.applicationContext) { status ->
+                    val started = engine
+                    val voices = if (status == TextToSpeech.SUCCESS && started != null) setUpVoice(started) else emptyList()
+                    synchronized(ttsLock) {
+                        ttsVoices = voices
+                        if (voices.isEmpty()) {
+                            started?.shutdown()
+                            ttsReady = null
+                        } else {
+                            tts = started
+                        }
+                    }
+                    ready.countDown()
+                }
+                // No engine at all fails inside the constructor, before `engine` is set.
+                if (ready.count == 0L && tts !== engine) engine.shutdown()
             }
         }
     }
 
     /** American English, in the best voice on the phone itself (one that needs no network). */
-    private fun setUpVoice(): List<String> {
-        val t = tts ?: return emptyList()
+    private fun setUpVoice(t: TextToSpeech): List<String> {
         val lang = t.setLanguage(Locale.US)
         if (lang == TextToSpeech.LANG_MISSING_DATA || lang == TextToSpeech.LANG_NOT_SUPPORTED) return emptyList()
         val english = t.voices.orEmpty().filter {
@@ -101,9 +121,9 @@ class SpeechPlugin(private val activity: Activity) : Plugin(activity) {
 
     @Command
     fun capabilities(invoke: Invoke) {
-        startTts()
+        val ready = startTts()
         Thread {
-            ttsReady.await(5, TimeUnit.SECONDS)
+            ready.await(TTS_START_SECS, TimeUnit.SECONDS)
             val recognizer = SpeechRecognizer.isRecognitionAvailable(activity)
             val out = JSObject()
             out.put("voices", JSONArray(ttsVoices))
@@ -124,30 +144,33 @@ class SpeechPlugin(private val activity: Activity) : Plugin(activity) {
     @Command
     fun synthesize(invoke: Invoke) {
         val args = invoke.parseArgs(SynthesizeArgs::class.java)
-        startTts()
+        val ready = startTts()
         Thread {
+            ready.await(TTS_START_SECS, TimeUnit.SECONDS)
             val t = tts
-            if (!ttsReady.await(5, TimeUnit.SECONDS) || t == null || ttsVoices.isEmpty()) {
+            if (t == null) {
                 invoke.reject("英語の音声合成が使えません")
                 return@Thread
             }
             val files = args.texts.map { File.createTempFile("say", ".wav", activity.cacheDir) }
+            val ids = files.map { UUID.randomUUID().toString() }
             val made = CountDownLatch(files.size)
             var failed = false
             t.setSpeechRate(args.rate)
-            args.texts.zip(files).forEach { (text, file) ->
-                val id = UUID.randomUUID().toString()
-                making[id] = { ok ->
+            for ((i, text) in args.texts.withIndex()) {
+                making[ids[i]] = { ok ->
                     if (!ok) failed = true
                     made.countDown()
                 }
-                if (t.synthesizeToFile(text, Bundle(), file, id) != TextToSpeech.SUCCESS) {
-                    making.remove(id)
+                if (t.synthesizeToFile(text, Bundle(), files[i], ids[i]) != TextToSpeech.SUCCESS) {
+                    making.remove(ids[i])
                     failed = true
                     made.countDown()
                 }
             }
             if (!made.await(20, TimeUnit.SECONDS) || failed) {
+                // An utterance the engine finishes after this deletes its file, rather than leave it in the cache.
+                ids.zip(files).forEach { (id, file) -> making.replace(id) { _ -> file.delete() } }
                 files.forEach { it.delete() }
                 invoke.reject("音声を作れませんでした")
                 return@Thread
@@ -201,55 +224,81 @@ class SpeechPlugin(private val activity: Activity) : Plugin(activity) {
         val args = invoke.parseArgs(ListenArgs::class.java)
         synchronized(heardLock) {
             outcome = null
+            // a "heard" still waiting on the listening this one replaces: answered, not left hanging
+            waiting?.resolve(heardOf(emptyList(), null, false, "aborted", 0))
             waiting = null
         }
         main.post {
             recognizer?.destroy()
             val r = SpeechRecognizer.createSpeechRecognizer(activity)
             recognizer = r
+            // Everything below runs on the main thread: the listener's calls and the deadlines.
             var ready: Invoke? = invoke
             var heard = false
+            var settled = false
             var began = 0L
             var ended = 0L
-            // No speech by then: given up on, as the Windows recognizer's initial silence ends it.
-            val silence = Runnable {
-                if (!heard) {
-                    r.cancel()
-                    finish(r, emptyList(), null, false, "no-speech", 0)
-                }
+            val deadlines = mutableListOf<Runnable>()
+            fun after(ms: Long, then: () -> Unit) {
+                val task = Runnable { then() }
+                deadlines += task
+                main.postDelayed(task, ms)
             }
+            fun letGo() {
+                settled = true
+                deadlines.forEach { main.removeCallbacks(it) }
+            }
+            /** The listening over, whichever way it ended: told to "heard", once. */
+            fun done(texts: List<String>, sure: FloatArray?, error: String?) {
+                if (settled) return
+                letGo()
+                finish(r, texts, sure, heard, error, spoken(began, ended))
+            }
+            /** It never got as far as listening: the "listen" call fails. */
+            fun failToStart(error: String) {
+                val before = ready ?: return
+                ready = null
+                letGo()
+                r.destroy()
+                if (recognizer === r) recognizer = null
+                before.reject(error)
+            }
+            // The recognizer's service never answering is taken as a failure to reach it.
+            after(READY_LIMIT_MS) { failToStart("network") }
             r.setRecognitionListener(object : RecognitionListener {
                 override fun onReadyForSpeech(params: Bundle?) {
+                    if (settled) return
                     ready?.resolve()
                     ready = null
-                    main.postDelayed(silence, args.timeoutSecs * 1000L)
+                    // No speech by then: given up on, as the Windows recognizer's initial silence ends it.
+                    after(args.timeoutSecs * 1000L) {
+                        if (!heard) {
+                            r.cancel()
+                            done(emptyList(), null, "no-speech")
+                        }
+                    }
                 }
                 override fun onBeginningOfSpeech() {
                     heard = true
                     began = SystemClock.elapsedRealtime()
+                    // Speech going on with no result (the service stalled, the app sent to the back):
+                    // given up on as not made out, as the Windows recognizer's babble timeout ends it.
+                    after(SPEECH_LIMIT_MS) {
+                        ended = SystemClock.elapsedRealtime()
+                        r.cancel()
+                        done(emptyList(), null, "no-match")
+                    }
                 }
                 override fun onEndOfSpeech() {
                     ended = SystemClock.elapsedRealtime()
                 }
                 override fun onResults(results: Bundle?) {
-                    main.removeCallbacks(silence)
                     val texts = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION).orEmpty()
                     val sure = results?.getFloatArray(SpeechRecognizer.CONFIDENCE_SCORES)
-                    finish(r, texts, sure, heard, if (texts.isEmpty()) "no-match" else null, spoken(began, ended))
+                    done(texts, sure, if (texts.isEmpty()) "no-match" else null)
                 }
                 override fun onError(error: Int) {
-                    main.removeCallbacks(silence)
-                    val name = errorName(error)
-                    val before = ready
-                    if (before != null) {
-                        // It never got as far as listening: the "listen" call fails.
-                        ready = null
-                        r.destroy()
-                        if (recognizer === r) recognizer = null
-                        before.reject(name)
-                        return
-                    }
-                    finish(r, emptyList(), null, heard, name, spoken(began, ended))
+                    if (ready != null) failToStart(errorName(error)) else done(emptyList(), null, errorName(error))
                 }
                 override fun onRmsChanged(rmsdB: Float) {}
                 override fun onBufferReceived(buffer: ByteArray?) {}
@@ -271,14 +320,20 @@ class SpeechPlugin(private val activity: Activity) : Plugin(activity) {
 
     private fun spoken(began: Long, ended: Long) = if (began > 0 && ended > began) ended - began else 0L
 
-    /** Hands what was made out to "heard" (now, or when it asks) and lets the recognizer go. */
-    private fun finish(r: SpeechRecognizer, texts: List<String>, sure: FloatArray?, heard: Boolean, error: String?, durationMs: Long) {
+    /** What "heard" answers: the guesses, the best first, and how sure of each; or what went wrong. */
+    private fun heardOf(texts: List<String>, sure: FloatArray?, heard: Boolean, error: String?, durationMs: Long): JSObject {
         val out = JSObject()
         out.put("transcripts", JSONArray(texts))
         out.put("confidences", JSONArray(texts.indices.map { (sure?.getOrNull(it) ?: 0f).toDouble() }))
         out.put("heard", heard)
         out.put("error", error ?: JSONObject.NULL)
         out.put("durationMs", durationMs)
+        return out
+    }
+
+    /** Hands what was made out to "heard" (now, or when it asks) and lets the recognizer go. */
+    private fun finish(r: SpeechRecognizer, texts: List<String>, sure: FloatArray?, heard: Boolean, error: String?, durationMs: Long) {
+        val out = heardOf(texts, sure, heard, error, durationMs)
         synchronized(heardLock) {
             val asked = waiting
             if (asked != null) {
@@ -304,5 +359,14 @@ class SpeechPlugin(private val activity: Activity) : Plugin(activity) {
         SpeechRecognizer.ERROR_CLIENT -> "aborted"
         SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> "busy"
         else -> "error-$error"
+    }
+
+    private companion object {
+        /** how long a call waits for the engine to start: binding to it can be slow just after the phone starts */
+        const val TTS_START_SECS = 20L
+        /** how long the recognizer's service may take to be ready to listen */
+        const val READY_LIMIT_MS = 10_000L
+        /** how long speech may go on with no result */
+        const val SPEECH_LIMIT_MS = 15_000L
     }
 }
