@@ -5,7 +5,7 @@ import { LEXI_GENRE_LABEL, type LexiConfig } from "../screens/LexiLink";
 
 const KEY = "cq-lexilink";
 const DEFAULT: LexiConfig = { mode: "match", genre: "random", preferLearned: false, players: 1, names: ["プレイヤー1", "プレイヤー2"], com: null };
-/** 後攻's name while it is the computer (unless the learner named it) */
+/** 2P's name while it is the computer (unless the learner named it) */
 const COM_NAME = "COM";
 
 /** What was chosen last time, each part only if it is still one of the choices (else the default). */
@@ -68,8 +68,8 @@ function Picture({ kind }: { kind: "match" | "opposites" | "one" | "two" }) {
 /**
  * LexiLink on the home screen, under the exams: Word Match / Opposites and ひとりで挑戦 / ふたりで対戦 as
  * tiles on one line (2:2:3, the two of players one above the other), the genre and the words asked
- * on one line, the names of 先攻 and 後攻 for 対戦, and the button beside the rules. What was chosen is
- * kept for the next time.
+ * on one line, the names of 1P and 2P for 対戦 (which of them plays first is drawn each game), and the
+ * button beside the rules. What was chosen is kept for the next time.
  */
 export default function LexiLinkEntry({ onStart }: { onStart: (config: LexiConfig) => void }) {
   const [config, setConfig] = useState<LexiConfig>(loadConfig);
@@ -81,7 +81,7 @@ export default function LexiLinkEntry({ onStart }: { onStart: (config: LexiConfi
     }
   }, [config]);
   const set = (patch: Partial<LexiConfig>) => setConfig((c) => ({ ...c, ...patch }));
-  /** COM on (at 普通 to start with) or off; 後攻's name follows unless the learner named it */
+  /** COM on (at 普通 to start with) or off; 2P's name follows unless the learner named it */
   const setCom = (on: boolean) =>
     setConfig((c) => {
       const second = c.names[1].trim();
@@ -136,7 +136,7 @@ export default function LexiLinkEntry({ onStart }: { onStart: (config: LexiConfi
         <div className="lexi-names">
           {([0, 1] as const).map((who) => (
             <label key={who}>
-              {who === 0 ? "先攻" : "後攻"}
+              {who === 0 ? "1P" : "2P"}
               <input
                 className={`p${who + 1}`}
                 value={config.names[who]}
@@ -145,8 +145,8 @@ export default function LexiLinkEntry({ onStart }: { onStart: (config: LexiConfi
               />
             </label>
           ))}
-          {/* 後攻 played by the computer, at the level chosen beside it */}
-          <label className="lexi-com" title="後攻をコンピューターにする">
+          {/* 2P played by the computer, at the level chosen beside it */}
+          <label className="lexi-com" title="2Pをコンピューターにする">
             <input type="checkbox" checked={config.com !== null} onChange={(e) => setCom(e.target.checked)} />
             COM
           </label>
@@ -165,11 +165,12 @@ export default function LexiLinkEntry({ onStart }: { onStart: (config: LexiConfi
             </>
           ) : config.com ? (
             <>
-              お手つきで交代。COM（{COM_LEVELS[config.com].label}）に勝つと <b>+{LEXI.comWinKcal[config.com]} kcal</b>、負けても <b>+{LEXI.comLoseKcal} kcal</b>
+              先攻はランダム。お手つきで交代。COM（{COM_LEVELS[config.com].label}）に勝つと <b>+{LEXI.comWinKcal[config.com]} kcal</b>、引き分けで{" "}
+              <b>+{LEXI.comDrawKcal} kcal</b>、負けても <b>+{LEXI.comLoseKcal} kcal</b>
             </>
           ) : (
             <>
-              取ったペアの数で勝負／お手つきで交代。最後まで遊ぶと <b>+{LEXI.versusKcal} kcal</b>
+              先攻はランダム。取ったペアの数で勝負／お手つきで交代。最後まで遊ぶと <b>+{LEXI.versusKcal} kcal</b>
             </>
           )}
         </div>

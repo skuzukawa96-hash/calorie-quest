@@ -9,7 +9,8 @@
 //! of the board is taken at random. ひとりで挑戦 pays 3 kcal a pair, −1 for each お手つき after the
 //! third and 10 for clearing the board, without the play mode: a cleared game can come out below
 //! zero, one left part-way pays what it is above zero. ふたりで対戦 pays 30 kcal for a game played to
-//! the end. Either way the day counts as a day of study.
+//! the end; against the computer, by its level for a win, 15 for a draw and 10 for a loss. Either way
+//! the day counts as a day of study.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::OnceLock;
@@ -31,7 +32,9 @@ pub const MISS_KCAL: i64 = 1;
 pub const CLEAR_KCAL: i64 = 10;
 /// what a ふたりで対戦 played to the end pays
 pub const VERSUS_KCAL: i64 = 30;
-/// ふたりで対戦 against the computer, played to the end: lost or drawn
+/// ふたりで対戦 against the computer, played to the end: drawn
+pub const COM_DRAW_KCAL: i64 = 15;
+/// ふたりで対戦 against the computer, played to the end: lost
 pub const COM_LOSE_KCAL: i64 = 10;
 
 /// ふたりで対戦 against the computer, won: by the computer's level (None for no level).
@@ -265,13 +268,16 @@ pub fn finish(conn: &mut Connection, game: &LexiFinish) -> CmdResult<LexiResult>
     let kcal = if game.players == 1 {
         solo_kcal(game.pairs, game.misses, game.cleared)
     } else if let Some(level) = game.com.as_deref() {
-        // Against the computer: won, by its level; lost or drawn, a little; left part-way, nothing.
+        // Against the computer: won, by its level; drawn or lost, a little; left part-way, nothing.
         let win = com_win_kcal(level).ok_or_else(|| format!("unknown LexiLink COM level {level}"))?;
         let mine = game.player_pairs.filter(|p| (0..=game.pairs).contains(p)).ok_or("LexiLink の結果が正しくありません（取ったペア）")?;
+        let theirs = PAIRS as i64 - mine;
         if !game.cleared {
             0
-        } else if mine > PAIRS as i64 - mine {
+        } else if mine > theirs {
             win
+        } else if mine == theirs {
+            COM_DRAW_KCAL
         } else {
             COM_LOSE_KCAL
         }
@@ -445,7 +451,7 @@ mod tests {
         assert_eq!(finish(&mut fresh, &solo(10, 50, true)).unwrap().kcal_earned, 0);
     }
 
-    /// ふたりで対戦 against the computer: won, 20 / 30 / 45 by its level; lost or drawn, 10; left
+    /// ふたりで対戦 against the computer: won, 20 / 30 / 45 by its level; drawn, 15; lost, 10; left
     /// part-way, nothing. Against a person it stays 30.
     #[test]
     fn a_game_against_the_computer_pays_by_its_level_and_the_outcome() {
@@ -463,7 +469,8 @@ mod tests {
         assert_eq!(paid(&mut c, com("normal", 7, true)), 30);
         assert_eq!(paid(&mut c, com("hard", 10, true)), 45);
         assert_eq!(paid(&mut c, com("hard", 3, true)), COM_LOSE_KCAL, "lost");
-        assert_eq!(paid(&mut c, com("normal", 5, true)), COM_LOSE_KCAL, "drawn");
+        assert_eq!(paid(&mut c, com("normal", 5, true)), COM_DRAW_KCAL, "drawn");
+        assert_eq!(paid(&mut c, com("easy", 4, true)), COM_LOSE_KCAL, "lost 4 to 6");
         assert_eq!(paid(&mut c, com("hard", 3, false)), 0, "left part-way");
         assert!(finish(&mut c, &com("expert", 6, true)).is_err(), "no such level");
         assert!(finish(&mut c, &LexiFinish { player_pairs: None, ..com("easy", 6, true) }).is_err(), "whose pairs");

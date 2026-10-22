@@ -11,6 +11,7 @@
     "tauri": "tauri"
   },
   "dependencies": {
+    "@fontsource/m-plus-rounded-1c": "^5.3.0",
     "@tauri-apps/api": "^2",
     "react": "^19",
     "react-dom": "^19"

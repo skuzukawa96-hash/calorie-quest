@@ -15,9 +15,9 @@ export interface LexiConfig {
   genre: LexiGenre;
   preferLearned: boolean;
   players: 1 | 2;
-  /** 先攻・後攻 (ふたりで対戦) */
+  /** 1P・2P (ふたりで対戦; which of them plays first is drawn each game) */
   names: [string, string];
-  /** ふたりで対戦: 後攻 is the computer, at this level (null: a person) */
+  /** ふたりで対戦: 2P is the computer, at this level (null: a person) */
   com: ComLevel | null;
 }
 
@@ -35,6 +35,18 @@ const SAY_AFTER_UNWRAP_MS = 450;
 /** the computer's turn: a moment before it turns its first candy, and its second (to follow it by eye) */
 const COM_FIRST_MS = 900;
 const COM_SECOND_MS = 900;
+/** ふたりで: who plays first (drawn at random each game), shown on the board before the first candy */
+const OPENER_MS = 1400;
+/** 手動で閉じる (kept for the next game): two candies of no pair stay open until a click */
+const HOLD_KEY = "cq-lexilink-hold";
+
+function loadHold(): boolean {
+  try {
+    return localStorage.getItem(HOLD_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
 
 interface Cell {
   pair: number;
@@ -44,10 +56,10 @@ interface Taken {
   pair: number;
   left: LexiCard;
   right: LexiCard;
-  /** who took it (0: 先攻 / ひとり, 1: 後攻) */
+  /** who took it (0: 1P / ひとり, 1: 2P) */
   by: 0 | 1;
 }
-/** the game over: ひとりで complete; ふたりで won by one, drawn, or (against the computer) lost by 先攻 */
+/** the game over: ひとりで complete; ふたりで won by one, drawn, or (against the computer) lost by 1P */
 type End = { kind: "complete"; kcal: number } | { kind: "win"; winner: 0 | 1 } | { kind: "draw" } | { kind: "lose" };
 
 function shuffled<T>(list: T[]): T[] {
@@ -96,9 +108,10 @@ function twoLineWidth(words: string[]): number {
 /**
  * LexiLink（英単語の神経衰弱）: twenty wrapped candies, ten pairs. A candy opens in two frames with a
  * カサッ; two open candies of a pair light up (キラッ), are eaten (ぽりぽり) and leave their wrappers,
- * the English read aloud and the pair laid out below; two of no pair are wrapped again (お手つき), and
- * in 対戦 the turn passes. ひとりで: kcal as the game goes (paid when it ends, or what is above zero when
- * left part-way); ふたりで: the most pairs wins, and a game played to the end pays 30 kcal.
+ * the English read aloud and the pair laid out below; two of no pair are wrapped again (お手つき; with
+ * 手動で閉じる on, once the board is clicked), and in 対戦 the turn passes. ひとりで: kcal as the game goes
+ * (paid when it ends, or what is above zero when left part-way); ふたりで: who plays first is drawn,
+ * the most pairs wins, and a game played to the end pays 30 kcal.
  */
 export default function LexiLink({
   config,
@@ -124,6 +137,15 @@ export default function LexiLink({
   const [asking, setAsking] = useState(false);
   /** the game over, its end put away to save words from the pairs taken (単語を登録する) */
   const [browsing, setBrowsing] = useState(false);
+  /** ふたりで: who plays first, while it is shown on the board (the board waits) */
+  const [opener, setOpener] = useState<0 | 1 | null>(null);
+  /** 手動で閉じる: a miss stays open until a click on the board (for whoever needs longer to remember) */
+  const [hold, setHold] = useState(loadHold);
+  const holdNow = useRef(hold);
+  holdNow.current = hold;
+  /** two candies of no pair held open (手動で閉じる): what wraps them again and passes the turn */
+  const closeHeld = useRef<(() => void) | null>(null);
+  const [holding, setHolding] = useState(false);
   const [dict, setDict] = useState<Dictionary | null>(loadedDictionary);
   const busy = useRef(false);
   /** the game's kcal have been asked for (finished, or left part-way): never twice */
@@ -137,7 +159,7 @@ export default function LexiLink({
   const voices = useRef<ReadyWords | null>(null);
   const timers = useRef<number[]>([]);
   const later = (fn: () => void, ms: number) => timers.current.push(window.setTimeout(fn, ms));
-  /** the computer playing 後攻 (ふたりで対戦 with COM), one for the screen: its memory reset each game */
+  /** the computer playing 2P (ふたりで対戦 with COM), one for the screen: its memory reset each game */
   const com = useRef<LexiCom | null>(null);
   /** the computer's next candy is on its way (one at a time) */
   const comWaiting = useRef(false);
@@ -154,17 +176,22 @@ export default function LexiLink({
     } else com.current = null;
     settled.current = false;
     standing.current = { pairs: 0, misses: [0, 0], mine: 0 };
+    closeHeld.current = null;
     const asked = ++dealt.current;
+    // ふたりで: who plays first is drawn each game (the computer too may open)
+    const first: 0 | 1 = config.players === 2 && Math.random() < 0.5 ? 1 : 0;
     setCells(null);
     setError(null);
     setOpen([]);
     setGlow([]);
     setTaken([]);
     setMisses([0, 0]);
-    setTurn(0);
+    setTurn(first);
     setEnd(null);
     setAsking(false);
     setBrowsing(false);
+    setOpener(null);
+    setHolding(false);
     api
       .dealLexiLink(config.mode, config.genre, config.preferLearned)
       .then((d) => {
@@ -173,6 +200,17 @@ export default function LexiLink({
         const list = shuffled(d.pairs.flatMap((p, i) => [{ pair: i, card: p.a }, { pair: i, card: p.b }]));
         setCells(list);
         setFrames(list.map(() => "wrapped"));
+        if (config.players === 2) {
+          // Who opens, on the board for a moment; no candy is turned until it has gone.
+          busy.current = true;
+          setOpener(first);
+          timers.current.push(
+            window.setTimeout(() => {
+              busy.current = false;
+              setOpener(null);
+            }, OPENER_MS),
+          );
+        }
       })
       .catch((e) => asked === dealt.current && setError(String(e)));
   }, [config.mode, config.genre, config.preferLearned, config.players, config.com]);
@@ -290,7 +328,7 @@ export default function LexiLink({
       } else {
         const counted: [number, number] = turn === 0 ? [missed[0] + 1, missed[1]] : [missed[0], missed[1] + 1];
         standing.current = { ...standing.current, misses: counted };
-        later(() => {
+        const close = () => {
           playLexi("rewrap");
           [x, y].forEach((k) => {
             setFrame(k, "half");
@@ -303,12 +341,37 @@ export default function LexiLink({
             later(() => playLexi("turn"), 250);
           }
           busy.current = false;
-        }, MISS_MS - LOOK_MS);
+        };
+        // 手動で閉じる: left open (the computer's two as well) until a click on the board
+        const wait = () => {
+          closeHeld.current = close;
+          setHolding(true);
+        };
+        if (holdNow.current) wait();
+        else later(() => (holdNow.current ? wait() : close()), MISS_MS - LOOK_MS);
       }
     }, LOOK_MS);
   };
 
-  /** The computer's turn (後攻): its candies are its own; a click on the board waits for the turn back. */
+  /** The two held open wrapped again (a click on the board, or 手動で閉じる turned off). */
+  const release = () => {
+    const close = closeHeld.current;
+    closeHeld.current = null;
+    setHolding(false);
+    close?.();
+  };
+  const toggleHold = () => {
+    const on = !hold;
+    setHold(on);
+    try {
+      localStorage.setItem(HOLD_KEY, on ? "1" : "0");
+    } catch {
+      /* ignore */
+    }
+    if (!on) release();
+  };
+
+  /** The computer's turn (2P): its candies are its own; a click on the board waits for the turn back. */
   const comTurn = !!com.current && turn === 1 && !end;
 
   /** The computer turns its next candy, chosen from what can be chosen and what is face up (the
@@ -325,9 +388,10 @@ export default function LexiLink({
   };
   const comMoveNow = useRef(comMove);
   comMoveNow.current = comMove;
-  // Its turn, the board still: the next candy after a moment (the first, or the second once the first is open).
+  // Its turn, the board still: the next candy after a moment (the first, or the second once the first
+  // is open). Who opens is shown first: the board is still once it has gone.
   useEffect(() => {
-    if (!comTurn || !cells || busy.current || comWaiting.current || open.length >= 2 || standing.current.pairs >= LEXI.pairs) return;
+    if (!comTurn || !cells || opener !== null || busy.current || comWaiting.current || open.length >= 2 || standing.current.pairs >= LEXI.pairs) return;
     comWaiting.current = true;
     later(
       () => {
@@ -337,7 +401,7 @@ export default function LexiLink({
       open.length === 0 ? COM_FIRST_MS : COM_SECOND_MS,
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [comTurn, cells, open, frames]);
+  }, [comTurn, cells, open, frames, opener]);
 
   /** Left part-way: ひとりで, what the game is above zero; ふたりで, nothing (the day still counts). */
   const quit = () => {
@@ -354,6 +418,8 @@ export default function LexiLink({
   // render: the glow, or the candies wrapped again).
   const ifLeft = lexiSoloKcal(standing.current.pairs, standing.current.misses[0], false);
   const name = (who: 0 | 1) => config.names[who].trim() || `プレイヤー${who + 1}`;
+  /** 対戦: 1P's share of the pairs taken, in % of the gauge (half before the first pair) */
+  const share = pairs === 0 ? 50 : (pairsOf(0) / pairs) * 100;
 
   if (error) {
     return (
@@ -380,24 +446,36 @@ export default function LexiLink({
             <span className="tag">{LEXI_MODE_LABEL[config.mode]}</span>
             <span className="tag">{LEXI_GENRE_LABEL[config.genre]}</span>
           </div>
-          {solo && (
-            <div className="lexi-stats">
-              <span>
-                ペア <b>{pairs}</b>/{LEXI.pairs}
-              </span>
-              <span title={`お手つきは${LEXI.freeMisses}回まで無料、${LEXI.freeMisses + 1}回目から −${LEXI.missKcal} kcal`}>
-                お手つき <b>{misses[0]}</b>
-                <span className="miss-dots">
-                  {Array.from({ length: LEXI.freeMisses }, (_, k) => (
-                    <i key={k} className={k < misses[0] ? "used" : ""} />
-                  ))}
+          <div className="lexi-hud-right">
+            {solo && (
+              <div className="lexi-stats">
+                <span>
+                  ペア <b>{pairs}</b>/{LEXI.pairs}
                 </span>
-              </span>
-              <span className="kcal">
-                獲得 <b>{signed(soFar)}</b> kcal
-              </span>
-            </div>
-          )}
+                <span title={`お手つきは${LEXI.freeMisses}回まで無料、${LEXI.freeMisses + 1}回目から −${LEXI.missKcal} kcal`}>
+                  お手つき <b>{misses[0]}</b>
+                  <span className="miss-dots">
+                    {Array.from({ length: LEXI.freeMisses }, (_, k) => (
+                      <i key={k} className={k < misses[0] ? "used" : ""} />
+                    ))}
+                  </span>
+                </span>
+                <span className="kcal">
+                  獲得 <b>{signed(soFar)}</b> kcal
+                </span>
+              </div>
+            )}
+            <button
+              type="button"
+              className={"switch-btn lexi-hold-switch" + (hold ? " on" : "")}
+              aria-pressed={hold}
+              title={`オンにすると、ペアにならなかった2枚は${CLICK}するまで閉じません（覚える時間を取りたいときに）`}
+              onClick={toggleHold}
+            >
+              <span className="switch-knob" aria-hidden="true" />
+              手動で閉じる
+            </button>
+          </div>
         </div>
         {asking && (
           <div className="lexi-ask">
@@ -414,25 +492,28 @@ export default function LexiLink({
           </div>
         )}
 
+        {/* 対戦: the names over one gauge of the pairs taken, 1P's share from the left and 2P's from the
+            right (half each before the first pair), 番 beside whoever's turn it is */}
         {!solo && (
           <div className="lexi-versus">
-            {([0, 1] as const).map((who) => (
-              <div key={who} className={`lexi-player p${who + 1}` + (turn === who && !end ? " turn" : "")}>
-                <div>
-                  <div className="lexi-player-name">
-                    {name(who)}
-                    {turn === who && !end && <span className="lexi-turn-badge">番</span>}
-                  </div>
-                  <div className="muted small">
+            <div className="lexi-vs-top">
+              {([0, 1] as const).map((who) => (
+                <div key={who} className={`lexi-vs-side p${who + 1}`}>
+                  <span className="lexi-vs-name">{name(who)}</span>
+                  <span className={"lexi-turn-badge" + (turn === who && !end ? " on" : "")}>番</span>
+                  <span className="lexi-vs-sub">
                     {who === 1 && config.com && `COM・${COM_LEVELS[config.com].label}・`}お手つき {misses[who]}
-                  </div>
+                  </span>
                 </div>
-                <div className="lexi-player-pts">
-                  {pairsOf(who)}
-                  <small>ペア</small>
-                </div>
-              </div>
-            ))}
+              ))}
+            </div>
+            <div className="lexi-gauge" role="img" aria-label={`${name(0)} ${pairsOf(0)}ペア、${name(1)} ${pairsOf(1)}ペア`}>
+              <div className="lexi-gauge-fill p1" style={{ width: `${share}%` }} />
+              <div className="lexi-gauge-fill p2" style={{ width: `${100 - share}%` }} />
+              <i className="lexi-gauge-mid" />
+              <span className="lexi-gauge-count p1">{pairsOf(0)}</span>
+              <span className="lexi-gauge-count p2">{pairsOf(1)}</span>
+            </div>
           </div>
         )}
 
@@ -459,6 +540,17 @@ export default function LexiLink({
                 )}
               </button>
             ))}
+            {opener !== null && (
+              <div className="lexi-opener" aria-live="polite">
+                <span className={`p${opener + 1}`}>{name(opener)}</span> の先攻！
+              </div>
+            )}
+            {/* 手動で閉じる: the two open until the board is clicked anywhere */}
+            {holding && (
+              <button type="button" className="lexi-hold" onClick={release} aria-label="開いた2枚を閉じる">
+                <span>{CLICK}で閉じる</span>
+              </button>
+            )}
             {/* The end put away: its two buttons in the middle of the board, now empty. The game was
                 paid when its last pair was taken, so leaving by ← やめる or the tabs pays nothing more. */}
             {end && browsing && (

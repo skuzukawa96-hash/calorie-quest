@@ -974,7 +974,7 @@ pub struct LexiFinish {
     /// ふたりで対戦 against the computer: its level (easy / normal / hard); none against a person
     #[serde(default)]
     pub com: Option<String>,
-    /// ふたりで対戦: the pairs 先攻 (the person, against the computer) took
+    /// ふたりで対戦: the pairs 1P (the person, against the computer) took
     #[serde(default)]
     pub player_pairs: Option<i64>,
 }

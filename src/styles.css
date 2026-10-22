@@ -21,6 +21,19 @@
   --radius: 18px;
   --font: "Segoe UI", "Yu Gothic UI", "Meiryo", "Hiragino Sans", "Noto Sans JP", system-ui, sans-serif;
   --font-display: Georgia, "Times New Roman", "Yu Mincho", "Hiragino Mincho ProN", serif;
+  /* 丸ゴシック (LexiLink の対戦の名前・ペア数; @font-face below) */
+  --font-round: "M PLUS Rounded 1c", Meiryo, "Yu Gothic UI", sans-serif;
+}
+
+/* M PLUS Rounded 1c ExtraBold (SIL OFL 1.1, the npm package @fontsource/m-plus-rounded-1c), bundled
+   with the app so it shows offline: its Japanese file, which has the kana, the common kanji and the
+   Latin letters (a letter not in it falls back to Meiryo). */
+@font-face {
+  font-family: "M PLUS Rounded 1c";
+  font-style: normal;
+  font-weight: 800;
+  font-display: swap;
+  src: url("../node_modules/@fontsource/m-plus-rounded-1c/files/m-plus-rounded-1c-japanese-800-normal.woff2") format("woff2");
 }
 
 * {
@@ -4853,71 +4866,109 @@ button.wp-link.open {
   font-size: 13px;
   color: var(--choco);
 }
+/* 対戦: 1P's and 2P's names (丸ゴシック) at either end, over one gauge of the pairs taken */
 .lexi-versus {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px;
   margin-bottom: 12px;
 }
-.lexi-player {
-  border: 2px solid var(--line);
-  border-radius: 14px;
-  padding: 8px 16px;
-  background: #fff;
+.lexi-vs-top {
   display: flex;
   justify-content: space-between;
+  align-items: flex-end;
+  gap: 12px;
+  margin-bottom: 7px;
+}
+.lexi-vs-side {
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  transition: border-color 0.2s, background 0.2s, box-shadow 0.2s;
+  min-width: 0;
 }
-.lexi-player-name {
+/* 2P: its name at the right end, the badge and the お手つき to its left */
+.lexi-vs-side.p2 {
+  flex-direction: row-reverse;
+}
+.lexi-vs-name {
+  font-family: var(--font-round);
   font-weight: 800;
-  font-size: 17px;
+  font-size: 19px;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
 }
-.lexi-player.p1 .lexi-player-name {
+.lexi-vs-side.p1 .lexi-vs-name {
   color: #d9577f;
 }
-.lexi-player.p2 .lexi-player-name {
+.lexi-vs-side.p2 .lexi-vs-name {
   color: var(--sky);
 }
-.lexi-player.p1.turn {
-  border-color: #e9668b;
-  background: #fdeef2;
-  box-shadow: 0 0 0 3px #fadbe4;
-}
-.lexi-player.p2.turn {
-  border-color: #6f9fe0;
-  background: #eef4fd;
-  box-shadow: 0 0 0 3px #d9e6fa;
-}
+/* 番: always in its place (hidden off turn), so the お手つき beside it never moves */
 .lexi-turn-badge {
-  display: inline-block;
+  visibility: hidden;
+  font-family: var(--font-round);
   font-size: 11px;
   font-weight: 800;
   color: #fff;
   border-radius: 999px;
   padding: 1px 8px;
-  margin-left: 6px;
-  vertical-align: 2px;
+  margin: 0 6px;
 }
-.lexi-player.p1 .lexi-turn-badge {
+.lexi-turn-badge.on {
+  visibility: visible;
+}
+.lexi-vs-side.p1 .lexi-turn-badge {
   background: #e9668b;
 }
-.lexi-player.p2 .lexi-turn-badge {
+.lexi-vs-side.p2 .lexi-turn-badge {
   background: var(--sky);
 }
-.lexi-player-pts {
-  font-family: var(--font-display);
-  font-weight: 700;
-  font-size: 30px;
-  color: var(--choco);
-  line-height: 1;
-}
-.lexi-player-pts small {
-  font-family: var(--font);
-  font-size: 13px;
+.lexi-vs-sub {
+  font-size: 12px;
   color: var(--muted);
-  font-weight: 600;
-  margin-left: 2px;
+}
+.lexi-gauge {
+  position: relative;
+  display: flex;
+  height: 32px;
+  border: 2px solid #fff;
+  border-radius: 999px;
+  overflow: hidden;
+  box-shadow: 0 0 0 1.5px var(--line);
+}
+.lexi-gauge-fill {
+  height: 100%;
+  transition: width 0.4s ease;
+}
+.lexi-gauge-fill.p1 {
+  background: #ec5f8a;
+}
+.lexi-gauge-fill.p2 {
+  background: #3f86e4;
+}
+/* the middle: whoever is past it is ahead */
+.lexi-gauge-mid {
+  position: absolute;
+  left: 50%;
+  top: 3px;
+  bottom: 3px;
+  border-left: 2px dashed rgba(255, 255, 255, 0.85);
+}
+.lexi-gauge-count {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  font-family: var(--font-round);
+  font-weight: 800;
+  font-size: 19px;
+  line-height: 1;
+  color: #fff;
+  paint-order: stroke;
+  -webkit-text-stroke: 3px #b8345e;
+}
+.lexi-gauge-count.p1 {
+  left: 14px;
+}
+.lexi-gauge-count.p2 {
+  right: 14px;
+  -webkit-text-stroke-color: #2a62b0;
 }
 .lexi-board {
   position: relative;
@@ -4942,6 +4993,74 @@ button.wp-link.open {
 }
 .lexi-after .btn {
   box-shadow: var(--shadow);
+}
+/* ふたりで: who plays first, on the board for a moment before the first candy */
+.lexi-opener {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 2;
+  padding: 12px 28px;
+  border-radius: 999px;
+  background: #fff;
+  box-shadow: var(--shadow);
+  border: 2px solid var(--line);
+  font-size: 20px;
+  font-weight: 800;
+  color: var(--choco);
+  white-space: nowrap;
+  pointer-events: none;
+  animation: lexi-opener-pop 0.4s cubic-bezier(0.2, 1.4, 0.4, 1);
+}
+.lexi-opener span {
+  font-family: var(--font-round);
+}
+.lexi-opener .p1 {
+  color: #d9577f;
+}
+.lexi-opener .p2 {
+  color: var(--sky);
+}
+@keyframes lexi-opener-pop {
+  from {
+    transform: translate(-50%, -50%) scale(0.6);
+    opacity: 0;
+  }
+}
+/* 手動で閉じる: the miss held open; a click anywhere on the board wraps it again */
+.lexi-hold {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  border: none;
+  background: none;
+  border-radius: 16px;
+  cursor: pointer;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 0 0 6px;
+  font: inherit;
+}
+.lexi-hold span {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--choco-light);
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 2px 12px;
+}
+.lexi-hud-right {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+.switch-btn.lexi-hold-switch {
+  padding: 3px 10px 3px 5px;
+  font-size: 12px;
 }
 .lexi-candy {
   position: relative;
@@ -5315,6 +5434,16 @@ button.wp-link.open {
   }
   .lexi-word {
     --word-pad: 6px;
+  }
+  /* 対戦: two names across a phone (お手つき wraps under its name) */
+  .lexi-vs-name {
+    font-size: 16px;
+  }
+  .lexi-gauge {
+    height: 28px;
+  }
+  .lexi-gauge-count {
+    font-size: 17px;
   }
   /* LexiLink's ジャンル and 出題 chips, one line on a PC */
   .lexi-opts,

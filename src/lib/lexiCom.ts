@@ -1,4 +1,4 @@
-// LexiLink のコンピューター（ふたりで対戦の後攻）。
+// LexiLink のコンピューター（ふたりで対戦の 2P。先攻か後攻かは毎回ランダム）。
 //
 // It plays from what a person at the table could know, and nothing more: a card is shown to it
 // (`see`) only when it is turned face up, on either side's turn, and its choices are made from the

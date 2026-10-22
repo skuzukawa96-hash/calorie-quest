@@ -478,7 +478,7 @@ export const LEXI_GENRES: LexiGenre[] = ["random", "noun", "verb", "adjective", 
 
 /** The board and its kcal (mirrors lexilink.rs): ひとりで 3 a pair, お手つき free up to the third and
  * −1 each after, 10 for clearing the board; ふたりで 30 for a game played to the end, and against the
- * computer 20 / 30 / 45 for a win by its level, 10 for a loss or a draw. */
+ * computer 20 / 30 / 45 for a win by its level, 15 for a draw and 10 for a loss. */
 export const LEXI = {
   pairs: 10,
   pairKcal: 3,
@@ -487,6 +487,7 @@ export const LEXI = {
   clearKcal: 10,
   versusKcal: 30,
   comWinKcal: { easy: 20, normal: 30, hard: 45 } as Record<ComLevel, number>,
+  comDrawKcal: 15,
   comLoseKcal: 10,
 } as const;
 
@@ -496,9 +497,13 @@ export const lexiScore = (pairs: number, misses: number, cleared: boolean) =>
   pairs * LEXI.pairKcal - Math.max(0, misses - LEXI.freeMisses) * LEXI.missKcal + (cleared ? LEXI.clearKcal : 0);
 
 /** ふたりで: what a game adds (mirrors lexilink::finish): left part-way nothing; played to the end, 30
- * against a person, and against the computer its level's win or, lost or drawn, 10. */
-export const lexiVersusKcal = (com: ComLevel | null, playerPairs: number, cleared: boolean) =>
-  !cleared ? 0 : !com ? LEXI.versusKcal : playerPairs > LEXI.pairs - playerPairs ? LEXI.comWinKcal[com] : LEXI.comLoseKcal;
+ * against a person, and against the computer its level's win, 15 drawn or 10 lost. */
+export const lexiVersusKcal = (com: ComLevel | null, playerPairs: number, cleared: boolean) => {
+  if (!cleared) return 0;
+  if (!com) return LEXI.versusKcal;
+  const theirs = LEXI.pairs - playerPairs;
+  return playerPairs > theirs ? LEXI.comWinKcal[com] : playerPairs === theirs ? LEXI.comDrawKcal : LEXI.comLoseKcal;
+};
 
 /** ひとりで: what a game adds (mirrors lexilink::solo_kcal): a cleared game its score as it is, one left
  * part-way what it is above zero. */
@@ -534,7 +539,7 @@ export interface LexiFinish {
   cleared: boolean;
   /** ふたりで対戦 against the computer: its level */
   com?: ComLevel | null;
-  /** ふたりで対戦: the pairs 先攻 (the person, against the computer) took */
+  /** ふたりで対戦: the pairs 1P (the person, against the computer) took */
   playerPairs?: number;
 }
 
