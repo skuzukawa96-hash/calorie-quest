@@ -37,3 +37,19 @@ export function revealOnTouch(el: HTMLElement | null) {
   if (!touchScreen || !el) return;
   requestAnimationFrame(() => el.scrollIntoView({ behavior: "smooth", block: "nearest" }));
 }
+
+/**
+ * The lines of chips under `root` that slide sideways on a phone (`rows`, a selector): the chip
+ * picked in each scrolled into sight when it is out of it, as when 例文 was picked last time.
+ */
+export function revealPicked(root: HTMLElement | null, rows: string) {
+  if (!root) return;
+  for (const row of root.querySelectorAll<HTMLElement>(rows)) {
+    const on = row.querySelector<HTMLElement>(".active, .on");
+    if (!on || row.scrollWidth <= row.clientWidth) continue;
+    const r = row.getBoundingClientRect();
+    const c = on.getBoundingClientRect();
+    if (c.right > r.right - 28) row.scrollLeft += c.right - r.right + 40;
+    else if (c.left < r.left) row.scrollLeft -= r.left - c.left + 14;
+  }
+}

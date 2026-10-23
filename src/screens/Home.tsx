@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import CalorieBar from "../components/CalorieBar";
 import GoalAdder, { SNACK_GOALS, TASK_GOALS } from "../components/GoalAdder";
 import LexiLinkEntry from "../components/LexiLinkEntry";
@@ -9,6 +9,8 @@ import PencilIcon from "../components/PencilIcon";
 import WeightForm from "../components/WeightForm";
 import { api } from "../lib/api";
 import { playCrunch, playDone, playFanfare } from "../lib/sfx";
+import { useDietView } from "../lib/dietView";
+import { revealPicked, usePhoneWidth } from "../lib/touch";
 import {
   ALL_CATEGORIES,
   categoryIcon,
@@ -68,6 +70,33 @@ function saveStudyChoice(tier: TierChoice, category: string) {
   }
 }
 
+/** A phone shows one of the cards under the budget at a time, picked by the tabs under it. */
+type HomeTab = "goal" | "study" | "exam" | "lexi";
+const HOME_TABS: Array<{ id: HomeTab; label: string }> = [
+  { id: "goal", label: "目標" },
+  { id: "study", label: "学習" },
+  { id: "exam", label: "試験" },
+  { id: "lexi", label: "LexiLink" },
+];
+const HOME_TAB_KEY = "cq-home-tab";
+
+function loadHomeTab(): HomeTab {
+  try {
+    const kept = localStorage.getItem(HOME_TAB_KEY);
+    return HOME_TABS.find((t) => t.id === kept)?.id ?? "goal";
+  } catch {
+    return "goal";
+  }
+}
+
+function saveHomeTab(tab: HomeTab) {
+  try {
+    localStorage.setItem(HOME_TAB_KEY, tab);
+  } catch {
+    /* ignore */
+  }
+}
+
 /** 目標のお菓子 or, with ダイエット機能, 目標の課題: the goal card shows one, kept for the next time. */
 type GoalTab = "snacks" | "tasks";
 const GOAL_TAB_KEY = "cq-home-goal-tab";
@@ -122,9 +151,20 @@ export default function Home({
   const [busy, setBusy] = useState(false);
   const [adding, setAdding] = useState(false);
   const [goalTab, setGoalTab] = useState<GoalTab>(loadGoalTab);
+  const phone = usePhoneWidth();
+  const [homeTab, setHomeTab] = useState<HomeTab>(loadHomeTab);
+  const pickHomeTab = (t: HomeTab) => {
+    setHomeTab(t);
+    saveHomeTab(t);
+  };
+  /** whether a card is out: all of them on a PC, the tab's on a phone */
+  const shown = (t: HomeTab) => !phone || homeTab === t;
+  const studyCard = useRef<HTMLElement>(null);
   const { today, user, goalSnacks, goalTasks, eatenToday, doneToday, kcalRates, savings } = dash;
-  // The 課題 are there only with ダイエット機能 on; turned off, the card is the snacks' again.
-  const showTasks = user.dietMode && goalTab === "tasks";
+  const dietView = useDietView();
+  // The 課題 are there only with ダイエット機能 on; turned off, the card is the snacks' again. A phone
+  // follows the top bar's お菓子 / 課題 switch, a PC the card's own ⇄.
+  const showTasks = user.dietMode && (phone ? dietView === "tasks" : goalTab === "tasks");
   // A form open for one side is not left open on the other (by ⇄, or ダイエット機能 turned off in the top bar).
   useEffect(() => setAdding(false), [showTasks]);
   const switchGoals = () => {
@@ -186,6 +226,7 @@ export default function Home({
   // genres come in the row below.
   const partsOfSpeech = tier === "word" ? dash.partsOfSpeech.filter((p) => p.total > 0) : [];
   const grammarPoints = tier === "grammar" ? dash.grammarPoints.filter((p) => p.total > 0) : [];
+  const narrowing = partsOfSpeech.length > 0 || grammarPoints.length > 0;
   // If the selected genre, part of speech or 文法項目 has nothing in this tab, fall back to "all" silently.
   const effectiveCategory =
     visibleCategories.some((c) => c.name === category) ||
@@ -193,6 +234,11 @@ export default function Home({
     grammarPoints.some((p) => grammarPointCategory(p.point) === category)
       ? category
       : ALL_CATEGORIES;
+
+  // On a phone the tier and the part of speech picked last time are brought into their sliding lines.
+  useEffect(() => {
+    if (phone) revealPicked(studyCard.current, ".tier-tabs, .category-main");
+  }, [phone, homeTab, tier, effectiveCategory]);
 
   // How many questions each mode has for what is picked; a mode with none cannot be started.
   const modeTotals = useMemo(() => {
@@ -233,12 +279,15 @@ export default function Home({
         <div className="hero-top">
           <h1>今日のおやつ予算</h1>
           <p className="muted hero-lead">英語の問題を解くほど、今日食べていいお菓子のカロリーが増えます。</p>
+          {/* one line each on a PC (🔥 連続 3 日); a phone has three cells, the word over the figure */}
           <div className="hero-badges">
             <div className="badge streak" title="連続学習日数">
-              🔥 連続 {user.currentStreak} 日
+              <span className="badge-emoji">🔥 </span>
+              <span className="badge-label">連続</span> <span className="badge-value">{user.currentStreak} 日</span>
             </div>
             <div className="badge" title="累計学習日数">
-              📅 累計 {user.totalStudyDays} 日
+              <span className="badge-emoji">📅 </span>
+              <span className="badge-label">累計</span> <span className="badge-value">{user.totalStudyDays} 日</span>
             </div>
             {/* filled under its words as far as the savings have come toward a ticket, like a gauge */}
             <button
@@ -247,7 +296,16 @@ export default function Home({
               style={{ "--saved": `${Math.min(100, (savings.balance / savings.perTicket) * 100)}%` } as CSSProperties}
               title={`使わなかったカロリーは翌日に貯蓄され、${savings.perTicket.toLocaleString()} kcal でお菓子引換券1枚になります`}
             >
-              🐷 貯蓄 {savings.balance.toLocaleString()} / {savings.perTicket.toLocaleString()} kcal
+              <span className="badge-emoji">🐷 </span>
+              <span className="badge-label">貯蓄</span>{" "}
+              <span className="badge-value">
+                {savings.balance.toLocaleString()}
+                <span className="badge-of">
+                  {" "}
+                  / {savings.perTicket.toLocaleString()}
+                  <span className="badge-unit"> kcal</span>
+                </span>
+              </span>
             </button>
           </div>
           <div className="hero-tickets">
@@ -288,304 +346,407 @@ export default function Home({
         />
       </section>
 
-      <section className="card goal">
-        <div className="section-head">
-          <h2 className="title-with-switch">
-            {user.dietMode && (
-              <SwitchViewButton label={showTasks ? "目標のお菓子に切り替える" : "目標の課題に切り替える"} onClick={switchGoals} />
-            )}
-            {showTasks ? "目標の課題" : "目標のお菓子"}
-          </h2>
-          <div className="goal-head-right">
-            {/* today's weight, once a day here or in the 記録 (体重記録のデイリーボーナス) */}
-            {showTasks && (
-              <WeightForm
-                heightCm={user.heightCm ?? null}
-                today={dash.weightToday ?? null}
-                bonus={kcalRates.weightBonus}
-                noHeight="身長を「記録」の体重のグラフで入れると、ここで体重を記録できます"
-                onRecorded={onChanged}
-                toast={toast}
-              />
-            )}
-            <button className="btn-link" aria-expanded={adding} onClick={() => setAdding((a) => !a)}>
-              {adding ? "閉じる" : showTasks ? "＋ 課題追加" : "＋ 目標追加"}
+      {phone && (
+        <div className="home-tabs" role="tablist" aria-label="ホームの表示">
+          {HOME_TABS.map((t) => (
+            <button key={t.id} role="tab" aria-selected={homeTab === t.id} className={homeTab === t.id ? "active" : ""} onClick={() => pickHomeTab(t.id)}>
+              {t.label}
             </button>
-          </div>
+          ))}
         </div>
-        {showTasks ? (
-          <>
-            {adding && (
-              <GoalAdder
-                kind={TASK_GOALS}
-                items={dash.tasks}
-                goalIds={new Set(goalTasks.map((g) => g.id))}
-                onAdded={onChanged}
-                onClose={() => setAdding(false)}
-                toast={toast}
-              />
-            )}
-            {goalTasks.length > 0 ? (
-              <ul className="goal-list">
-                {goalTasks.map((t) => {
-                  const did = doneToday.includes(t.id);
-                  return (
-                    <li key={t.id} className={"goal-row task-row" + (did ? " eaten" : "")}>
-                      <span className="goal-icon">
-                        <ItemIcon icon={t.icon} />
-                      </span>
-                      <span className="goal-name" title={t.name}>
-                        {t.name}
-                        <span className="goal-kcal earned">+{t.calories} kcal</span>
-                        {did && <span className="pill eaten">✓ 今日やった</span>}
-                      </span>
-                      <div className="goal-actions">
-                        <DoneButton disabled={busy} onClick={() => void doTask(t)} />
-                        <DeleteButton label="目標から外す（課題一覧には残ります）" disabled={busy} onClick={() => void dropTask(t)} />
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
-            ) : (
-              !adding && (
-                <p className="muted goal-empty">
-                  目標の課題を決めると、ここからすぐ達成を記録できます（💪 を押すとカロリーがもらえます）。「＋ 課題追加」から、いくつでも登録できます。
-                </p>
-              )
-            )}
-          </>
-        ) : (
-          <>
-            {ticketMode && (
-              <p className="ticket-note">
-                🎟 引換券を使うお菓子の「引換券」を押してください。カロリーを使わずに食べられます
-                {goalSnacks.length === 0 ? "（目標のお菓子がないので、お菓子図鑑から使えます）" : "（目標にないお菓子はお菓子図鑑から）"}。
-              </p>
-            )}
-            {adding && (
-              <GoalAdder
-                kind={SNACK_GOALS}
-                items={dash.snacks}
-                goalIds={new Set(goalSnacks.map((g) => g.id))}
-                onAdded={onChanged}
-                onClose={() => setAdding(false)}
-                toast={toast}
-              />
-            )}
-            {goalSnacks.length > 0 ? (
-              <ul className="goal-list">
-                {goalSnacks.map((g) => {
-                  const remaining = Math.max(0, g.calories - budget);
-                  const ate = eatenToday.includes(g.id);
-                  const filled = Math.min(100, (Math.max(0, budget) / g.calories) * 100);
-                  // One line per goal: the word count leads, the other kinds of question are in the tooltip.
-                  const breakdown =
-                    `あと ${remaining} kcal（選択問題なら）：英単語 ${need(remaining, kcalRates.wordChoice)} 問、` +
-                    `複合語・慣用句 ${need(remaining, kcalRates.phraseChoice)} 問、` +
-                    `文法・フレーズ・例文 ${need(remaining, kcalRates.sentenceChoice)} 問`;
-                  return (
-                    <li key={g.id} className={"goal-row" + (ate ? " eaten" : "") + (remaining === 0 ? " reached" : "")}>
-                      <span className="goal-icon">{g.icon}</span>
-                      <span className="goal-name" title={g.name}>
-                        {g.name}
-                        <span className="goal-kcal">{g.calories} kcal</span>
-                        {ate && <span className="pill eaten">✓ 今日食べた</span>}
-                      </span>
-                      <span className="goal-meter" aria-hidden="true">
-                        <span style={{ width: `${filled}%` }} />
-                      </span>
-                      {remaining === 0 ? (
-                        <span className="goal-status reached">🎉 食べられます</span>
-                      ) : (
-                        <span className="goal-status" title={breakdown}>
-                          あと <b>{need(remaining, kcalRates.wordChoice)}</b> 問<span className="goal-status-kind">英単語</span>
-                        </span>
-                      )}
-                      <div className="goal-actions">
-                        <EatButton affordable={remaining === 0} disabled={busy} onClick={() => void eat(g)} />
-                        {ticketMode && (
-                          <button
-                            className="btn-small ticket"
-                            disabled={busy}
-                            title="お菓子引換券を1枚使って、カロリーを使わずに食べます"
-                            onClick={() => void eatWithTicket(g)}
-                          >
-                            🎟 引換券
-                          </button>
-                        )}
-                        <DeleteButton label="目標から外す（お菓子図鑑には残ります）" disabled={busy} onClick={() => void dropGoal(g)} />
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
-            ) : (
-              !adding && (
-                <p className="muted goal-empty">
-                  目標のお菓子を決めると「あと何問で食べられるか」が表示されます。「＋ 目標追加」から、いくつでも登録できます。
-                </p>
-              )
-            )}
-          </>
-        )}
-      </section>
+      )}
 
-      <section className="card">
-        <div className="section-head">
-          <h2>学習をはじめる</h2>
-          <div className="segmented">
-            {[...TIERS, "mixed" as const].map((t) => (
-              <button key={t} className={tier === t ? "active" : ""} onClick={() => setTier(t)}>
-                {TIER_LABEL[t]}
+      {shown("goal") && (
+        <section className="card goal">
+          <div className="section-head">
+            <h2 className="title-with-switch">
+              {user.dietMode && !phone && (
+                <SwitchViewButton label={showTasks ? "目標のお菓子に切り替える" : "目標の課題に切り替える"} onClick={switchGoals} />
+              )}
+              {showTasks ? "目標の課題" : "目標のお菓子"}
+            </h2>
+            <div className="goal-head-right">
+              {/* today's weight, once a day here or in the 記録 (体重記録のデイリーボーナス) */}
+              {showTasks && (
+                <WeightForm
+                  heightCm={user.heightCm ?? null}
+                  today={dash.weightToday ?? null}
+                  bonus={kcalRates.weightBonus}
+                  noHeight="身長を「記録」の体重のグラフで入れると、ここで体重を記録できます"
+                  onRecorded={onChanged}
+                  toast={toast}
+                />
+              )}
+              <button className="btn-link" aria-expanded={adding} onClick={() => setAdding((a) => !a)}>
+                {adding ? "閉じる" : showTasks ? "＋ 課題追加" : "＋ 目標追加"}
+              </button>
+            </div>
+          </div>
+          {showTasks ? (
+            <>
+              {adding && (
+                <GoalAdder
+                  kind={TASK_GOALS}
+                  items={dash.tasks}
+                  goalIds={new Set(goalTasks.map((g) => g.id))}
+                  onAdded={onChanged}
+                  onClose={() => setAdding(false)}
+                  toast={toast}
+                />
+              )}
+              {goalTasks.length > 0 ? (
+                <ul className="goal-list">
+                  {goalTasks.map((t) => {
+                    const did = doneToday.includes(t.id);
+                    return (
+                      <li key={t.id} className={"goal-row task-row" + (did ? " eaten" : "")}>
+                        <span className="goal-icon">
+                          <ItemIcon icon={t.icon} />
+                        </span>
+                        <span className="goal-name" title={t.name}>
+                          {t.name}
+                          <span className="goal-kcal earned">+{t.calories} kcal</span>
+                          {did && <span className="pill eaten">✓ 今日やった</span>}
+                        </span>
+                        <div className="goal-actions">
+                          <DoneButton disabled={busy} onClick={() => void doTask(t)} />
+                          <DeleteButton label="目標から外す（課題一覧には残ります）" disabled={busy} onClick={() => void dropTask(t)} />
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              ) : (
+                !adding && (
+                  <p className="muted goal-empty">
+                    目標の課題を決めると、ここからすぐ達成を記録できます（💪 を押すとカロリーがもらえます）。「＋ 課題追加」から、いくつでも登録できます。
+                  </p>
+                )
+              )}
+            </>
+          ) : (
+            <>
+              {ticketMode && (
+                <p className="ticket-note">
+                  🎟 引換券を使うお菓子の「引換券」を押してください。カロリーを使わずに食べられます
+                  {goalSnacks.length === 0 ? "（目標のお菓子がないので、お菓子図鑑から使えます）" : "（目標にないお菓子はお菓子図鑑から）"}。
+                </p>
+              )}
+              {adding && (
+                <GoalAdder
+                  kind={SNACK_GOALS}
+                  items={dash.snacks}
+                  goalIds={new Set(goalSnacks.map((g) => g.id))}
+                  onAdded={onChanged}
+                  onClose={() => setAdding(false)}
+                  toast={toast}
+                />
+              )}
+              {goalSnacks.length > 0 ? (
+                <ul className="goal-list">
+                  {goalSnacks.map((g) => {
+                    const remaining = Math.max(0, g.calories - budget);
+                    const ate = eatenToday.includes(g.id);
+                    const filled = Math.min(100, (Math.max(0, budget) / g.calories) * 100);
+                    // One line per goal: the word count leads, the other kinds of question are in the tooltip.
+                    const breakdown =
+                      `あと ${remaining} kcal（選択問題なら）：英単語 ${need(remaining, kcalRates.wordChoice)} 問、` +
+                      `複合語・慣用句 ${need(remaining, kcalRates.phraseChoice)} 問、` +
+                      `文法・フレーズ・例文 ${need(remaining, kcalRates.sentenceChoice)} 問`;
+                    return (
+                      <li key={g.id} className={"goal-row" + (ate ? " eaten" : "") + (remaining === 0 ? " reached" : "")}>
+                        <span className="goal-icon">{g.icon}</span>
+                        <span className="goal-name" title={g.name}>
+                          {g.name}
+                          <span className="goal-kcal">{g.calories} kcal</span>
+                          {ate && <span className="pill eaten">✓ 今日食べた</span>}
+                        </span>
+                        <span className="goal-meter" aria-hidden="true">
+                          <span style={{ width: `${filled}%` }} />
+                        </span>
+                        {remaining === 0 ? (
+                          <span className="goal-status reached">🎉 食べられます</span>
+                        ) : (
+                          <span className="goal-status" title={breakdown}>
+                            あと <b>{need(remaining, kcalRates.wordChoice)}</b> 問<span className="goal-status-kind">英単語</span>
+                          </span>
+                        )}
+                        <div className="goal-actions">
+                          <EatButton affordable={remaining === 0} disabled={busy} onClick={() => void eat(g)} />
+                          {ticketMode && (
+                            <button
+                              className="btn-small ticket"
+                              disabled={busy}
+                              title="お菓子引換券を1枚使って、カロリーを使わずに食べます"
+                              onClick={() => void eatWithTicket(g)}
+                            >
+                              🎟 引換券
+                            </button>
+                          )}
+                          <DeleteButton label="目標から外す（お菓子図鑑には残ります）" disabled={busy} onClick={() => void dropGoal(g)} />
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              ) : (
+                !adding && (
+                  <p className="muted goal-empty">
+                    目標のお菓子を決めると「あと何問で食べられるか」が表示されます。「＋ 目標追加」から、いくつでも登録できます。
+                  </p>
+                )
+              )}
+            </>
+          )}
+        </section>
+      )}
+
+      {shown("study") && (
+        <section className="card study-card" ref={studyCard}>
+          <div className="section-head">
+            <h2>学習をはじめる</h2>
+            {phone && <span className="label home-label">分類</span>}
+            <div className="segmented tier-tabs">
+              {[...TIERS, "mixed" as const].map((t) => (
+                <button key={t} className={tier === t ? "active" : ""} onClick={() => setTier(t)}>
+                  {TIER_LABEL[t]}
+                </button>
+              ))}
+            </div>
+          </div>
+          {/* On a phone, the line of すべて and the parts of speech (or 文法項目) only where there are
+              any: すべて alone is the genre list's すべてのジャンル. */}
+          {phone && narrowing && <span className="label home-label">{tier === "grammar" ? "文法項目" : "品詞"}</span>}
+          {(!phone || narrowing) && (
+            <div className="category-main" role="group" aria-label="絞り込み">
+              <button
+                className={"chip chip-main " + (effectiveCategory === ALL_CATEGORIES ? "active" : "")}
+                onClick={() => setCategory(ALL_CATEGORIES)}
+              >
+                すべて（{totalCount}）
+              </button>
+              {partsOfSpeech.map((p) => (
+                <button
+                  key={p.pos}
+                  className={"chip chip-main " + (effectiveCategory === posCategory(p.pos) ? "active" : "")}
+                  onClick={() => setCategory(posCategory(p.pos))}
+                >
+                  {POS_LABEL[p.pos]}（{p.total}）
+                </button>
+              ))}
+              {grammarPoints.map((p) => (
+                <button
+                  key={p.point}
+                  className={"chip chip-main " + (effectiveCategory === grammarPointCategory(p.point) ? "active" : "")}
+                  onClick={() => setCategory(grammarPointCategory(p.point))}
+                >
+                  {p.point}（{p.total}）
+                </button>
+              ))}
+            </div>
+          )}
+          {phone ? (
+            // A phone picks the genre from the list its own picker opens: 27 chips would be a screen of their own.
+            <label className="genre-select">
+              <span className="label">ジャンル</span>
+              <select
+                value={visibleCategories.some((c) => c.name === effectiveCategory) ? effectiveCategory : ALL_CATEGORIES}
+                onChange={(e) => setCategory(e.target.value)}
+              >
+                <option value={ALL_CATEGORIES}>すべてのジャンル（{visibleCategories.length}種）</option>
+                {visibleCategories.map((c) => (
+                  <option key={c.name} value={c.name}>
+                    {categoryIcon(c.name)} {c.name}（{countFor(c)}）
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : (
+            <div className="category-row category-genres" role="group" aria-label="ジャンル">
+              {visibleCategories.map((c) => (
+                <button
+                  key={c.name}
+                  className={"chip " + (effectiveCategory === c.name ? "active" : "")}
+                  onClick={() => setCategory(c.name)}
+                >
+                  {categoryIcon(c.name)} {c.name}（{countFor(c)}）
+                </button>
+              ))}
+            </div>
+          )}
+          <div className="mode-grid">
+            {MODES.map((m) => (
+              <button
+                key={m.mode}
+                className={"mode-card" + (modeTotals[m.mode] === 0 ? " empty" : "")}
+                disabled={modeTotals[m.mode] === 0}
+                title={modeTotals[m.mode] === 0 ? `この分類・ジャンルには${m.title}がありません` : undefined}
+                onClick={() => onStart(m.mode, tier, effectiveCategory)}
+              >
+                <div className="mode-head">
+                  <span className="mode-icon">{m.icon}</span>
+                  <span className="mode-title">{m.title}</span>
+                  <span className="mode-count">{modeTotals[m.mode].toLocaleString()}問</span>
+                </div>
+                <div className="mode-desc">
+                  <span>{m.desc[0]}</span>
+                  <span>{m.desc[1]}</span>
+                </div>
+                <div className="mode-cta">10問チャレンジ →</div>
               </button>
             ))}
           </div>
-        </div>
-        <div className="category-main" role="group" aria-label="絞り込み">
-          <button
-            className={"chip chip-main " + (effectiveCategory === ALL_CATEGORIES ? "active" : "")}
-            onClick={() => setCategory(ALL_CATEGORIES)}
-          >
-            すべて（{totalCount}）
-          </button>
-          {partsOfSpeech.map((p) => (
-            <button
-              key={p.pos}
-              className={"chip chip-main " + (effectiveCategory === posCategory(p.pos) ? "active" : "")}
-              onClick={() => setCategory(posCategory(p.pos))}
-            >
-              {POS_LABEL[p.pos]}（{p.total}）
-            </button>
-          ))}
-          {grammarPoints.map((p) => (
-            <button
-              key={p.point}
-              className={"chip chip-main " + (effectiveCategory === grammarPointCategory(p.point) ? "active" : "")}
-              onClick={() => setCategory(grammarPointCategory(p.point))}
-            >
-              {p.point}（{p.total}）
-            </button>
-          ))}
-        </div>
-        <div className="category-row category-genres" role="group" aria-label="ジャンル">
-          {visibleCategories.map((c) => (
-            <button
-              key={c.name}
-              className={"chip " + (effectiveCategory === c.name ? "active" : "")}
-              onClick={() => setCategory(c.name)}
-            >
-              {categoryIcon(c.name)} {c.name}（{countFor(c)}）
-            </button>
-          ))}
-        </div>
-        <div className="mode-grid">
-          {MODES.map((m) => (
-            <button
-              key={m.mode}
-              className={"mode-card" + (modeTotals[m.mode] === 0 ? " empty" : "")}
-              disabled={modeTotals[m.mode] === 0}
-              title={modeTotals[m.mode] === 0 ? `この分類・ジャンルには${m.title}がありません` : undefined}
-              onClick={() => onStart(m.mode, tier, effectiveCategory)}
-            >
-              <div className="mode-head">
-                <span className="mode-icon">{m.icon}</span>
-                <span className="mode-title">{m.title}</span>
-                <span className="mode-count">{modeTotals[m.mode].toLocaleString()}問</span>
+          {phone ? (
+            <div className="review-row">
+              <div>
+                <strong>今日の復習 {dash.dueReviewCount} 問</strong>
+                <div className="muted small">
+                  {dash.dueReviewCount > 0 ? `正解でカロリー ×${kcalRates.reviewMultiplier}` : "間違えた問題は、翌日ここに出ます"}
+                </div>
               </div>
-              <div className="mode-desc">
-                <span>{m.desc[0]}</span>
-                <span>{m.desc[1]}</span>
-              </div>
-              <div className="mode-cta">10問チャレンジ →</div>
-            </button>
-          ))}
-        </div>
-        <div className="review-row">
-          <div>
-            <strong>🔁 復習</strong>{" "}
-            {dash.dueReviewCount > 0 ? (
-              <span>
-                今日の復習が <b>{dash.dueReviewCount} 問</b> あります。間違えたときと同じ形式で出題され、正解でカロリー{" "}
-                <b>×{kcalRates.reviewMultiplier}</b>！
-                <span className="muted small review-rule">
-                  間違えた復習は正解するまで今日の復習に残り、残った分だけ明日に繰り越します（{kcalRates.staleReviewDays}日を過ぎると通常の出題に戻ります）。
-                </span>
-              </span>
-            ) : (
-              <span className="muted">今日の復習はありません。間違えた問題は忘れる前に自動で再出題されます。</span>
-            )}
-          </div>
-          {dash.dueReviewCount > 0 && (
-            <button className="btn" onClick={() => onStart("review", "mixed", ALL_CATEGORIES)}>
-              復習をはじめる
-            </button>
-          )}
-        </div>
-      </section>
-
-      <section className="card exam-card">
-        <div className="section-head">
-          <h2>📝 試験</h2>
-          <span className="muted small">
-            TOEIC形式・{dash.exam.questionCount}問・正答率{dash.exam.passPercent}%以上で合格
-          </span>
-        </div>
-        <p className="muted exam-intro">
-          応答問題（リスニング）→ 短文穴埋め → 長文穴埋め → 読解問題の順に出題されます。
-          <br />
-          合格すると難易度に応じたカロリー、不合格でも難易度に応じた挑戦ボーナスがもらえます（何回受けてももらえます）。
-        </p>
-        <div className="mode-grid exam-grid">
-          {dash.exam.levels.map((l) => {
-            const best = l.bestCorrect !== null && l.bestTotal ? `${l.bestCorrect} / ${l.bestTotal}` : null;
-            return (
-              <button key={l.level} className="mode-card exam-level" onClick={() => onExam(l.level)}>
-                <div className="mode-head">
-                  <span className="mode-title">{l.label}</span>
-                  {/* Today's pass only: the mark is gone the next day. */}
-                  {l.passedToday && <span className="pill mastered">✓ 合格</span>}
-                  {l.suspended && (
-                    <span className="pill suspended" title="中断した試験があります。押すと続きから再開するか聞かれます">
-                      ⏸ 中断中 {l.suspended.answered}/{l.suspended.total}
+              {dash.dueReviewCount > 0 && (
+                <button className="btn" onClick={() => onStart("review", "mixed", ALL_CATEGORIES)}>
+                  はじめる
+                </button>
+              )}
+            </div>
+          ) : (
+            <div className="review-row">
+              <div>
+                <strong>🔁 復習</strong>{" "}
+                {dash.dueReviewCount > 0 ? (
+                  <span>
+                    今日の復習が <b>{dash.dueReviewCount} 問</b> あります。間違えたときと同じ形式で出題され、正解でカロリー{" "}
+                    <b>×{kcalRates.reviewMultiplier}</b>！
+                    <span className="muted small review-rule">
+                      間違えた復習は正解するまで今日の復習に残り、残った分だけ明日に繰り越します（{kcalRates.staleReviewDays}日を過ぎると通常の出題に戻ります）。
                     </span>
-                  )}
-                </div>
-                <div className="mode-desc">
-                  <span>{EXAM_DESC[l.level][0]}</span>
-                  <span>{EXAM_DESC[l.level][1]}</span>
-                </div>
-                <div className="exam-level-foot">
-                  <span className="exam-reward" title={`不合格でも挑戦ボーナス +${l.effort} kcal`}>
-                    合格 +{l.reward} kcal<span className="exam-effort">・不合格 +{l.effort}</span>
                   </span>
-                  <span className="muted">{best ? `ベスト ${best}` : "未受験"}</span>
-                </div>
-                <div className="mode-cta">{dash.exam.questionCount}問に挑戦 →</div>
+                ) : (
+                  <span className="muted">今日の復習はありません。間違えた問題は忘れる前に自動で再出題されます。</span>
+                )}
+              </div>
+              {dash.dueReviewCount > 0 && (
+                <button className="btn" onClick={() => onStart("review", "mixed", ALL_CATEGORIES)}>
+                  復習をはじめる
+                </button>
+              )}
+            </div>
+          )}
+        </section>
+      )}
+
+      {shown("exam") && phone && (
+        // A phone: the levels as rows (what they pay and the best score), and their review under them
+        <section className="card exam-card exam-rows">
+          <p className="muted exam-intro">
+            TOEIC形式の{dash.exam.questionCount}問。{dash.exam.passPercent}%以上で合格、不合格でも挑戦ボーナスがもらえます。
+          </p>
+          {dash.exam.levels.map((l) => {
+            const best = l.bestCorrect !== null && l.bestTotal ? `ベスト ${l.bestCorrect} / ${l.bestTotal}` : "未受験";
+            return (
+              <button key={l.level} className="exam-row" onClick={() => onExam(l.level)}>
+                <span className="exam-row-main">
+                  <span className="exam-row-title">
+                    {l.label}
+                    {l.passedToday && <span className="pill mastered">✓ 合格</span>}
+                    {l.suspended && (
+                      <span className="pill suspended">
+                        ⏸ 中断中 {l.suspended.answered}/{l.suspended.total}
+                      </span>
+                    )}
+                  </span>
+                  <span className="exam-row-reward">
+                    <b>合格 +{l.reward}</b> <span className="muted">不合格 +{l.effort}</span>
+                  </span>
+                </span>
+                <span className="muted small exam-row-best">{best}</span>
+                <span className="exam-row-go" aria-hidden="true">
+                  ›
+                </span>
               </button>
             );
           })}
-        </div>
-        <div className="review-row">
-          <div>
-            <strong>🔁 試験の復習</strong>{" "}
-            {dash.exam.reviewCount > 0 ? (
-              <span>
-                試験で間違えた問題が <b>{dash.exam.reviewCount} 問</b> あります。正解すると1問 <b>+{dash.exam.reviewKcal} kcal</b>、復習から外れます。
-              </span>
-            ) : (
-              <span className="muted">試験で間違えた問題は、ここから復習できます（「学習をはじめる」の復習とは別です）。</span>
+          <div className="review-row">
+            <div>
+              <strong>試験の復習 {dash.exam.reviewCount} 問</strong>
+              <div className="muted small">
+                {dash.exam.reviewCount > 0 ? `正解すると1問 +${dash.exam.reviewKcal} kcal` : "試験で間違えた問題がここに入ります"}
+              </div>
+            </div>
+            {dash.exam.reviewCount > 0 && (
+              <button className="btn" onClick={onExamReview}>
+                はじめる
+              </button>
             )}
           </div>
-          {dash.exam.reviewCount > 0 && (
-            <button className="btn" onClick={onExamReview}>
-              復習をはじめる
-            </button>
-          )}
-        </div>
-      </section>
+        </section>
+      )}
 
-      <LexiLinkEntry onStart={onLexiLink} />
+      {!phone && (
+        <section className="card exam-card">
+          <div className="section-head">
+            <h2>📝 試験</h2>
+            <span className="muted small">
+              TOEIC形式・{dash.exam.questionCount}問・正答率{dash.exam.passPercent}%以上で合格
+            </span>
+          </div>
+          <p className="muted exam-intro">
+            応答問題（リスニング）→ 短文穴埋め → 長文穴埋め → 読解問題の順に出題されます。
+            <br />
+            合格すると難易度に応じたカロリー、不合格でも難易度に応じた挑戦ボーナスがもらえます（何回受けてももらえます）。
+          </p>
+          <div className="mode-grid exam-grid">
+            {dash.exam.levels.map((l) => {
+              const best = l.bestCorrect !== null && l.bestTotal ? `${l.bestCorrect} / ${l.bestTotal}` : null;
+              return (
+                <button key={l.level} className="mode-card exam-level" onClick={() => onExam(l.level)}>
+                  <div className="mode-head">
+                    <span className="mode-title">{l.label}</span>
+                    {/* Today's pass only: the mark is gone the next day. */}
+                    {l.passedToday && <span className="pill mastered">✓ 合格</span>}
+                    {l.suspended && (
+                      <span className="pill suspended" title="中断した試験があります。押すと続きから再開するか聞かれます">
+                        ⏸ 中断中 {l.suspended.answered}/{l.suspended.total}
+                      </span>
+                    )}
+                  </div>
+                  <div className="mode-desc">
+                    <span>{EXAM_DESC[l.level][0]}</span>
+                    <span>{EXAM_DESC[l.level][1]}</span>
+                  </div>
+                  <div className="exam-level-foot">
+                    <span className="exam-reward" title={`不合格でも挑戦ボーナス +${l.effort} kcal`}>
+                      合格 +{l.reward} kcal<span className="exam-effort">・不合格 +{l.effort}</span>
+                    </span>
+                    <span className="muted">{best ? `ベスト ${best}` : "未受験"}</span>
+                  </div>
+                  <div className="mode-cta">{dash.exam.questionCount}問に挑戦 →</div>
+                </button>
+              );
+            })}
+          </div>
+          <div className="review-row">
+            <div>
+              <strong>🔁 試験の復習</strong>{" "}
+              {dash.exam.reviewCount > 0 ? (
+                <span>
+                  試験で間違えた問題が <b>{dash.exam.reviewCount} 問</b> あります。正解すると1問 <b>+{dash.exam.reviewKcal} kcal</b>、復習から外れます。
+                </span>
+              ) : (
+                <span className="muted">試験で間違えた問題は、ここから復習できます（「学習をはじめる」の復習とは別です）。</span>
+              )}
+            </div>
+            {dash.exam.reviewCount > 0 && (
+              <button className="btn" onClick={onExamReview}>
+                復習をはじめる
+              </button>
+            )}
+          </div>
+        </section>
+      )}
+
+      {shown("lexi") && <LexiLinkEntry onStart={onLexiLink} />}
     </div>
   );
 }

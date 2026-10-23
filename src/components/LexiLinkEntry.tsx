@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { COM_LEVEL_ORDER, COM_LEVELS } from "../lib/lexiCom";
 import { LEXI, LEXI_GENRES, LEXI_MODES, type LexiMode } from "../types";
 import { LEXI_GENRE_LABEL, type LexiConfig } from "../screens/LexiLink";
+import { revealPicked, usePhoneWidth } from "../lib/touch";
 
 const KEY = "cq-lexilink";
 const DEFAULT: LexiConfig = { mode: "match", genre: "random", preferLearned: false, players: 1, names: ["プレイヤー1", "プレイヤー2"], com: null };
@@ -73,6 +74,12 @@ function Picture({ kind }: { kind: "match" | "opposites" | "one" | "two" }) {
  */
 export default function LexiLinkEntry({ onStart }: { onStart: (config: LexiConfig) => void }) {
   const [config, setConfig] = useState<LexiConfig>(loadConfig);
+  const phone = usePhoneWidth();
+  const card = useRef<HTMLElement>(null);
+  // a phone: the genre picked (副詞, at the end) brought into its sliding line
+  useEffect(() => {
+    if (phone) revealPicked(card.current, ".lexi-chips");
+  }, [phone, config.genre, config.com]);
   useEffect(() => {
     try {
       localStorage.setItem(KEY, JSON.stringify(config));
@@ -109,7 +116,7 @@ export default function LexiLinkEntry({ onStart }: { onStart: (config: LexiConfi
     </button>
   );
   return (
-    <section className="card lexi-entry">
+    <section className="card lexi-entry" ref={card}>
       <div className="section-head">
         <h2>🍬 LexiLink</h2>
         <span className="muted small">英単語の神経衰弱。同じペアの2枚をめくって取ろう</span>
@@ -134,6 +141,7 @@ export default function LexiLinkEntry({ onStart }: { onStart: (config: LexiConfi
       </div>
       {config.players === 2 && (
         <div className="lexi-names">
+          {phone && <span className="lexi-opt-label lexi-names-label">対戦の設定</span>}
           {([0, 1] as const).map((who) => (
             <label key={who}>
               {who === 0 ? "1P" : "2P"}
@@ -150,11 +158,14 @@ export default function LexiLinkEntry({ onStart }: { onStart: (config: LexiConfi
             <input type="checkbox" checked={config.com !== null} onChange={(e) => setCom(e.target.checked)} />
             COM
           </label>
+          {config.com && phone && <span className="lexi-opt-label lexi-level-label">COM の強さ</span>}
           {config.com && (
             <span className="lexi-chips">
               {COM_LEVEL_ORDER.map((l) => chip(config.com === l, COM_LEVELS[l].label, () => set({ com: l })))}
             </span>
           )}
+          {/* no tooltip to say what the box is for on a phone */}
+          {!config.com && phone && <span className="muted small lexi-com-hint">COM にチェックすると、2P をコンピューターにできます</span>}
         </div>
       )}
       <div className="lexi-go">

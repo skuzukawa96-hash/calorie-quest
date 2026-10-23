@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from "react";
-import { DeleteButton, EditButton, GoalButton } from "./IconButtons";
+import { usePhoneWidth } from "../lib/touch";
+import { DeleteButton, EditButton, GoalButton, MoreButton } from "./IconButtons";
 import { iconLabel, ItemIcon } from "./ItemIcon";
 
 /**
@@ -172,6 +173,19 @@ export function BookCard<T extends BookItem>({
   const [editing, setEditing] = useState<{ id: number; name: string; calories: string; icon: string } | null>(null);
   /** the row whose × asks "削除する / やめる" */
   const [deleting, setDeleting] = useState<number | null>(null);
+  /** a phone: the row whose ⋯ has its pencil and × out under it */
+  const [menu, setMenu] = useState<number | null>(null);
+  const phone = usePhoneWidth();
+  const startEdit = (s: T) => {
+    setMenu(null);
+    setDeleting(null);
+    setEditing(editing?.id === s.id ? null : { id: s.id, name: s.name, calories: String(s.calories), icon: s.icon });
+  };
+  const startDelete = (id: number) => {
+    setMenu(null);
+    setEditing(null);
+    setDeleting(deleting === id ? null : id);
+  };
 
   const sorts = sortsOf(words);
   const chooseSort = (key: SortKey) => {
@@ -200,26 +214,49 @@ export function BookCard<T extends BookItem>({
           {switcher}
           <h2>{title}</h2>
         </div>
-        <div className="sort-bar" role="group" aria-label="並び替え">
-          <span className="muted small">並び替え</span>
-          <div className="segmented">
-            {sorts.map((s) => {
-              const on = sort.key === s.key;
-              const flipped = sort.dir === "asc" ? "desc" : "asc";
-              return (
-                <button
-                  key={s.key}
-                  className={on ? "active" : ""}
-                  title={on ? `${s.dirs[sort.dir]}（もう一度押すと${s.dirs[flipped]}）` : `${s.label}順（${s.dirs[s.first]}）`}
-                  onClick={() => chooseSort(s.key)}
-                >
-                  {s.label}
-                  {on && (sort.dir === "asc" ? " ↑" : " ↓")}
-                </button>
-              );
-            })}
+        {phone ? (
+          // a phone picks the order and its direction from one list, beside the heading
+          <label className="sort-select">
+            <select
+              aria-label="並び替え"
+              value={`${sort.key}:${sort.dir}`}
+              onChange={(e) => {
+                const [key, dir] = e.target.value.split(":") as [SortKey, SortDir];
+                setSort({ key, dir });
+                saveSort(sortStorage, { key, dir });
+              }}
+            >
+              {sorts.flatMap((s) =>
+                ([s.first, s.first === "asc" ? "desc" : "asc"] as SortDir[]).map((dir) => (
+                  <option key={`${s.key}:${dir}`} value={`${s.key}:${dir}`}>
+                    {s.label}・{s.dirs[dir]}
+                  </option>
+                )),
+              )}
+            </select>
+          </label>
+        ) : (
+          <div className="sort-bar" role="group" aria-label="並び替え">
+            <span className="muted small">並び替え</span>
+            <div className="segmented">
+              {sorts.map((s) => {
+                const on = sort.key === s.key;
+                const flipped = sort.dir === "asc" ? "desc" : "asc";
+                return (
+                  <button
+                    key={s.key}
+                    className={on ? "active" : ""}
+                    title={on ? `${s.dirs[sort.dir]}（もう一度押すと${s.dirs[flipped]}）` : `${s.label}順（${s.dirs[s.first]}）`}
+                    onClick={() => chooseSort(s.key)}
+                  >
+                    {s.label}
+                    {on && (sort.dir === "asc" ? " ↑" : " ↓")}
+                  </button>
+                );
+              })}
+            </div>
           </div>
-        </div>
+        )}
       </div>
       <p className="muted small">{intro}</p>
       {note}
@@ -243,24 +280,31 @@ export function BookCard<T extends BookItem>({
               <span className="snack-row-kcal">{words.kcal(s.calories)}</span>
               <span className="snack-row-actions">
                 {actions(s)}
-                <EditButton
-                  label="名前・カロリー・アイコンを修正"
-                  disabled={busy}
-                  onClick={() => {
-                    setDeleting(null);
-                    setEditing(edit ? null : { id: s.id, name: s.name, calories: String(s.calories), icon: s.icon });
-                  }}
-                />
-                <DeleteButton
-                  label={`${words.book}から削除`}
-                  disabled={busy}
-                  onClick={() => {
-                    setEditing(null);
-                    setDeleting(deleting === s.id ? null : s.id);
-                  }}
-                />
+                {phone ? (
+                  <MoreButton
+                    label="修正・削除"
+                    open={menu === s.id}
+                    disabled={busy}
+                    onClick={() => setMenu(menu === s.id ? null : s.id)}
+                  />
+                ) : (
+                  <>
+                    <EditButton label="名前・カロリー・アイコンを修正" disabled={busy} onClick={() => startEdit(s)} />
+                    <DeleteButton label={`${words.book}から削除`} disabled={busy} onClick={() => startDelete(s.id)} />
+                  </>
+                )}
               </span>
             </li>,
+            phone && menu === s.id && (
+              <li key={`${s.id}-menu`} className="snack-menu">
+                <button className="btn-small" disabled={busy} onClick={() => startEdit(s)}>
+                  ✎ 名前・カロリー・アイコンを直す
+                </button>
+                <button className="btn-small danger-text" disabled={busy} onClick={() => startDelete(s.id)}>
+                  × 削除
+                </button>
+              </li>
+            ),
             deleting === s.id && (
               <li key={`${s.id}-delete`} className="snack-confirm">
                 <span>

@@ -6,6 +6,8 @@ import { api } from "../lib/api";
 import { SNACK_ICONS } from "../lib/snackIcons";
 import { DEFAULT_TASK_ICON, TASK_ICONS } from "../lib/taskIcons";
 import { playCrunch, playDone } from "../lib/sfx";
+import { useDietView } from "../lib/dietView";
+import { usePhoneWidth } from "../lib/touch";
 import { remainingKcal, type ConsumptionEntry, type Dashboard, type Snack, type Task, type TaskEntry } from "../types";
 
 interface Props {
@@ -122,6 +124,7 @@ export default function Snacks({ dash, onChanged, ticketMode, onTicketMode, toas
   /** the stack of today's log opened to undo its records one by one */
   const [openStack, setOpenStack] = useState<string | null>(null);
   const [book, setBook] = useState<Book>(loadBook);
+  const phone = usePhoneWidth();
 
   const reload = useCallback(async () => {
     const [s, e, t, d] = await Promise.all([api.listSnacks(), api.getTodayConsumption(), api.listTasks(), api.getTodayTasks()]);
@@ -138,8 +141,10 @@ export default function Snacks({ dash, onChanged, ticketMode, onTicketMode, toas
   }, [reload, toast, day]);
 
   const diet = dash.user.dietMode;
-  // The 課題一覧 is there only with ダイエット機能 on; turned off, the card is the snacks' again.
-  const showTasks = diet && book === "tasks";
+  const dietView = useDietView();
+  // The 課題一覧 is there only with ダイエット機能 on; turned off, the card is the snacks' again. A
+  // phone follows the top bar's お菓子 / 課題 switch, a PC the ⇄ of the headings.
+  const showTasks = diet && (phone ? dietView === "tasks" : book === "tasks");
   const switchBook = () => {
     const next: Book = showTasks ? "snacks" : "tasks";
     setBook(next);
@@ -151,7 +156,7 @@ export default function Snacks({ dash, onChanged, ticketMode, onTicketMode, toas
   };
   // Before the history's heading and the list's (on the left, so it stays put as the heading
   // changes): either switches both.
-  const switcher = diet && (
+  const switcher = diet && !phone && (
     <SwitchViewButton
       label={showTasks ? "お菓子（食べた記録と図鑑）に切り替える" : "課題（達成した記録と課題一覧）に切り替える"}
       onClick={switchBook}
@@ -197,7 +202,8 @@ export default function Snacks({ dash, onChanged, ticketMode, onTicketMode, toas
               </span>
             )}
             <span className={budget < 0 ? "negative" : "positive"}>
-              残り <b>{budget}</b> kcal
+              残り <b>{budget}</b>
+              <span className="ledger-unit"> kcal</span>
             </span>
           </div>
         </div>
@@ -224,10 +230,16 @@ export default function Snacks({ dash, onChanged, ticketMode, onTicketMode, toas
           <div className="savings-track">
             <div style={{ width: `${Math.min(100, (savings.balance / savings.perTicket) * 100)}%` }} />
           </div>
-          <div className="muted small">
-            今日使わなかったカロリー（今は {Math.max(0, budget)} kcal）は、明日になると貯蓄に入ります。マイナスで終わった日は、そのマイナスが次の日に持ち越されます。
-            {savings.perTicket.toLocaleString()} kcal たまるごとに、好きなお菓子をカロリーを使わずに1つ食べられる引換券になります。
-          </div>
+          {phone ? (
+            <div className="muted small">
+              使わなかったカロリーは明日の貯蓄に入り、{savings.perTicket.toLocaleString()} kcal でお菓子引換券1枚になります。
+            </div>
+          ) : (
+            <div className="muted small">
+              今日使わなかったカロリー（今は {Math.max(0, budget)} kcal）は、明日になると貯蓄に入ります。マイナスで終わった日は、そのマイナスが次の日に持ち越されます。
+              {savings.perTicket.toLocaleString()} kcal たまるごとに、好きなお菓子をカロリーを使わずに1つ食べられる引換券になります。
+            </div>
+          )}
         </div>
         {diet && (
           <div className="log-head title-with-switch">
@@ -303,13 +315,22 @@ export default function Snacks({ dash, onChanged, ticketMode, onTicketMode, toas
             }
             switcher={switcher}
             intro={
-              <>
-                💪 を押すと達成になり、書いてあるカロリーがもらえます（遊び方モードの倍率は掛かりません。取り消しは上の家計簿から）。
-                <span className="inline-heart">
-                  <Heart on={false} />
-                </span>{" "}
-                を押すと目標になり、ホームの「目標の課題」からも達成を記録できます。鉛筆で修正したり、× で削除したりもできます。
-              </>
+              phone ? (
+                <>
+                  <span className="inline-heart">
+                    <Heart on={false} />
+                  </span>{" "}
+                  で目標に入れる・力こぶで達成を記録・⋯ で直す・消す（取り消しは上の家計簿から）
+                </>
+              ) : (
+                <>
+                  💪 を押すと達成になり、書いてあるカロリーがもらえます（遊び方モードの倍率は掛かりません。取り消しは上の家計簿から）。
+                  <span className="inline-heart">
+                    <Heart on={false} />
+                  </span>{" "}
+                  を押すと目標になり、ホームの「目標の課題」からも達成を記録できます。鉛筆で修正したり、× で削除したりもできます。
+                </>
+              )
             }
             items={tasks}
             words={TASK_WORDS}
@@ -363,12 +384,21 @@ export default function Snacks({ dash, onChanged, ticketMode, onTicketMode, toas
             }
             switcher={switcher}
             intro={
-              <>
-                <span className="inline-heart">
-                  <Heart on={false} />
-                </span>{" "}
-                を押すと目標になり、ホームに「あと何問で食べられるか」が表示されます（いくつでも登録できます）。鉛筆で名前・カロリー・アイコンを修正したり、× で削除したりもできます。
-              </>
+              phone ? (
+                <>
+                  <span className="inline-heart">
+                    <Heart on={false} />
+                  </span>{" "}
+                  で目標に入れる・⋯ で直す・消す。グレーのナイフとフォークは今日の残りを超えるお菓子（押せば記録はできます）
+                </>
+              ) : (
+                <>
+                  <span className="inline-heart">
+                    <Heart on={false} />
+                  </span>{" "}
+                  を押すと目標になり、ホームに「あと何問で食べられるか」が表示されます（いくつでも登録できます）。鉛筆で名前・カロリー・アイコンを修正したり、× で削除したりもできます。
+                </>
+              )
             }
             note={
               showTickets && <p className="ticket-note">🎟 引換券を使うお菓子の「引換券」を押してください。カロリーを使わずに食べられます。</p>

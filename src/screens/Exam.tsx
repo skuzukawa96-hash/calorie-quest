@@ -1,6 +1,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import FavoriteKcal from "../components/FavoriteKcal";
 import FavoriteStar, { useFavorites } from "../components/FavoriteStar";
+import { MoreButton } from "../components/IconButtons";
 import GlossedText from "../components/GlossedText";
 import { PlayModeTag } from "../components/PlayModeSwitch";
 import WordNotesPanel from "../components/WordNotes";
@@ -113,6 +114,8 @@ export default function Exam({ kind, level, favorites, overview, playMode, onExi
   const [remaining, setRemaining] = useState<number | null>(null);
   const [dict, setDict] = useState<Dictionary | null>(loadedDictionary);
   const [gloss, setGloss] = useState(loadGloss);
+  /** a phone keeps the 単語の意味 switch behind the ⋯ of its top line */
+  const [optionsOpen, setOptionsOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   /** an exam of this level left part-way: asked whether to go on with it before anything else */
   const [resume, setResume] = useState<ExamProgress | null>(null);
@@ -410,10 +413,10 @@ export default function Exam({ kind, level, favorites, overview, playMode, onExi
 
   return (
     <div className="screen study exam">
-      <div className="study-head">
+      <div className={"study-head" + (optionsOpen ? " options-open" : "")}>
         {kind === "exam" ? (
           <button
-            className="btn-link"
+            className="btn-link study-exit"
             title="ここまでの回答を残して中断します。次にこの試験を始めるとき、続きから再開できます"
             onClick={() => {
               if (Object.keys(answered).length) toast("試験を中断しました。次にこの試験を始めるとき、続きから再開できます");
@@ -423,7 +426,7 @@ export default function Exam({ kind, level, favorites, overview, playMode, onExi
             ← 中断する
           </button>
         ) : (
-          <button className="btn-link" onClick={onExit}>
+          <button className="btn-link study-exit" onClick={onExit}>
             ← やめる
           </button>
         )}
@@ -433,14 +436,17 @@ export default function Exam({ kind, level, favorites, overview, playMode, onExi
             Part {"ABCD"[partIndex]} {EXAM_PART_LABEL[current.part]}
           </span>
           {kind === "review" && <span className="pill review">正解で +{overview.reviewKcal} kcal</span>}
-          <button
-            type="button"
-            className={"pill toggle " + (gloss ? "on" : "")}
-            onClick={toggleGloss}
-            title="英文の単語にカーソルを合わせると意味が出ます"
-          >
-            🔤 単語の意味 {gloss ? "ON" : "OFF"}
-          </button>
+          {/* a phone: behind the ⋯ of the top line, as in 学習 */}
+          <div className="study-toggles">
+            <button
+              type="button"
+              className={"pill toggle " + (gloss ? "on" : "")}
+              onClick={toggleGloss}
+              title="英文の単語にカーソルを合わせると意味が出ます"
+            >
+              🔤 単語の意味 {gloss ? "ON" : "OFF"}
+            </button>
+          </div>
         </div>
         <div className="study-progress">
           {idx + 1} / {questions.length}
@@ -448,6 +454,7 @@ export default function Exam({ kind, level, favorites, overview, playMode, onExi
             <div style={{ width: `${((idx + (mine ? 1 : 0)) / questions.length) * 100}%` }} />
           </div>
         </div>
+        <MoreButton label="単語の意味の設定" open={optionsOpen} onClick={() => setOptionsOpen((o) => !o)} />
       </div>
 
       <div className="card question-card" key={current.id}>
@@ -520,9 +527,11 @@ export default function Exam({ kind, level, favorites, overview, playMode, onExi
                   <div className="muted">この問題は試験の復習に残ります。</div>
                 ) : null)}
             </div>
-            <button className="btn btn-primary" onClick={next} disabled={busy} autoFocus>
-              {idx + 1 >= questions.length ? (kind === "exam" ? "採点する" : "結果を見る") : withEnter("次へ")}
-            </button>
+            <div className="next-bar">
+              <button className="btn btn-primary" onClick={next} disabled={busy} autoFocus>
+                {idx + 1 >= questions.length ? (kind === "exam" ? "採点する" : "結果を見る") : withEnter("次へ")}
+              </button>
+            </div>
           </div>
         )}
       </div>

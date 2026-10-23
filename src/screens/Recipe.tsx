@@ -15,7 +15,7 @@ import { onRecipeChanged } from "../lib/recipe";
 import { formatKcal } from "../lib/scoring";
 import { playCrunch, playFanfare, playWrong } from "../lib/sfx";
 import { isTtsSupported, speak, speakInTurn, stopSpeaking } from "../lib/speech";
-import { revealOnTouch, RIGHT_CLICK, touchScreen, withEnter } from "../lib/touch";
+import { revealOnTouch, revealPicked, RIGHT_CLICK, touchScreen, usePhoneWidth, withEnter } from "../lib/touch";
 import {
   PLAY_MODE_INFO,
   RECIPE_POS,
@@ -676,6 +676,13 @@ export default function Recipe({ playMode, onProgress, toast }: Props) {
   const [filter, setFilter] = useState<RecipeTab>("all");
   const [reviewing, setReviewing] = useState<{ target: RecipeTab; mode: RecipeReviewMode; queue: RecipeWord[] } | null>(null);
   const [missedFirst, setMissedFirst] = useState(loadPriority);
+  const phone = usePhoneWidth();
+  const listScreen = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (phone) revealPicked(listScreen.current, ".recipe-filter");
+  }, [phone, filter]);
+  /** a phone: how the recipe is used, folded behind the ? of the heading */
+  const [help, setHelp] = useState(false);
   /** each round of review starts from a fresh component */
   const [round, setRound] = useState(0);
   /** the bulk button (すべて習得へ / すべて復習へ / すべて除外 / 一括削除) waiting for a yes */
@@ -877,8 +884,19 @@ export default function Recipe({ playMode, onProgress, toast }: Props) {
       toast(`📖 ${a.done(n)}`);
     });
 
+  /* 除外 stands apart from the others, in light red: words taken off the list (the last of the tabs' line on a phone). */
+  const excludedTab = (
+    <button
+      className={"recipe-excluded-tab" + (filter === "excluded" ? " active" : "")}
+      title="× で外した単語。ここで × を押すと完全に削除、「復習に戻す」で復習に戻ります"
+      onClick={() => setFilter("excluded")}
+    >
+      除外 {inTab.excluded.length}
+    </button>
+  );
+
   return (
-    <div className="screen recipe">
+    <div className="screen recipe" ref={listScreen}>
       <section className="card">
         <div className="section-head">
           <h2>📖 レシピ</h2>
@@ -903,74 +921,88 @@ export default function Recipe({ playMode, onProgress, toast }: Props) {
               </span>
             )}
           </div>
+          {phone && (
+            <button
+              className={"help-btn" + (help ? " open" : "")}
+              aria-expanded={help}
+              aria-label="レシピの使い方"
+              onClick={() => setHelp((h) => !h)}
+            >
+              ?
+            </button>
+          )}
         </div>
-        <div className="recipe-intro">
-          <p className="recipe-intro-lead">
-            問題や解説の英単語を<b>{RIGHT_CLICK}</b>すると、ここに材料として集まります。
-          </p>
-          <dl className="recipe-guide">
-            <dt>選択式・記入式</dt>
-            <dd>
-              選んでいるタブの単語を復習します。意味を4択で選ぶと 0.5 kcal、英語を書くと 1 kcal が今日のおやつ予算に入ります（同じ日の2回目からは半分）。
-            </dd>
-            <dt>習得・まだ</dt>
-            <dd>「すべて」「復習」で正解したら、覚えたかを自分で選びます。「★」「習得」「除外」では、正解ならそのまま、間違えると復習に戻ります。</dd>
-            <dt>
-              ☆ <span className="recipe-star-mark">★</span>
-            </dt>
-            <dd>☆ を押した単語は「★」に入り、正解しても★のまま復習に残ります。習得や除外に移すと★は外れます。</dd>
-            <dt>×</dt>
-            <dd>単語を「除外」に移します。「除外」のタブで × を押すと完全に削除します。</dd>
-            <dt>単語カード</dt>
-            <dd>{touchScreen ? "タップ" : "クリック・右クリック・Enter"} でめくって覚えます（カロリーはもらえません）。</dd>
-          </dl>
-        </div>
+        {(!phone || help) && (
+          <div className="recipe-intro">
+            <p className="recipe-intro-lead">
+              問題や解説の英単語を<b>{RIGHT_CLICK}</b>すると、ここに材料として集まります。
+            </p>
+            <dl className="recipe-guide">
+              <dt>選択式・記入式</dt>
+              <dd>
+                選んでいるタブの単語を復習します。意味を4択で選ぶと 0.5 kcal、英語を書くと 1 kcal が今日のおやつ予算に入ります（同じ日の2回目からは半分）。
+              </dd>
+              <dt>習得・まだ</dt>
+              <dd>「すべて」「復習」で正解したら、覚えたかを自分で選びます。「★」「習得」「除外」では、正解ならそのまま、間違えると復習に戻ります。</dd>
+              <dt>
+                ☆ <span className="recipe-star-mark">★</span>
+              </dt>
+              <dd>☆ を押した単語は「★」に入り、正解しても★のまま復習に残ります。習得や除外に移すと★は外れます。</dd>
+              <dt>×</dt>
+              <dd>単語を「除外」に移します。「除外」のタブで × を押すと完全に削除します。</dd>
+              <dt>単語カード</dt>
+              <dd>{touchScreen ? "タップ" : "クリック・右クリック・Enter"} でめくって覚えます（カロリーはもらえません）。</dd>
+            </dl>
+          </div>
+        )}
         <div className="row recipe-actions">
           <span className="recipe-target">
             {TAB_LABEL[filter]} <b>{pool.length}</b>語
           </span>
-          {(["choice", "typing"] as const).map((mode) => (
+          <div className="recipe-review-buttons">
+            {(["choice", "typing"] as const).map((mode) => (
+              <button
+                key={mode}
+                className={"btn recipe-mode-btn " + mode}
+                disabled={busy || pool.length === 0}
+                onClick={() => start(mode)}
+              >
+                {REVIEW_ICON[mode]} {REVIEW_TITLE[mode]}
+              </button>
+            ))}
+            <div className="recipe-cards-pick" ref={cardBox}>
+              <button
+                className="btn recipe-mode-btn cards"
+                disabled={busy || pool.length === 0}
+                aria-haspopup="menu"
+                aria-expanded={cardMenu}
+                title="クリックでめくって覚える単語カード（カロリーはもらえません）"
+                onClick={() => setCardMenu((m) => !m)}
+              >
+                <WordCardIcon /> 単語カード
+              </button>
+              {cardMenu && (
+                <div className="recipe-pos-menu recipe-cards-menu" role="menu">
+                  {CARD_DIRECTIONS.map(({ direction, label, note }) => (
+                    <button key={direction} role="menuitem" onClick={() => startCards(direction)}>
+                      <span>{label}</span>
+                      <small>{note}</small>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
             <button
-              key={mode}
-              className={"btn recipe-mode-btn " + mode}
-              disabled={busy || pool.length === 0}
-              onClick={() => start(mode)}
+              type="button"
+              className={"switch-btn" + (missedFirst ? " on" : "")}
+              aria-pressed={missedFirst}
+              title="オンにすると、復習で間違えた回数が多い単語から出題します"
+              onClick={() => setMissedFirst((on) => !on)}
             >
-              {REVIEW_ICON[mode]} {REVIEW_TITLE[mode]}
+              <span className="switch-knob" aria-hidden="true" />
+              間違いやすい語を優先
             </button>
-          ))}
-          <div className="recipe-cards-pick" ref={cardBox}>
-            <button
-              className="btn recipe-mode-btn cards"
-              disabled={busy || pool.length === 0}
-              aria-haspopup="menu"
-              aria-expanded={cardMenu}
-              title="クリックでめくって覚える単語カード（カロリーはもらえません）"
-              onClick={() => setCardMenu((m) => !m)}
-            >
-              <WordCardIcon /> 単語カード
-            </button>
-            {cardMenu && (
-              <div className="recipe-pos-menu recipe-cards-menu" role="menu">
-                {CARD_DIRECTIONS.map(({ direction, label, note }) => (
-                  <button key={direction} role="menuitem" onClick={() => startCards(direction)}>
-                    <span>{label}</span>
-                    <small>{note}</small>
-                  </button>
-                ))}
-              </div>
-            )}
           </div>
-          <button
-            type="button"
-            className={"switch-btn" + (missedFirst ? " on" : "")}
-            aria-pressed={missedFirst}
-            title="オンにすると、復習で間違えた回数が多い単語から出題します"
-            onClick={() => setMissedFirst((on) => !on)}
-          >
-            <span className="switch-knob" aria-hidden="true" />
-            間違いやすい語を優先
-          </button>
           {asking ? (
             <span className="recipe-bulk asking">
               <span>{asking.ask(bulkWords(asking).length)}</span>
@@ -1029,15 +1061,9 @@ export default function Recipe({ playMode, onProgress, toast }: Props) {
                     {tab === "favorite" ? <span className="recipe-star-mark">★</span> : TAB_LABEL[tab]} {inTab[tab].length}
                   </button>
                 ))}
+                {phone && excludedTab}
               </div>
-              {/* 除外 stands apart from the others, in light red: words taken off the list. */}
-              <button
-                className={"recipe-excluded-tab" + (filter === "excluded" ? " active" : "")}
-                title="× で外した単語。ここで × を押すと完全に削除、「復習に戻す」で復習に戻ります"
-                onClick={() => setFilter("excluded")}
-              >
-                除外 {inTab.excluded.length}
-              </button>
+              {!phone && excludedTab}
               <button className="btn-small recipe-open-all" disabled={listed.length === 0} onClick={toggleAll}>
                 {allOpen ? "一括で詳細を閉じる" : "一括で詳細を開く"}
               </button>
@@ -1888,9 +1914,12 @@ function RecipeReview({
   );
 }
 
-/** Whether a click or Enter landed on something that does its own thing (🔊, やめる, the header's tabs). */
+/** Whether a click or Enter landed on something that does its own thing (🔊, やめる, the header's tabs, a phone's word sheet). */
 function onControl(e: Event): boolean {
-  return e.target instanceof Element && !!e.target.closest("button, a, input, select, textarea, label");
+  return (
+    e.target instanceof Element &&
+    !!e.target.closest("button, a, input, select, textarea, label, .word-sheet, .sheet-backdrop, .settings-backdrop")
+  );
 }
 
 /**

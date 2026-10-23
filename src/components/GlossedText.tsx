@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   buildPhraseIndex,
   headword,
@@ -13,6 +14,8 @@ import {
 } from "../lib/dictionary";
 import { useAddToRecipe } from "../lib/recipe";
 import { isTtsSupported, speak } from "../lib/speech";
+import { touchScreen } from "../lib/touch";
+import WordSheet from "./WordSheet";
 
 interface Props {
   text: string;
@@ -189,7 +192,8 @@ export default function GlossedText({
     setSaying(null);
   }, [text, enabled]);
   useEffect(() => {
-    if (!tip) return;
+    // A phone's sheet stays put over the page (and scrolls inside itself): only a tooltip goes with a scroll.
+    if (!tip || touchScreen) return;
     const clear = () => setTip(null);
     window.addEventListener("scroll", clear, true);
     return () => window.removeEventListener("scroll", clear, true);
@@ -246,6 +250,15 @@ export default function GlossedText({
   };
   const isActive = (i: number) => tip !== null && (tip.span !== null ? shownSpan(i) === tip.span : tip.piece === i);
   const hint = [canSpeak && "クリックで発音", addToRecipe && "右クリックでレシピに追加"].filter(Boolean).join("・") || undefined;
+  // A tap sends the mouse's enter and leave too: on a touch screen the tap alone opens the sheet,
+  // and a tap on the sheet must not close it as the mouse "leaves" the word.
+  const hover = !touchScreen;
+
+  /** The sentence on the sheet, the word (or its phrase) marked; none for a word or two on its own. */
+  const sheetSentence = (t: Tip) => {
+    if (tokenize(text).length < 3) return undefined;
+    return parts.map((p, k) => ((t.span !== null ? shownSpan(k) === t.span : k === t.piece) ? <b key={k}>{p}</b> : p));
+  };
 
   return (
     <span className={className}>
@@ -288,8 +301,8 @@ export default function GlossedText({
             key={i}
             className={cls + mark}
             title={hint}
-            onMouseEnter={gloss || phrase ? (e) => show(e.currentTarget) : undefined}
-            onMouseLeave={gloss || phrase ? () => setTip(null) : undefined}
+            onMouseEnter={hover && (gloss || phrase) ? (e) => show(e.currentTarget) : undefined}
+            onMouseLeave={hover && (gloss || phrase) ? () => setTip(null) : undefined}
             onClick={(e) => {
               // Nothing to show, and reading aloud is the holder's: let the click through.
               if (!speakOnClick && !gloss && !phrase) return;
@@ -311,7 +324,33 @@ export default function GlossedText({
           </span>
         );
       })}
-      {tip && (tip.phrase || tip.gloss) && (
+      {tip &&
+        (tip.phrase || tip.gloss) &&
+        touchScreen &&
+        createPortal(
+          <WordSheet
+            word={tip.word}
+            gloss={tip.gloss}
+            phrase={tip.phrase && { key: tip.phrase.key, gloss: tip.phrase.gloss, idiom: tip.phrase.idiom }}
+            sentence={sheetSentence(tip)}
+            dict={dict}
+            onSay={() => say(tip.word, tip.piece)}
+            // closed, for the recipe's toast (and its question about a phrase) under it to be seen
+            onSave={
+              addToRecipe
+                ? () => {
+                    stash(tip.word, tip.piece);
+                    setTip(null);
+                  }
+                : undefined
+            }
+            // While a question is open, more notes could give its answer away.
+            notesFor={withhold ? undefined : headword(dict, tip.word)}
+            onClose={() => setTip(null)}
+          />,
+          document.body,
+        )}
+      {tip && (tip.phrase || tip.gloss) && !touchScreen && (
         <span ref={tipBox} className="gloss-tip" style={{ left: tip.x, top: tip.y }} role="tooltip">
           {tip.phrase && (
             <span className="gloss-line">

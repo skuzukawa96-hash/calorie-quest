@@ -2797,8 +2797,11 @@ button.option:hover:not(:disabled) {
 }
 .wp b {
   color: var(--choco);
+  /* a piece's spelling whole on a narrow screen (-ency, not - over ency) */
+  white-space: nowrap;
 }
 .wp-kind {
+  flex: none;
   font-size: 11px;
   color: var(--muted);
 }
@@ -3486,6 +3489,33 @@ button.wp-link.open {
   padding: 1px 8px;
   font-size: 11.5px;
 }
+/* a phone: 体重・BMI・体脂肪率 small and grey over their figures, ✓ 記録済み on the right */
+.weight-today-cells {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  width: 100%;
+}
+.weight-cell {
+  display: flex;
+  flex-direction: column;
+  white-space: nowrap;
+  line-height: 1.35;
+}
+.weight-cell-label {
+  font-size: 12px;
+  color: var(--muted);
+}
+.weight-cell b {
+  font-size: 15px;
+  color: var(--text);
+}
+.weight-today-cells .pill {
+  margin-left: auto;
+  padding: 3px 10px;
+  font-size: 12.5px;
+  white-space: nowrap;
+}
 /* 記録: the height kept (✎ to change it), then today's weight */
 .weight-head {
   display: flex;
@@ -3518,6 +3548,17 @@ button.wp-link.open {
 .weight-empty {
   padding: 28px 8px;
   text-align: center;
+}
+.weight-empty .nw {
+  white-space: nowrap;
+}
+@media (max-width: 640px) {
+  /* three lines across the card's width (four with its own side room) */
+  .weight-empty {
+    margin: 0 -6px;
+    padding: 20px 0;
+    font-size: 14px;
+  }
 }
 .lc-key.weight .lc-swatch {
   background: var(--sky);
@@ -5455,6 +5496,1252 @@ button.wp-link.open {
   .lexi-sep {
     display: none;
   }
+}
+/* ---------- phone: the top bar's ⚙, the home's tabs, and their cards ----------
+   What only a phone draws (the ⚙ and its panel, the home's tabs, the exam rows, the genre list) is
+   styled here outside the media query; what a PC draws too is changed inside it. */
+.topbar-phone,
+.topbar-settings {
+  display: none;
+}
+.settings-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+}
+.settings-panel {
+  position: fixed;
+  top: calc(60px + env(safe-area-inset-top));
+  right: 12px;
+  z-index: 31;
+  width: min(320px, calc(100vw - 24px));
+  padding: 12px 14px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  box-shadow: var(--shadow);
+}
+.settings-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.settings-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  color: var(--choco);
+}
+/* ダイエット機能 on a phone: お菓子 / 課題 for every page, as the knife and fork and the flexed arm */
+.diet-view {
+  display: none;
+}
+.home-tabs {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 2px;
+  padding: 3px;
+  background: var(--cream-2);
+  border-radius: 12px;
+}
+.home-tabs button {
+  min-height: 42px;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  color: var(--choco-light);
+  font-size: 14px;
+  white-space: nowrap;
+}
+.home-tabs button.active {
+  background: #fff;
+  color: var(--choco);
+  font-weight: 700;
+  box-shadow: 0 1px 3px rgba(91, 58, 33, 0.15);
+}
+.home-label {
+  display: block;
+  margin: 2px 0 6px;
+  font-weight: 700;
+}
+/* the genre, from the phone's own list (a <select> drawn as a button with a ▾) */
+.genre-select {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 48px;
+  margin: 0 0 12px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+}
+.genre-select select {
+  flex: 1;
+  min-width: 0;
+  padding: 12px 22px 12px 0;
+  border: 0;
+  background: none;
+  font-weight: 700;
+  color: var(--choco);
+  -webkit-appearance: none;
+  appearance: none;
+}
+.genre-select::after {
+  content: "";
+  position: absolute;
+  right: 16px;
+  top: 50%;
+  width: 7px;
+  height: 7px;
+  border-right: 2px solid var(--choco-light);
+  border-bottom: 2px solid var(--choco-light);
+  transform: translateY(-70%) rotate(45deg);
+  pointer-events: none;
+}
+/* 試験 on a phone: a level a row */
+.exam-rows {
+  display: flex;
+  flex-direction: column;
+}
+.exam-rows .exam-intro {
+  margin: 0 0 4px;
+  font-size: 13px;
+}
+.exam-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 64px;
+  padding: 8px 0;
+  border: 0;
+  border-bottom: 1px solid #f0e2cc;
+  background: none;
+  color: var(--text);
+  text-align: left;
+}
+.exam-row:last-of-type {
+  border-bottom: 0;
+}
+.exam-row-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.exam-row-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-weight: 700;
+  color: var(--choco);
+}
+.exam-row-reward {
+  font-size: 13px;
+}
+.exam-row-reward b {
+  color: var(--berry);
+}
+.exam-row-best {
+  white-space: nowrap;
+}
+.exam-row-go {
+  font-size: 22px;
+  line-height: 1;
+  color: var(--choco-light);
+}
+.exam-rows .review-row {
+  margin-top: 4px;
+  padding-top: 10px;
+}
+@media (max-width: 640px) {
+  /* Japanese broken between phrases, not inside a word (ボーナ／ス), on a screen where most lines wrap */
+  body {
+    word-break: auto-phrase;
+    line-break: strict;
+  }
+  /* the top bar: the play mode, 連続 3日 and 残り 120 kcal in words, ダイエット機能 under ⚙ */
+  .topbar-pc,
+  .topbar-stats > .diet-switch {
+    display: none;
+  }
+  .topbar-phone {
+    display: inline;
+  }
+  .topbar.diet-on .brand {
+    display: none;
+  }
+  .topbar.diet-on .topbar-stats {
+    gap: 6px;
+  }
+  .diet-view {
+    display: inline-flex;
+    gap: 2px;
+    padding: 2px;
+    border-radius: 999px;
+    background: var(--cream-2);
+  }
+  .diet-view button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 28px;
+    padding: 0;
+    border: 0;
+    border-radius: 999px;
+    background: none;
+    color: #b9a796;
+  }
+  .diet-view button.on {
+    background: #fff;
+    color: var(--choco);
+    box-shadow: 0 1px 3px rgba(91, 58, 33, 0.15);
+  }
+  .diet-view svg {
+    width: 18px;
+    height: 18px;
+  }
+  .topbar-settings {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    margin: -4px -8px -4px -4px;
+    border: 0;
+    border-radius: 12px;
+    background: none;
+    color: var(--choco);
+  }
+  .topbar-settings svg {
+    width: 22px;
+    height: 22px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.8;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  /* a session, an exam and LexiLink have the whole screen, with their own top line */
+  .app.in-session .topbar,
+  .app.in-session .bottom-tabs {
+    display: none;
+  }
+  .app.in-session main {
+    padding-top: calc(8px + env(safe-area-inset-top));
+    padding-bottom: calc(24px + env(safe-area-inset-bottom));
+  }
+  /* 今日のおやつ予算: the title, the bar, then 連続・累計・貯蓄 as three cells (the lead only on a PC) */
+  .hero {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .hero-top {
+    display: contents;
+  }
+  .hero-top h1 {
+    order: 0;
+    margin: 0;
+    font-size: 21px;
+  }
+  .hero-lead,
+  .hero-tickets:empty {
+    display: none;
+  }
+  .hero .calorie-bar {
+    order: 1;
+  }
+  .hero-badges {
+    order: 2;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+  }
+  .hero-tickets {
+    order: 3;
+  }
+  .hero-badges .badge {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0;
+    min-width: 0;
+    padding: 6px 10px;
+    border-radius: 12px;
+    white-space: normal;
+    text-align: left;
+  }
+  .badge-emoji,
+  .badge-unit {
+    display: none;
+  }
+  .badge-label {
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    color: var(--muted);
+  }
+  .badge-value {
+    font-weight: 700;
+  }
+  .badge-of {
+    font-size: 12px;
+    font-weight: 400;
+    color: var(--muted);
+  }
+  /* a goal in two lines: the snack, its kcal and the buttons, then how far it has come */
+  .goal-row {
+    grid-template-columns: 28px minmax(0, 1fr) auto;
+    grid-template-areas:
+      "icon name actions"
+      ". meter status";
+    column-gap: 10px;
+    row-gap: 4px;
+    padding: 8px 10px;
+  }
+  .goal-row.task-row {
+    grid-template-areas: "icon name actions";
+  }
+  .goal-row .goal-icon {
+    grid-area: icon;
+  }
+  .goal-row .goal-name {
+    grid-area: name;
+    white-space: normal;
+    overflow: visible;
+  }
+  .goal-row .goal-kcal {
+    display: block;
+    margin-left: 0;
+  }
+  .goal-row .goal-meter {
+    display: block;
+    grid-area: meter;
+  }
+  .goal-row .goal-status {
+    grid-area: status;
+    justify-self: end;
+  }
+  .goal-row .goal-actions {
+    grid-area: actions;
+  }
+  .goal-row .icon-btn {
+    width: 40px;
+    height: 40px;
+  }
+  .goal-row .icon-btn svg {
+    width: 22px;
+    height: 22px;
+  }
+  /* 学習: the tiers and the parts of speech as chips in a line that slides sideways */
+  .study-card .section-head {
+    display: block;
+    margin: 0;
+  }
+  .study-card .section-head h2 {
+    display: none;
+  }
+  .segmented.tier-tabs,
+  .study-card .category-main,
+  .lexi-chips {
+    display: flex;
+    flex-wrap: nowrap;
+    gap: 8px;
+    margin: 0 -14px 12px;
+    padding: 0 14px 2px;
+    background: none;
+    border-radius: 0;
+    overflow-x: auto;
+    scrollbar-width: none;
+    -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 28px), transparent);
+    mask-image: linear-gradient(90deg, #000 calc(100% - 28px), transparent);
+  }
+  .segmented.tier-tabs::-webkit-scrollbar,
+  .study-card .category-main::-webkit-scrollbar,
+  .lexi-chips::-webkit-scrollbar {
+    display: none;
+  }
+  .segmented.tier-tabs button,
+  .study-card .chip.chip-main,
+  .lexi-chip {
+    flex: none;
+    height: 36px;
+    padding: 0 14px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    background: #fff;
+    box-shadow: none;
+    color: var(--choco);
+    font-size: 14px;
+    font-weight: 400;
+    white-space: nowrap;
+  }
+  .segmented.tier-tabs button.active,
+  .study-card .chip.chip-main.active,
+  .lexi-chip.on {
+    background: var(--choco);
+    border-color: var(--choco);
+    color: #fff;
+    font-weight: 400;
+  }
+  .study-card .mode-grid {
+    margin-top: 0;
+  }
+  .study-card .review-row,
+  .exam-rows .review-row {
+    flex-wrap: nowrap;
+  }
+  /* お菓子図鑑・課題一覧: ♡ close to the icon, the name with the row's width and its kcal under it,
+     then eat (or done) and ⋯ */
+  .snack-row,
+  .snack-list.with-tickets .snack-row {
+    grid-template-columns: 30px 30px auto minmax(0, 1fr) auto;
+    grid-template-areas:
+      "goal icon name name actions"
+      "goal icon kcal count actions";
+    column-gap: 4px;
+    row-gap: 0;
+    padding: 4px 4px 4px 2px;
+  }
+  .snack-row > .icon-btn.goal {
+    grid-area: goal;
+    width: 30px;
+    height: 44px;
+  }
+  .snack-row > .icon-btn.goal svg {
+    width: 21px;
+    height: 21px;
+  }
+  .snack-row-icon {
+    grid-area: icon;
+    font-size: 24px;
+  }
+  .snack-row-name {
+    grid-area: name;
+    padding-left: 4px;
+    white-space: normal;
+  }
+  .snack-row-kcal {
+    grid-area: kcal;
+    padding-left: 4px;
+    font-size: 13px;
+    font-weight: 400;
+    color: var(--muted);
+    text-align: left;
+  }
+  .task-list .snack-row-kcal {
+    font-weight: 700;
+  }
+  .snack-row-count {
+    display: block;
+    grid-area: count;
+    padding-left: 8px;
+    text-align: left;
+  }
+  .snack-row-actions {
+    grid-area: actions;
+    grid-column: auto;
+    gap: 0;
+  }
+  .snack-row-actions .icon-btn.eat,
+  .snack-row-actions .icon-btn.done {
+    width: 40px;
+    height: 44px;
+  }
+  .snack-row-actions .icon-btn.eat svg,
+  .snack-row-actions .icon-btn.done svg {
+    width: 23px;
+    height: 23px;
+  }
+  .snack-row-actions .icon-btn.more {
+    width: 34px;
+    height: 44px;
+    color: var(--choco-light);
+  }
+  .snack-row-actions .icon-btn.more.open {
+    color: var(--choco);
+    background: var(--cream-2);
+  }
+  .snack-edit,
+  .snack-confirm,
+  .snack-menu {
+    margin-left: 0;
+  }
+  .snacks .section-head {
+    flex-wrap: nowrap;
+    gap: 8px;
+  }
+  .snacks .section-head h2 {
+    font-size: 18px;
+  }
+  /* 今日の家計簿: 獲得・食べた・残り as cells */
+  .ledger .section-head {
+    display: block;
+  }
+  .ledger-totals {
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(0, 1fr);
+    gap: 8px;
+    margin-top: 4px;
+    text-align: center;
+  }
+  .ledger-totals > span {
+    display: flex;
+    flex-direction: column;
+    padding: 6px 4px;
+    border-radius: 12px;
+    background: var(--cream-2);
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--muted);
+  }
+  .ledger-totals > span.positive {
+    background: var(--mint-bg);
+  }
+  .ledger-totals b {
+    font-size: 18px;
+    color: var(--choco);
+  }
+  .ledger-totals .positive b {
+    color: var(--mint);
+  }
+  .ledger-totals .negative b {
+    color: var(--berry);
+  }
+  .ledger-unit {
+    display: none;
+  }
+  /* LexiLink's entry under its tab: the pictures' tiles, then ジャンル and 出題 as lines of chips,
+     the names of 1P and 2P (COM beside 2P, its level under them), the rules and the button */
+  .lexi-entry .section-head {
+    margin-bottom: 4px;
+  }
+  .lexi-entry .section-head h2 {
+    display: none;
+  }
+  /* one line, or a wrapped column's line is as wide as its widest chips and runs off the screen */
+  .lexi-opts {
+    flex-direction: column;
+    flex-wrap: nowrap;
+    align-items: stretch;
+    gap: 6px;
+    margin-top: 10px;
+  }
+  .lexi-opt-label {
+    margin: 4px 0 0;
+    letter-spacing: 0.06em;
+  }
+  .lexi-opts .lexi-chips {
+    margin-bottom: 2px;
+  }
+  .lexi-names {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+    margin-top: 8px;
+    white-space: normal;
+  }
+  .lexi-names > * {
+    grid-column: 1 / -1;
+  }
+  .lexi-names label:nth-of-type(2) {
+    grid-column: 1;
+  }
+  .lexi-names .lexi-com {
+    grid-column: 2;
+  }
+  .lexi-names label {
+    gap: 8px;
+    font-size: 13px;
+  }
+  .lexi-names input {
+    flex: 1;
+    width: auto;
+    height: 44px;
+    border-radius: 12px;
+  }
+  .lexi-names .lexi-com {
+    height: 44px;
+    padding: 0 12px;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: #fff;
+    font-size: 14px;
+    color: var(--choco);
+  }
+  .lexi-names .lexi-com input {
+    flex: none;
+    width: 20px;
+    height: 20px;
+  }
+  .lexi-names .lexi-chips {
+    margin-bottom: 0;
+  }
+  .lexi-tile.mode {
+    min-height: 112px;
+  }
+  .lexi-tile.mode .lexi-ill {
+    right: 2px;
+    width: 84px;
+    height: 64px;
+  }
+  .lexi-go {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .lexi-rules b {
+    white-space: nowrap;
+  }
+  .btn.lexi-btn-go {
+    width: 100%;
+    min-height: 48px;
+    border-radius: 14px;
+  }
+}
+/* 学習: the switches and 次へ have boxes of their own only on a phone (the ⋯ menu, the bar at the bottom) */
+.study-toggles,
+.next-bar {
+  display: contents;
+}
+.study-head > .icon-btn.more {
+  display: none;
+}
+@media (max-width: 640px) {
+  /* ← やめる, the progress and ⋯ on one line that stays at the top; what is studied under it */
+  .study-head {
+    position: sticky;
+    top: 0;
+    z-index: 15;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-areas:
+      "exit progress more"
+      "meta meta meta";
+    align-items: center;
+    column-gap: 8px;
+    row-gap: 2px;
+    /* from the very top of the screen: the status bar's room is in its own padding, not twice */
+    margin: calc(-8px - env(safe-area-inset-top)) -12px 0;
+    padding: calc(4px + env(safe-area-inset-top)) 4px 6px;
+    background: var(--cream);
+    border-bottom: 1px solid var(--line);
+  }
+  .study-head .study-exit {
+    grid-area: exit;
+    min-height: 44px;
+    padding: 0 8px;
+    font-weight: 700;
+    text-decoration: none;
+  }
+  .study-progress {
+    grid-area: progress;
+    display: flex;
+    flex-direction: row-reverse;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+    margin: 0;
+    white-space: nowrap;
+  }
+  .study-progress .mini-bar {
+    flex: 1;
+    height: 8px;
+    margin: 0;
+  }
+  .study-head > .icon-btn.more {
+    display: inline-flex;
+    grid-area: more;
+    width: 44px;
+    height: 44px;
+    color: var(--choco);
+  }
+  .study-head > .icon-btn.more.open {
+    background: var(--cream-2);
+  }
+  .study-meta {
+    grid-area: meta;
+    gap: 0;
+    padding: 0 8px;
+  }
+  .study-meta > .pill {
+    padding: 0;
+    border: 0;
+    background: none;
+    font-size: 13px;
+    font-weight: 400;
+    color: var(--muted);
+  }
+  .study-meta > .pill + .pill::before {
+    content: "・";
+  }
+  .study-meta > .pill.review {
+    font-weight: 700;
+    color: var(--caramel-dark);
+  }
+  .study-toggles {
+    display: none;
+  }
+  .study-head.options-open .study-toggles {
+    position: absolute;
+    top: calc(100% - 2px);
+    right: 8px;
+    z-index: 16;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+    padding: 12px;
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    box-shadow: var(--shadow);
+  }
+  .study-toggles .pill.toggle {
+    padding: 8px 12px;
+    font-size: 14px;
+    text-align: left;
+  }
+  .study .question-card {
+    margin-top: 4px;
+  }
+  /* 正解: the label over the answer, its 🔊 a round button at the right */
+  .answer-line {
+    position: relative;
+    padding-right: 52px;
+    min-height: 44px;
+  }
+  .answer-line > .label {
+    display: block;
+  }
+  .feedback-detail .answer-line > .btn-link.replay {
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 44px;
+    height: 44px;
+    margin: 0;
+    border: 1px solid var(--line);
+    border-radius: 50%;
+    background: #fff;
+    text-decoration: none;
+  }
+  .replay-text {
+    display: none;
+  }
+  /* 次へ: a bar at the bottom of the screen */
+  .next-bar {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 15;
+    display: flex;
+    padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+    background: var(--cream);
+    border-top: 1px solid var(--line);
+  }
+  .next-bar .btn {
+    flex: 1;
+    min-height: 52px;
+    border-radius: 14px;
+    font-size: 17px;
+  }
+  .app.in-session main {
+    padding-bottom: calc(100px + env(safe-area-inset-bottom));
+  }
+  /* お気に入りの復習 runs in its tab, under the top bar and over the tabs: the top line scrolls with
+     the page, and 次へ sits on the tabs */
+  .app:not(.in-session) .study-head {
+    position: static;
+    margin-top: 0;
+    padding-top: 4px;
+  }
+  .app:not(.in-session) .next-bar {
+    bottom: calc(60px + env(safe-area-inset-bottom));
+  }
+  .app:not(.in-session) .screen.study {
+    padding-bottom: 80px;
+  }
+}
+/* a phone's ? beside a heading: how the screen is used, folded until it is asked for */
+.help-btn {
+  flex: none;
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: #fff;
+  color: var(--choco-light);
+  font-weight: 700;
+}
+.help-btn.open {
+  background: var(--cream-2);
+  color: var(--choco);
+}
+/* お気に入り on a phone: the review buttons in a bar above the tabs */
+.fav-review-bar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: calc(60px + env(safe-area-inset-bottom));
+  z-index: 19;
+  display: flex;
+  gap: 8px;
+  padding: 10px 16px;
+  background: var(--cream);
+  border-top: 1px solid var(--line);
+}
+.fav-review-bar .btn.fav-review {
+  flex: 1;
+  min-width: 0;
+  justify-content: center;
+  padding: 6px 10px;
+  min-height: 48px;
+  border-radius: 14px;
+  font-size: 14px;
+  font-weight: 700;
+}
+@media (max-width: 640px) {
+  .favorites .section-head.fav-head {
+    flex-wrap: nowrap;
+  }
+  .favorites .fav-intro {
+    margin-top: 8px;
+  }
+  /* room under the list for the review bar */
+  .screen.favorites {
+    padding-bottom: 72px;
+  }
+  .segmented.fav-tabs {
+    flex-wrap: nowrap;
+    gap: 8px;
+    margin: 0 -14px;
+    padding: 0 14px 2px;
+    background: none;
+    border-radius: 0;
+    overflow-x: auto;
+    scrollbar-width: none;
+    -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 28px), transparent);
+    mask-image: linear-gradient(90deg, #000 calc(100% - 28px), transparent);
+  }
+  .segmented.fav-tabs::-webkit-scrollbar {
+    display: none;
+  }
+  .segmented.fav-tabs button {
+    flex: none;
+    height: 36px;
+    padding: 0 14px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    box-shadow: none;
+    font-size: 14px;
+    white-space: nowrap;
+  }
+  .segmented.fav-tabs button.active {
+    background: var(--choco);
+    border-color: var(--choco);
+    color: #fff;
+  }
+  /* the tabs on a line of their own, 範囲, 一括で詳細 and the orders after them */
+  .segmented.fav-tabs {
+    flex: 1 0 100%;
+  }
+  .fav-sort {
+    margin-left: 0;
+  }
+  /* a favorite as a card: its tags on a line, the sentence and its translation, 🔊 and ★ at the right */
+  .recipe-item-head.fav-item-head {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    grid-template-areas:
+      "tags speak star"
+      "text speak star";
+    align-items: center;
+    column-gap: 2px;
+    row-gap: 4px;
+    padding: 10px 6px 10px 12px;
+  }
+  .fav-item-head .fav-tags {
+    grid-area: tags;
+    flex-direction: row;
+    flex-wrap: wrap;
+    width: auto;
+  }
+  .fav-item-head .fav-text {
+    grid-area: text;
+  }
+  .fav-item-head .fav-sub {
+    white-space: normal;
+  }
+  .fav-item-head .btn-link.fav-speak {
+    grid-area: speak;
+    width: 40px;
+    height: 44px;
+    margin: 0;
+  }
+  .fav-item-head .fav-star-small {
+    grid-area: star;
+    width: 44px;
+    height: 44px;
+    font-size: 22px;
+  }
+  .fav-item-head .recipe-caret {
+    display: none;
+  }
+}
+/* レシピ: the review buttons and the switch, a box of their own only on a phone (the bar above the tabs) */
+.recipe-review-buttons {
+  display: contents;
+}
+@media (max-width: 640px) {
+  .recipe .section-head {
+    flex-wrap: nowrap;
+    gap: 8px;
+  }
+  .recipe .section-head h2 {
+    flex: none;
+    margin: 0;
+  }
+  .recipe-counts {
+    flex: 1;
+    flex-wrap: wrap;
+    gap: 0 10px;
+    font-size: 13px;
+  }
+  .recipe-counts b {
+    font-size: 15px;
+  }
+  .recipe-review-buttons {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: calc(60px + env(safe-area-inset-bottom));
+    z-index: 19;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+    padding: 10px 16px 8px;
+    background: var(--cream);
+    border-top: 1px solid var(--line);
+  }
+  .recipe-review-buttons .btn.recipe-mode-btn {
+    width: 100%;
+    min-height: 48px;
+    padding: 6px 4px;
+    border-radius: 14px;
+    white-space: nowrap;
+  }
+  .recipe-review-buttons .recipe-cards-pick {
+    position: relative;
+  }
+  .recipe-review-buttons .recipe-cards-menu {
+    top: auto;
+    bottom: calc(100% + 6px);
+    left: auto;
+    right: 0;
+  }
+  .recipe-review-buttons .switch-btn {
+    grid-column: 1 / -1;
+    justify-self: start;
+    font-size: 13px;
+  }
+  /* room under the list for the review bar */
+  .screen.recipe {
+    padding-bottom: 128px;
+  }
+  /* the tabs (除外 the last) as a line of chips that slides, then 一括, the search and the orders */
+  .segmented.recipe-filter {
+    flex: 1 0 100%;
+    flex-wrap: nowrap;
+    gap: 8px;
+    margin: 0 -14px;
+    padding: 0 14px 2px;
+    background: none;
+    border-radius: 0;
+    overflow-x: auto;
+    scrollbar-width: none;
+    -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 28px), transparent);
+    mask-image: linear-gradient(90deg, #000 calc(100% - 28px), transparent);
+  }
+  .segmented.recipe-filter::-webkit-scrollbar {
+    display: none;
+  }
+  .segmented.recipe-filter > button {
+    flex: none;
+    height: 36px;
+    padding: 0 14px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    background: #fff;
+    box-shadow: none;
+    color: var(--choco);
+    font-size: 14px;
+    white-space: nowrap;
+  }
+  .segmented.recipe-filter > button.active {
+    background: var(--choco);
+    border-color: var(--choco);
+    color: #fff;
+  }
+  .segmented.recipe-filter > .recipe-excluded-tab {
+    border-color: #f2c4c2;
+    background: var(--berry-bg);
+    color: var(--berry);
+  }
+  .segmented.recipe-filter > .recipe-excluded-tab.active {
+    background: var(--berry);
+    border-color: var(--berry);
+    color: #fff;
+  }
+  .recipe-tools {
+    flex: 1 0 100%;
+    margin-left: 0;
+  }
+  .recipe-search {
+    flex: 1 0 100%;
+    width: auto;
+    height: 44px;
+    padding: 0 14px;
+    border-radius: 12px;
+    font-size: 15px;
+  }
+}
+/* 記録 on a phone: the figures in one grid, the breakdowns and the review queue as rows */
+.stat-grids {
+  display: contents;
+}
+.breakdown-list details {
+  border-top: 1px solid #f0e2cc;
+}
+.breakdown-list summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 48px;
+  list-style: none;
+  cursor: pointer;
+  font-weight: 700;
+  color: var(--choco);
+}
+.breakdown-list summary::-webkit-details-marker {
+  display: none;
+}
+.breakdown-list summary::after {
+  content: "▸";
+  color: var(--choco-light);
+}
+.breakdown-list details[open] summary::after {
+  content: "▾";
+}
+.breakdown-list-title {
+  flex: 1;
+}
+.breakdown-list-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 0 6px 12px;
+  border-top: 1px dotted var(--line);
+  font-size: 14px;
+}
+.breakdown-list-row .nw {
+  white-space: nowrap;
+}
+.weak-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.weak-list li {
+  padding: 10px 0;
+  border-bottom: 1px solid #f0e2cc;
+}
+.weak-list li:last-child {
+  border-bottom: 0;
+}
+.weak-list-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  color: var(--choco);
+}
+.weak-list-due {
+  flex: none;
+  white-space: nowrap;
+}
+@media (max-width: 640px) {
+  .stat-grids {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+  .stat-grids > .stat-grid {
+    display: contents;
+  }
+}
+/* a word tapped on a touch screen: its meaning in a sheet from the bottom (components/WordSheet.tsx) */
+.sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: rgba(59, 42, 30, 0.4);
+}
+.word-sheet {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 41;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: 75vh;
+  overflow-y: auto;
+  padding: 8px 18px calc(20px + env(safe-area-inset-bottom));
+  background: var(--card);
+  border-radius: 24px 24px 0 0;
+  box-shadow: 0 -8px 24px rgba(91, 58, 33, 0.18);
+  color: var(--text);
+  animation: sheet-up 0.2s ease;
+}
+@keyframes sheet-up {
+  from {
+    transform: translateY(40px);
+    opacity: 0.4;
+  }
+}
+.sheet-handle {
+  flex: none;
+  align-self: center;
+  width: 40px;
+  height: 5px;
+  border-radius: 3px;
+  background: var(--line);
+}
+.sheet-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.sheet-word {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-display);
+  font-size: 30px;
+  font-weight: 700;
+  color: var(--choco);
+  overflow-wrap: anywhere;
+}
+.sheet-say {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 52px;
+  height: 52px;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: #fff;
+  color: var(--choco);
+}
+.sheet-say svg {
+  width: 24px;
+  height: 24px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.sheet-meaning {
+  font-size: 17px;
+}
+.sheet-phrase {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: #fdf0d5;
+}
+.sheet-phrase-key {
+  color: var(--choco);
+}
+.sheet-sentence {
+  padding: 12px;
+  border: 1px solid #eedfc8;
+  border-radius: 14px;
+  background: #fff;
+}
+.sheet-sentence b {
+  color: var(--caramel-dark);
+}
+.sheet-actions {
+  display: flex;
+  gap: 8px;
+}
+.sheet-actions .btn {
+  min-height: 48px;
+  border-radius: 14px;
+}
+.sheet-actions .btn-primary {
+  flex: 1;
+}
+.sheet-hint {
+  text-align: center;
+}
+/* a phone's order of the お菓子図鑑: one chip with a ▾, the phone's own list behind it */
+.sort-select {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+}
+.sort-select select {
+  max-width: 48vw;
+  height: 36px;
+  padding: 0 30px 0 14px;
+  text-overflow: ellipsis;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--choco);
+  font-size: 14px;
+  -webkit-appearance: none;
+  appearance: none;
+}
+.sort-select::after {
+  content: "";
+  position: absolute;
+  right: 13px;
+  top: 50%;
+  width: 6px;
+  height: 6px;
+  border-right: 2px solid var(--choco-light);
+  border-bottom: 2px solid var(--choco-light);
+  transform: translateY(-70%) rotate(45deg);
+  pointer-events: none;
+}
+/* ⋯ of a phone's row of the お菓子図鑑: its pencil and ×, under the row */
+.snack-menu {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: -2px 0 4px;
+  padding: 8px 10px;
+  border: 1px dashed var(--caramel-light);
+  border-radius: 12px;
+  background: #fffaf3;
+}
+.btn-small.danger-text {
+  color: var(--berry);
 }
 /* A touch screen: no keys to answer with, and a long press is the right-click that saves a word to
    the recipe, so it must not start selecting the word's text instead. */

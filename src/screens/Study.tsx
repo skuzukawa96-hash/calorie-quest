@@ -4,6 +4,7 @@ import GlossedText from "../components/GlossedText";
 import IpaLine from "../components/IpaLine";
 import PronunciationTips, { HighlightedText } from "../components/PronunciationTips";
 import FavoriteKcal from "../components/FavoriteKcal";
+import { MoreButton } from "../components/IconButtons";
 import { PlayModeTag } from "../components/PlayModeSwitch";
 import WordNotesPanel from "../components/WordNotes";
 import AntonymTag from "../components/AntonymTag";
@@ -157,6 +158,8 @@ export default function Study({ mode, tier, category, rates, playMode, favorites
   const [autoSpeak, setAutoSpeak] = useState<boolean>(() => loadFlag(AUTO_SPEAK_KEY, true));
   const [showGloss, setShowGloss] = useState<boolean>(() => loadFlag(GLOSS_KEY, true));
   const [typingHint, setTypingHint] = useState<boolean>(() => loadFlag(TYPING_HINT_KEY, false));
+  /** a phone keeps the switches (自動読み上げ, 単語の意味, ヒント) behind the ⋯ of its top line */
+  const [optionsOpen, setOptionsOpen] = useState(false);
   const [dict, setDict] = useState<Dictionary | null>(loadedDictionary);
   const fav = useFavorites(toast);
 
@@ -356,8 +359,9 @@ export default function Study({ mode, tier, category, rates, playMode, favorites
 
   return (
     <div className="screen study">
-      <div className="study-head">
-        <button className="btn-link" onClick={onExit}>
+      {/* a phone: ← やめる, how far it has come and ⋯ on one line, what is studied under it */}
+      <div className={"study-head" + (optionsOpen ? " options-open" : "")}>
+        <button className="btn-link study-exit" onClick={onExit}>
           ← やめる
         </button>
         <div className="study-meta">
@@ -370,34 +374,36 @@ export default function Study({ mode, tier, category, rates, playMode, favorites
           )}
           {tier === "mixed" && <span className="pill level">{TIER_LABEL[current.question.tier]}</span>}
           {current.isReview && <span className="pill review">🔁 復習 ×{rates.reviewMultiplier}</span>}
-          {qMode !== "speaking" && (
+          <div className="study-toggles">
+            {qMode !== "speaking" && (
+              <button
+                type="button"
+                className={"pill toggle " + (autoSpeak ? "on" : "")}
+                onClick={toggleAutoSpeak}
+                title="回答後に英語を読み上げます"
+              >
+                🔊 自動読み上げ {autoSpeak ? "ON" : "OFF"}
+              </button>
+            )}
             <button
               type="button"
-              className={"pill toggle " + (autoSpeak ? "on" : "")}
-              onClick={toggleAutoSpeak}
-              title="回答後に英語を読み上げます"
+              className={"pill toggle " + (showGloss ? "on" : "")}
+              onClick={toggleGloss}
+              title="英文の単語にカーソルを合わせると意味が出ます"
             >
-              🔊 自動読み上げ {autoSpeak ? "ON" : "OFF"}
+              🔤 単語の意味 {showGloss ? "ON" : "OFF"}
             </button>
-          )}
-          <button
-            type="button"
-            className={"pill toggle " + (showGloss ? "on" : "")}
-            onClick={toggleGloss}
-            title="英文の単語にカーソルを合わせると意味が出ます"
-          >
-            🔤 単語の意味 {showGloss ? "ON" : "OFF"}
-          </button>
-          {qMode === "typing" && (
-            <button
-              type="button"
-              className={"pill toggle " + (typingHint ? "on" : "")}
-              onClick={toggleTypingHint}
-              title="記入問題のヒント（伏せ字）を最初から表示します。表示するだけなら減点はありません"
-            >
-              💡 ヒント常時表示 {typingHint ? "ON" : "OFF"}
-            </button>
-          )}
+            {qMode === "typing" && (
+              <button
+                type="button"
+                className={"pill toggle " + (typingHint ? "on" : "")}
+                onClick={toggleTypingHint}
+                title="記入問題のヒント（伏せ字）を最初から表示します。表示するだけなら減点はありません"
+              >
+                💡 ヒント常時表示 {typingHint ? "ON" : "OFF"}
+              </button>
+            )}
+          </div>
         </div>
         <div className="study-progress">
           {idx + 1} / {questions.length}
@@ -405,6 +411,7 @@ export default function Study({ mode, tier, category, rates, playMode, favorites
             <div style={{ width: `${((idx + (feedback ? 1 : 0)) / questions.length) * 100}%` }} />
           </div>
         </div>
+        <MoreButton label="読み上げと単語の意味の設定" open={optionsOpen} onClick={() => setOptionsOpen((o) => !o)} />
       </div>
 
       <div className="card question-card" key={current.question.id}>
@@ -512,7 +519,7 @@ export default function Study({ mode, tier, category, rates, playMode, favorites
                   ))}
                 </div>
               )}
-              <div>
+              <div className="answer-line">
                 <span className="label">正解</span>{" "}
                 <strong>
                   {current.question.kind === "word" ? (
@@ -536,8 +543,13 @@ export default function Study({ mode, tier, category, rates, playMode, favorites
                 )}
                 {qMode === "choice" && current.subDisplay && <span className="muted">　{current.subDisplay}</span>}
                 {qMode !== "speaking" && current.question.kind !== "word" && (
-                  <button className="btn-link" onClick={() => speak(current.audioText).catch(() => undefined)} disabled={!isTtsSupported()}>
-                    🔊 もう一度聞く
+                  <button
+                    className="btn-link replay"
+                    aria-label="もう一度聞く"
+                    onClick={() => speak(current.audioText).catch(() => undefined)}
+                    disabled={!isTtsSupported()}
+                  >
+                    🔊<span className="replay-text"> もう一度聞く</span>
                   </button>
                 )}
               </div>
@@ -599,9 +611,12 @@ export default function Study({ mode, tier, category, rates, playMode, favorites
               )}
               {feedback.result && <ReviewNote result={feedback.result} correct={feedback.correct} rate={rates.reviewMultiplier} />}
             </div>
-            <button className="btn btn-primary" onClick={next} autoFocus>
-              {idx + 1 >= questions.length ? "結果を見る" : withEnter("次へ")}
-            </button>
+            {/* a phone keeps 次へ at the bottom of the screen, under the thumb, however long the explanation */}
+            <div className="next-bar">
+              <button className="btn btn-primary" onClick={next} autoFocus>
+                {idx + 1 >= questions.length ? "結果を見る" : withEnter("次へ")}
+              </button>
+            </div>
           </div>
         )}
       </div>

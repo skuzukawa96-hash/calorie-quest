@@ -5,6 +5,7 @@ import WeightForm, { d1, HeightSetting } from "../components/WeightForm";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { api, runningOnAndroid } from "../lib/api";
 import { keep, keptData } from "../lib/screenCache";
+import { useDietView } from "../lib/dietView";
 import { usePhoneWidth } from "../lib/touch";
 import {
   EXAM_PART_LABEL,
@@ -61,6 +62,8 @@ export default function Stats({ day, dietMode, onChanged, toast }: Props) {
   const [confirmReset, setConfirmReset] = useState(false);
   /** the breakdown on show, or none; clicking its total again closes it */
   const [metric, setMetric] = useState<Metric | null>(null);
+  const phone = usePhoneWidth();
+  const dietView = useDietView();
 
   const load = useCallback(() => {
     setLoadError(null);
@@ -100,8 +103,9 @@ export default function Stats({ day, dietMode, onChanged, toast }: Props) {
   }
 
   const toggle = (m: Metric) => setMetric((cur) => (cur === m ? null : m));
-  // The weight is there only with ダイエット機能 on; turned off, the chart is the kcal's again.
-  const showWeight = dietMode && chart === "weight";
+  // The weight is there only with ダイエット機能 on; turned off, the chart is the kcal's again. A phone
+  // follows the top bar's お菓子 / 課題 switch (課題 shows the weight), a PC the heading's ⇄.
+  const showWeight = dietMode && (phone ? dietView === "tasks" : chart === "weight");
   const switchChart = () => {
     const next: Chart = showWeight ? "kcal" : "weight";
     setChart(next);
@@ -121,30 +125,33 @@ export default function Stats({ day, dietMode, onChanged, toast }: Props) {
     <div className="screen stats">
       <section className="card">
         <h2>学習記録</h2>
-        <div className="stat-grid stat-grid-5">
-          <Stat label="累計学習日数" value={`${stats.totalStudyDays} 日`} />
-          <Stat label="連続学習" value={`🔥 ${stats.currentStreak} 日`} />
-          <Stat label="最長ストリーク" value={`${stats.longestStreak} 日`} />
-          <Stat
-            label="平均獲得カロリー"
-            value={perStudyDay(stats.totalKcal)}
-            title="累計獲得カロリー ÷ 学習した日数（学習していない日は数えません）"
-          />
-          <Stat
-            label="平均消費カロリー"
-            value={perStudyDay(stats.totalConsumed)}
-            title="食べたお菓子の累計カロリー ÷ 学習した日数（学習していない日は数えません）"
-          />
-        </div>
-        <div className="stat-grid">
-          <Stat label="累計獲得カロリー" value={`${stats.totalKcal} kcal`} open={metric === "kcal"} onClick={() => toggle("kcal")} />
-          <Stat label="累計回答数" value={`${stats.totalAnswered} 問`} open={metric === "answered"} onClick={() => toggle("answered")} />
-          <Stat
-            label="正答率"
-            value={`${Math.round(stats.accuracy * 100)}%`}
-            open={metric === "accuracy"}
-            onClick={() => toggle("accuracy")}
-          />
+        {/* one grid of two columns on a phone, with no box left over at the end of either */}
+        <div className="stat-grids">
+          <div className="stat-grid stat-grid-5">
+            <Stat label="累計学習日数" value={`${stats.totalStudyDays} 日`} />
+            <Stat label="連続学習" value={`🔥 ${stats.currentStreak} 日`} />
+            <Stat label="最長ストリーク" value={`${stats.longestStreak} 日`} />
+            <Stat
+              label="平均獲得カロリー"
+              value={perStudyDay(stats.totalKcal)}
+              title="累計獲得カロリー ÷ 学習した日数（学習していない日は数えません）"
+            />
+            <Stat
+              label="平均消費カロリー"
+              value={perStudyDay(stats.totalConsumed)}
+              title="食べたお菓子の累計カロリー ÷ 学習した日数（学習していない日は数えません）"
+            />
+          </div>
+          <div className="stat-grid">
+            <Stat label="累計獲得カロリー" value={`${stats.totalKcal} kcal`} open={metric === "kcal"} onClick={() => toggle("kcal")} />
+            <Stat label="累計回答数" value={`${stats.totalAnswered} 問`} open={metric === "answered"} onClick={() => toggle("answered")} />
+            <Stat
+              label="正答率"
+              value={`${Math.round(stats.accuracy * 100)}%`}
+              open={metric === "accuracy"}
+              onClick={() => toggle("accuracy")}
+            />
+          </div>
         </div>
       </section>
 
@@ -173,7 +180,7 @@ export default function Stats({ day, dietMode, onChanged, toast }: Props) {
       <section className="card">
         <div className="section-head chart-head">
           <h2 className="title-with-switch">
-            {dietMode && (
+            {dietMode && !phone && (
               <SwitchViewButton
                 label={showWeight ? "獲得・消費カロリーのグラフに切り替える" : "体重・体脂肪率のグラフに切り替える"}
                 onClick={switchChart}
@@ -221,6 +228,28 @@ export default function Stats({ day, dietMode, onChanged, toast }: Props) {
         </div>
         {stats.weakQuestions.length === 0 ? (
           <div className="muted">苦手な問題はまだありません。間違えた問題や発音スコアが低かった問題がここに並びます。</div>
+        ) : phone ? (
+          // a phone: a question a row, what the table's columns say under it
+          <ul className="weak-list">
+            {stats.weakQuestions.map((w) => (
+              <li key={w.question.id}>
+                <div className="weak-list-head">
+                  <b>{w.question.en}</b>
+                  <span className="muted small weak-list-due">{w.nextDue ? `${w.nextDue.slice(5).replace("-", "/")} に出題` : "—"}</span>
+                </div>
+                <div className="small">{w.question.ja}</div>
+                <div className="muted small">
+                  {[
+                    TIER_LABEL[w.question.tier],
+                    `間違い ${w.wrongCount}回`,
+                    w.lastScore != null ? `発音スコア ${Math.round(w.lastScore)}` : "",
+                  ]
+                    .filter(Boolean)
+                    .join("・")}
+                </div>
+              </li>
+            ))}
+          </ul>
         ) : (
           <table className="weak-table">
             <thead>
@@ -372,6 +401,46 @@ function Cols({ count }: { count: number }) {
   );
 }
 
+/** A group of a phone's breakdown: its total on the line that opens it, a row for each figure that is not nothing. */
+interface ListGroup {
+  title: string;
+  total: string;
+  rows: Array<{ label: string; value: ReactNode }>;
+}
+
+/**
+ * A breakdown as a phone shows it: no table to run off the screen's right edge, but a group a line
+ * (学習の問題 12 kcal ▸) that opens into its rows (英単語・記入 6 kcal), the first one open.
+ */
+function BreakdownList({ groups, grand }: { groups: ListGroup[]; grand: { label: string; value: string } }) {
+  return (
+    <div className="breakdown-list">
+      {groups.map((g, i) => (
+        <details key={g.title} open={i === 0}>
+          <summary>
+            <span className="breakdown-list-title">{g.title}</span>
+            <b>{g.total}</b>
+          </summary>
+          {g.rows.length === 0 ? (
+            <div className="muted small breakdown-list-row">まだありません</div>
+          ) : (
+            g.rows.map((r) => (
+              <div key={r.label} className="breakdown-list-row">
+                <span>{r.label}</span>
+                <span className="nw">{r.value}</span>
+              </div>
+            ))
+          )}
+        </details>
+      ))}
+      <div className="breakdown-grand">
+        <span>{grand.label}</span>
+        <b>{grand.value}</b>
+      </div>
+    </div>
+  );
+}
+
 const PARTS: ExamPart[] = ["listening", "short", "text", "reading"];
 const EXAM_KINDS: ExamKcalKind[] = ["pass", "fail", "review"];
 const EXAM_KIND_LABEL: Record<ExamKcalKind, string> = { pass: "合格", fail: "不合格", review: "復習" };
@@ -384,6 +453,7 @@ const RECIPE_MODES: Mode[] = ["choice", "typing"];
  * on the 課題 and 体重記録).
  */
 function KcalBreakdown({ b, diet }: { b: BreakdownData; diet: DietKcal | null }) {
+  const phone = usePhoneWidth();
   const study = (tier: Tier | null, mode: Mode | null) =>
     sum(
       b.study.filter((c) => (tier === null || c.tier === tier) && (mode === null || c.mode === mode)),
@@ -405,6 +475,34 @@ function KcalBreakdown({ b, diet }: { b: BreakdownData; diet: DietKcal | null })
   const studyTotal = study(null, null) + recipe(null);
   const examTotal = sum(b.examKcal, (e) => e.kcal);
   const otherTotal = sum(others, (o) => o.kcal);
+  if (phone) {
+    const studyRows = [
+      ...TIERS.flatMap((t) => MODES.map((m) => ({ label: `${TIER_LABEL[t]}・${MODE_SHORT[m]}`, kcal: study(t, m) }))),
+      ...RECIPE_MODES.map((m) => ({ label: `単語帳の復習・${MODE_SHORT[m]}`, kcal: recipe(m) })),
+    ].filter((r) => r.kcal !== 0);
+    const examRows = b.levels.flatMap(({ level, label }) =>
+      EXAM_KINDS.flatMap((k) => {
+        const paid = exam(level, k);
+        return paid.length
+          ? [{ label: `${label}・${EXAM_KIND_LABEL[k]}`, value: paid.map((e) => `${amount(e.each, "kcal")} × ${e.times}回`).join("、") }]
+          : [];
+      }),
+    );
+    return (
+      <BreakdownList
+        groups={[
+          { title: "学習の問題", total: amount(studyTotal, "kcal"), rows: studyRows.map((r) => ({ label: r.label, value: amount(r.kcal, "kcal") })) },
+          { title: "試験", total: amount(examTotal, "kcal"), rows: examRows },
+          {
+            title: "その他",
+            total: amount(otherTotal, "kcal"),
+            rows: others.map((o) => ({ label: o.sub ? `${o.label}（${o.sub}）` : o.label, value: amount(o.kcal, "kcal") })),
+          },
+        ]}
+        grand={{ label: "合計", value: amount(studyTotal + examTotal + otherTotal, "kcal") }}
+      />
+    );
+  }
   return (
     <>
       <h3 className="breakdown-group">学習の問題</h3>
@@ -555,10 +653,29 @@ function answerText(metric: "answered" | "accuracy", list: Answers): string {
  * handed in by level and part, each with its total, and theirs at the end.
  */
 function AnswerBreakdown({ metric, b }: { metric: "answered" | "accuracy"; b: BreakdownData }) {
+  const phone = usePhoneWidth();
   const study = (tier: Tier | null, mode: Mode | null) =>
     b.study.filter((c) => (tier === null || c.tier === tier) && (mode === null || c.mode === mode));
   const exam = (level: ExamLevel | null, part: ExamPart | null) =>
     b.exams.filter((e) => (level === null || e.level === level) && (part === null || e.part === part));
+  if (phone) {
+    const answered = (list: Answers) => sum(list, (x) => x.answered) > 0;
+    const studyRows = TIERS.flatMap((t) =>
+      MODES.filter((m) => answered(study(t, m))).map((m) => ({ label: `${TIER_LABEL[t]}・${MODE_SHORT[m]}`, value: answerText(metric, study(t, m)) })),
+    );
+    const examRows = b.levels.flatMap(({ level, label }) =>
+      PARTS.filter((p) => answered(exam(level, p))).map((p) => ({ label: `${label}・${EXAM_PART_LABEL[p]}`, value: answerText(metric, exam(level, p)) })),
+    );
+    return (
+      <BreakdownList
+        groups={[
+          { title: "学習の問題", total: answerText(metric, b.study), rows: studyRows },
+          { title: "試験", total: answerText(metric, b.exams), rows: examRows },
+        ]}
+        grand={{ label: metric === "answered" ? "合計" : "全体", value: answerText(metric, [...b.study, ...b.exams]) }}
+      />
+    );
+  }
   return (
     <>
       <h3 className="breakdown-group">学習の問題（お気に入りの復習を含む）</h3>
@@ -906,7 +1023,9 @@ function WeightChart({ days, weights, bonus }: { days: DayPoint[]; weights: Weig
   if (weights.length === 0) {
     return (
       <div className="weight-empty muted">
-        まだ体重の記録がありません。右上に身長と今日の体重（体脂肪率は測れるときだけ）を入れて「記録」を押すと記録されます（1日1回 +{bonus} kcal）。
+        {/* a phone has the form above the chart, not at its top right */}
+        まだ体重の記録がありません。{phone ? "上" : "右上"}に身長と今日の体重（体脂肪率は測れるときだけ）を入れて「記録」を押すと記録されます（1日1回{" "}
+        <span className="nw">+{bonus} kcal</span>）。
       </div>
     );
   }

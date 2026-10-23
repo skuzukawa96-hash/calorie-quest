@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api, runningInTauri } from "./lib/api";
 import { loadDictionary } from "./lib/dictionary";
 import { preloadScreens } from "./lib/screenCache";
-import DietSwitch from "./components/DietSwitch";
+import DietSwitch, { DietViewSwitch } from "./components/DietSwitch";
 import PlayModeSwitch from "./components/PlayModeSwitch";
 import { preloadWordTags } from "./components/PosTags";
 import RecipeProvider from "./components/RecipeProvider";
@@ -56,6 +56,8 @@ export default function App() {
   /** LexiLink（英単語の神経衰弱）, started from home */
   const [lexi, setLexi] = useState<LexiConfig | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  /** a phone's ⚙ in the top bar: the ダイエット機能 switch, which has no room in the bar itself */
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   // お菓子引換券: clicking the badge shows a 引換券 button on each goal (home) and each snack of the
   // 図鑑, and clicking it again hides them. The buttons go away with the last ticket.
@@ -183,7 +185,8 @@ export default function App() {
   // way (← やめる, the ホーム tab) gives the entry up by going back, which lands a moment later:
   // `leaving` says it is on its way, and its popstate settles the entry for wherever the learner
   // is by then (a tab tapped meanwhile holds a new one).
-  const away = tab !== "home" || session !== null || exam !== null || lexi !== null;
+  const inSession = session !== null || exam !== null || lexi !== null;
+  const away = tab !== "home" || inSession;
   const awayNow = useRef(away);
   awayNow.current = away;
   const leaving = useRef(false);
@@ -216,8 +219,11 @@ export default function App() {
 
   return (
     <RecipeProvider>
-      <div className="app">
-        <header className="topbar">
+      {/* A phone gives a study session, an exam and LexiLink the whole screen: their own top line
+          (← やめる and how far it has come) in place of the top bar, and no tab bar under them. */}
+      <div className={"app" + (inSession ? " in-session" : "")}>
+        {/* with ダイエット機能 on, a phone's bar gives the logo's room to the お菓子 / 課題 switch */}
+        <header className={"topbar" + (dash?.user.dietMode ? " diet-on" : "")}>
           <button className="brand" onClick={() => go("home")}>
             <span className="brand-icon">🍪</span>
             <span className="brand-name">Calorie Quest</span>
@@ -234,10 +240,18 @@ export default function App() {
             {dash && (
               <>
                 <DietSwitch on={dash.user.dietMode} onChange={(on) => void changeDietMode(on)} />
+                {/* a phone: お菓子 / 課題 for every page at once, in place of each page's ⇄ */}
+                {dash.user.dietMode && <DietViewSwitch />}
                 <PlayModeSwitch mode={dash.user.playMode} onChange={(m) => void changePlayMode(m)} />
-                <span title="連続学習日数">🔥 {dash.user.currentStreak}日</span>
+                {/* a phone says it in words (連続 3日・残り 120 kcal), a PC with the icons */}
+                <span title="連続学習日数">
+                  <span className="topbar-pc">🔥 </span>
+                  <span className="topbar-phone">連続 </span>
+                  {dash.user.currentStreak}日
+                </span>
                 {/* What is left to eat today (earned minus eaten) over what was earned. */}
                 <span
+                  className="topbar-pc"
                   title={`今日の残りカロリー / 獲得カロリー（消費 ${dash.today.kcalConsumed} kcal${
                     dash.today.carriedKcal < 0 ? `、前日からの持ち越し ${dash.today.carriedKcal} kcal` : ""
                   }）`}
@@ -246,10 +260,40 @@ export default function App() {
                   <span className={remainingKcal(dash.today) < 0 ? "negative" : "positive"}>{remainingKcal(dash.today)}</span>
                   /{dash.today.kcalEarned}kcal
                 </span>
+                <span className="topbar-phone">
+                  残り <span className={remainingKcal(dash.today) < 0 ? "negative" : "positive"}>{remainingKcal(dash.today)}</span> kcal
+                </span>
+                <button
+                  type="button"
+                  className="topbar-settings"
+                  aria-label="設定"
+                  aria-expanded={settingsOpen}
+                  onClick={() => setSettingsOpen((o) => !o)}
+                >
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <circle cx="12" cy="12" r="3" />
+                    <path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1" />
+                  </svg>
+                </button>
               </>
             )}
           </div>
         </header>
+        {/* ⚙'s panel out of the top bar: its blur would make the bar the box a fixed backdrop fills */}
+        {settingsOpen && dash && (
+          <>
+            <div className="settings-backdrop" onClick={() => setSettingsOpen(false)} />
+            <div className="settings-panel" role="dialog" aria-label="設定">
+              <div className="settings-row">
+                <span className="settings-text">
+                  <b>ダイエット機能</b>
+                  <span className="muted small">課題の達成と体重の記録でもカロリーがもらえます</span>
+                </span>
+                <DietSwitch on={dash.user.dietMode} onChange={(on) => void changeDietMode(on)} />
+              </div>
+            </div>
+          </>
+        )}
 
         <main>
           {error && (

@@ -17,15 +17,22 @@ export function EatButton({ affordable, label, disabled, onClick }: Common & { a
     label ?? (affordable ? "食べた！（今日の残りカロリーで食べられます）" : "食べた！（今日の残りを超えます。記録はできます）");
   return (
     <button type="button" className={"icon-btn eat" + (affordable ? "" : " over")} disabled={disabled} title={title} aria-label={title} onClick={onClick}>
-      <svg viewBox="0 0 24 24" aria-hidden="true">
-        <g fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
-          {/* fork: three tines joined by a curve, then the handle */}
-          <path d="M5 2.8v5.4M8 2.8v5.4M11 2.8v5.4M5 8.2a3 3 0 0 0 6 0M8 11.2v10" />
-          {/* knife: a curved blade, then the handle */}
-          <path d="M19 2.8c-2.3 1.1-3.6 3.9-3.6 7.3v3.4H19zM17.4 13.5v7.7" fill="currentColor" />
-        </g>
-      </svg>
+      <ForkAndKnife />
     </button>
+  );
+}
+
+/** The knife and fork of 食べた！, for wherever お菓子 is meant (the top bar's お菓子 / 課題 switch too). */
+export function ForkAndKnife() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <g fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+        {/* fork: three tines joined by a curve, then the handle */}
+        <path d="M5 2.8v5.4M8 2.8v5.4M11 2.8v5.4M5 8.2a3 3 0 0 0 6 0M8 11.2v10" />
+        {/* knife: a curved blade, then the handle */}
+        <path d="M19 2.8c-2.3 1.1-3.6 3.9-3.6 7.3v3.4H19zM17.4 13.5v7.7" fill="currentColor" />
+      </g>
+    </svg>
   );
 }
 
@@ -36,17 +43,24 @@ export function EatButton({ affordable, label, disabled, onClick }: Common & { a
 export function DoneButton({ label = "達成！（カロリーを獲得）", disabled, onClick }: Common & { label?: string }) {
   return (
     <button type="button" className="icon-btn done" disabled={disabled} title={label} aria-label={label} onClick={onClick}>
-      <svg viewBox="0 0 24 24" aria-hidden="true">
-        <path
-          d="M3.2 18.6C2.6 11 5 3 10.6 3a2.6 2.6 0 0 1 0 5.2c-.4 0-.8-.1-1.1-.2.3 1.9 1.4 3.9 2.6 5.2a4.9 4.9 0 0 1 9.4 2c0 3.4-3.9 5.8-8.6 5.8-3.6 0-7.2-.8-9.7-2.4z"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.9"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-      </svg>
+      <FlexedArm />
     </button>
+  );
+}
+
+/** The flexed arm of 達成！, for wherever 課題 is meant (the top bar's お菓子 / 課題 switch too). */
+export function FlexedArm() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path
+        d="M3.2 18.6C2.6 11 5 3 10.6 3a2.6 2.6 0 0 1 0 5.2c-.4 0-.8-.1-1.1-.2.3 1.9 1.4 3.9 2.6 5.2a4.9 4.9 0 0 1 9.4 2c0 3.4-3.9 5.8-8.6 5.8-3.6 0-7.2-.8-9.7-2.4z"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.9"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
   );
 }
 
@@ -110,6 +124,30 @@ export function EditButton({ label = "修正する", disabled, onClick }: Common
           strokeLinecap="round"
           strokeLinejoin="round"
         />
+      </svg>
+    </button>
+  );
+}
+
+/**
+ * Three dots one above another (⋯): a phone's row keeps its pencil and × behind it, for the name
+ * (and the kcal) to have the row's width. `open` while what it holds is out under the row.
+ */
+export function MoreButton({ label, open, disabled, onClick }: Common & { label: string; open: boolean }) {
+  return (
+    <button
+      type="button"
+      className={"icon-btn more" + (open ? " open" : "")}
+      disabled={disabled}
+      title={label}
+      aria-label={label}
+      aria-expanded={open}
+      onClick={onClick}
+    >
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <circle cx="12" cy="5.5" r="1.7" fill="currentColor" />
+        <circle cx="12" cy="12" r="1.7" fill="currentColor" />
+        <circle cx="12" cy="18.5" r="1.7" fill="currentColor" />
       </svg>
     </button>
   );

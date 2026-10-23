@@ -11,7 +11,7 @@ import { PHONEMES } from "../lib/phonemes";
 import { loadPronunciations, type Pronunciations } from "../lib/pronunciation";
 import type { TipKey } from "../lib/scoring";
 import { isTtsSupported, speak, stopSpeaking } from "../lib/speech";
-import { CLICK } from "../lib/touch";
+import { CLICK, revealPicked, usePhoneWidth } from "../lib/touch";
 import {
   EXAM_PART_LABEL,
   POINT_CATEGORIES,
@@ -179,6 +179,13 @@ export default function Favorites({ rates, overview, playMode, onProgress, toast
   const [list, setList] = useState<Favorite[] | null>(() => keptData("favorites"));
   const [tab, setTab] = useState<FavTab>("all");
   const [form, setForm] = useState<Form | "all">("all");
+  const phone = usePhoneWidth();
+  const screen = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (phone) revealPicked(screen.current, ".fav-tabs");
+  }, [phone, tab, list]);
+  /** a phone: how お気に入り is used, folded behind the ? of the heading */
+  const [help, setHelp] = useState(false);
   const [open, setOpen] = useState<Set<number>>(() => new Set());
   /** unstarred on this visit: kept on the page, with ☆, so a slip can be starred again */
   const [unstarred, setUnstarred] = useState<Set<number>>(() => new Set());
@@ -430,58 +437,76 @@ export default function Favorites({ rates, overview, playMode, onProgress, toast
     );
   };
 
+  /** 範囲: one 文法項目 for the list and the review (beside the review buttons on a PC, the orders on a phone) */
+  const rangeChip = points.length > 0 && (
+    <div className="fav-range" ref={rangeBox}>
+      <button
+        className={"chip fav-range-btn" + (only ? " active" : "")}
+        aria-haspopup="menu"
+        aria-expanded={rangeMenu}
+        title={`${POINT_NOUN}を選ぶと、その${POINT_NOUN}の問題だけを一覧に出して復習します`}
+        onClick={() => setRangeMenu((m) => !m)}
+      >
+        範囲：{only ?? "すべて"} <span className="recipe-caret-small">▾</span>
+      </button>
+      {rangeMenu && (
+        <div className="recipe-pos-menu fav-point-menu" role="menu">
+          <button role="menuitemradio" aria-checked={only === null} onClick={() => pickPoint(null, grouped)}>
+            <span>すべて</span>
+            <span className="count">{starred.filter(inTabAndForm).length}</span>
+          </button>
+          {points.map(({ point, n }) => (
+            <button key={point} role="menuitemradio" aria-checked={only === point} onClick={() => pickPoint(point, grouped)}>
+              <span>{point}</span>
+              <span className="count">{n}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+  const reviewButtons =
+    studyPool.length > 0 && examPool.length > 0 ? (
+      <>
+        {/* side by side in a phone's bar, in fewer words */}
+        {reviewButton("study", phone ? "学習を復習" : "学習の問題を復習", studyPool, startStudy)}
+        {reviewButton("exam", phone ? "試験を復習" : "試験の問題を復習", examPool, startExam)}
+      </>
+    ) : studyPool.length > 0 ? (
+      reviewButton("study", "この一覧を復習", studyPool, startStudy)
+    ) : (
+      reviewButton("exam", "この一覧を復習", examPool, startExam)
+    );
+
   return (
-    <div className="screen favorites">
+    <div className="screen favorites" ref={screen}>
       <section className="card">
         <div className="section-head fav-head">
           <h2>
             <span className="fav-head-star">★</span> お気に入り {list && <span className="muted fav-total">{starred.length}問</span>}
           </h2>
-          {pool.length > 0 && (
+          {!phone && pool.length > 0 && (
             <div className="row fav-review-buttons">
-              {points.length > 0 && (
-                <div className="fav-range" ref={rangeBox}>
-                  <button
-                    className={"chip fav-range-btn" + (only ? " active" : "")}
-                    aria-haspopup="menu"
-                    aria-expanded={rangeMenu}
-                    title={`${POINT_NOUN}を選ぶと、その${POINT_NOUN}の問題だけを一覧に出して復習します`}
-                    onClick={() => setRangeMenu((m) => !m)}
-                  >
-                    範囲：{only ?? "すべて"} <span className="recipe-caret-small">▾</span>
-                  </button>
-                  {rangeMenu && (
-                    <div className="recipe-pos-menu fav-point-menu" role="menu">
-                      <button role="menuitemradio" aria-checked={only === null} onClick={() => pickPoint(null, grouped)}>
-                        <span>すべて</span>
-                        <span className="count">{starred.filter(inTabAndForm).length}</span>
-                      </button>
-                      {points.map(({ point, n }) => (
-                        <button key={point} role="menuitemradio" aria-checked={only === point} onClick={() => pickPoint(point, grouped)}>
-                          <span>{point}</span>
-                          <span className="count">{n}</span>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-              {studyPool.length > 0 && examPool.length > 0 ? (
-                <>
-                  {reviewButton("study", "学習の問題を復習", studyPool, startStudy)}
-                  {reviewButton("exam", "試験の問題を復習", examPool, startExam)}
-                </>
-              ) : studyPool.length > 0 ? (
-                reviewButton("study", "この一覧を復習", studyPool, startStudy)
-              ) : (
-                reviewButton("exam", "この一覧を復習", examPool, startExam)
-              )}
+              {rangeChip}
+              {reviewButtons}
             </div>
           )}
+          {phone && (
+            <button
+              className={"help-btn" + (help ? " open" : "")}
+              aria-expanded={help}
+              aria-label="お気に入りの使い方"
+              onClick={() => setHelp((h) => !h)}
+            >
+              ?
+            </button>
+          )}
         </div>
-        <p className="muted small fav-intro">
-          学習や試験の問題の右上の <b>☆</b> を押すと、ここに集まります。行を{CLICK}すると解説が開きます。復習では一覧に出ている問題をすべて出題し、正解すると1問につき1日1回カロリーがもらえます（英単語 1 kcal、ほかは 2 kcal）。途中でやめても、同じ日ならまだカロリーをもらっていない問題から続きます。
-        </p>
+        {(!phone || help) && (
+          <p className="muted small fav-intro">
+            学習や試験の問題の右上の <b>☆</b> を押すと、ここに集まります。行を{CLICK}すると解説が開きます。復習では一覧に出ている問題をすべて出題し、正解すると1問につき1日1回カロリーがもらえます（英単語 1 kcal、ほかは 2 kcal）。途中でやめても、同じ日ならまだカロリーをもらっていない問題から続きます。
+          </p>
+        )}
       </section>
 
       <section className="card">
@@ -507,6 +532,7 @@ export default function Favorites({ rates, overview, playMode, onProgress, toast
                   </button>
                 ))}
               </div>
+              {phone && rangeChip}
               <button className="btn-small recipe-open-all" disabled={shown.length === 0} onClick={toggleAll}>
                 {allOpen ? "一括で詳細を閉じる" : "一括で詳細を開く"}
               </button>
@@ -660,6 +686,8 @@ export default function Favorites({ rates, overview, playMode, onProgress, toast
           </>
         )}
       </section>
+      {/* a phone: the review buttons in a bar above the tabs, under the thumb */}
+      {phone && pool.length > 0 && <div className="fav-review-bar">{reviewButtons}</div>}
     </div>
   );
 }

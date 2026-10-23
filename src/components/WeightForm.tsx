@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { api } from "../lib/api";
 import { playDone } from "../lib/sfx";
+import { usePhoneWidth } from "../lib/touch";
 import type { WeightPoint } from "../types";
 import { EditButton } from "./IconButtons";
 
@@ -34,7 +35,30 @@ export default function WeightForm({
   const [weight, setWeight] = useState("");
   const [fat, setFat] = useState("");
   const [busy, setBusy] = useState(false);
+  const phone = usePhoneWidth();
 
+  if (today && phone) {
+    // a phone: the words small and grey over the figures, two lines, with ✓ 記録済み on their right
+    return (
+      <span className="weight-today weight-today-cells" title="今日の体重は記録済みです（記録できるのは1日1回）">
+        <span className="weight-cell">
+          <span className="weight-cell-label">体重</span>
+          <b>{d1(today.weightKg)} kg</b>
+        </span>
+        <span className="weight-cell">
+          <span className="weight-cell-label">BMI</span>
+          <b>{d1(today.bmi)}</b>
+        </span>
+        {today.bodyFat !== null && (
+          <span className="weight-cell">
+            <span className="weight-cell-label">体脂肪率</span>
+            <b>{d1(today.bodyFat)} %</b>
+          </span>
+        )}
+        <span className="pill eaten">✓ 記録済み</span>
+      </span>
+    );
+  }
   if (today) {
     return (
       <span className="weight-today" title="今日の体重は記録済みです（記録できるのは1日1回）">
