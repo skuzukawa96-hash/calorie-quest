@@ -11,30 +11,99 @@ mod speech;
 mod srs;
 mod util;
 
-use std::sync::Mutex;
+use std::ops::{Deref, DerefMut};
+use std::sync::{Condvar, Mutex, MutexGuard};
 use tauri::Manager;
 
 pub struct AppState {
-    pub db: Mutex<rusqlite::Connection>,
+    pub db: Db,
     /// what the home screen counts of the question bank, counted once (`commands::BankCounts`)
     pub bank: Mutex<Option<commands::BankCounts>>,
 }
 
+/// The database, opened behind the window as the app starts. Tauri builds the window before
+/// `setup` runs, so the page asks for its first screen while a first start is still filling the
+/// question bank (seconds on a phone): a command waits here for it, where it used to find the
+/// state not managed yet.
+pub struct Db {
+    state: Mutex<Opening>,
+    opened: Condvar,
+}
+
+enum Opening {
+    Waiting,
+    Open(rusqlite::Connection),
+    Failed(String),
+}
+
+/// The open database, held for one command (`Db::lock`).
+pub struct DbGuard<'a>(MutexGuard<'a, Opening>);
+
+impl Deref for DbGuard<'_> {
+    type Target = rusqlite::Connection;
+    fn deref(&self) -> &rusqlite::Connection {
+        match &*self.0 {
+            Opening::Open(conn) => conn,
+            _ => unreachable!("Db::lock hands out only an open database"),
+        }
+    }
+}
+
+impl DerefMut for DbGuard<'_> {
+    fn deref_mut(&mut self) -> &mut rusqlite::Connection {
+        match &mut *self.0 {
+            Opening::Open(conn) => conn,
+            _ => unreachable!("Db::lock hands out only an open database"),
+        }
+    }
+}
+
+impl Db {
+    fn waiting() -> Self {
+        Db { state: Mutex::new(Opening::Waiting), opened: Condvar::new() }
+    }
+
+    /// The database opened, or why it could not be: what every command waiting for it gets.
+    fn opened(&self, result: Result<rusqlite::Connection, String>) {
+        let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
+        *state = match result {
+            Ok(conn) => Opening::Open(conn),
+            Err(e) => Opening::Failed(e),
+        };
+        self.opened.notify_all();
+    }
+
+    /// The database for one command, once it is open.
+    pub fn lock(&self) -> Result<DbGuard<'_>, String> {
+        let state = self.state.lock().map_err(|e| e.to_string())?;
+        let state = self.opened.wait_while(state, |s| matches!(s, Opening::Waiting)).map_err(|e| e.to_string())?;
+        if let Opening::Failed(e) = &*state {
+            return Err(format!("データベースを開けませんでした: {e}"));
+        }
+        Ok(DbGuard(state))
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let builder = tauri::Builder::default();
+    // The state is there before the window asks for anything; its database opens in `setup`.
+    let builder = tauri::Builder::default().manage(AppState { db: Db::waiting(), bank: Mutex::new(None) });
     // The phone's text-to-speech and speech recognizer (speech.rs).
     #[cfg(target_os = "android")]
     let builder = builder.plugin(speech::android_plugin());
     builder
         .setup(|app| {
             let dir = app.path().app_data_dir()?;
-            std::fs::create_dir_all(&dir)?;
-            let conn = db::init(&dir.join(backup::DB_FILE))?;
-            app.manage(AppState { db: Mutex::new(conn), bank: Mutex::new(None) });
-            // The notes' tables, ready before the first お気に入り or answer asks for them, and
-            // LexiLink's 対義語 before the first game of Opposites.
-            std::thread::spawn(|| {
+            let app = app.handle().clone();
+            // Behind the window, which shows 読み込み中 meanwhile: a first start fills the question
+            // bank, too long to hold the window (and a phone's main thread) up for.
+            std::thread::spawn(move || {
+                let opened = std::fs::create_dir_all(&dir)
+                    .map_err(|e| e.to_string())
+                    .and_then(|()| db::init(&dir.join(backup::DB_FILE)).map_err(|e| e.to_string()));
+                app.state::<AppState>().db.opened(opened);
+                // The notes' tables, ready before the first お気に入り or answer asks for them, and
+                // LexiLink's 対義語 before the first game of Opposites.
                 db::warm_up();
                 lexilink::warm_up();
             });
